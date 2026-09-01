@@ -879,7 +879,7 @@ def sohbet():
             json={
                 "contents": contents
             },
-            timeout=60
+            timeout=20
         )
 
         try:
