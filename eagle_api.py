@@ -352,11 +352,25 @@ def spor_sorgusu_mu(mesaj):
 
 
 def spor_arama_sorgusu(mesaj):
-    """Spor sorusunu güncel maç programı aramasına dönüştürür."""
+    """Spor sorusunu güncel ve resmi kaynak öncelikli aramaya dönüştürür."""
+    mesaj_kucuk = mesaj.lower()
+
+    # Voleybol sorularında resmi TVF kaynaklarını özellikle hedefle.
+    if any(k in mesaj_kucuk for k in [
+        "voleybol",
+        "filenin sultanları",
+        "filenin efeleri"
+    ]):
+        return (
+            mesaj.strip()
+            + " bugün maç programı maç saati "
+            + "site:tvf.org.tr OR site:fikstur.tvf.org.tr"
+        )
+
     return (
         mesaj.strip()
         + " bugün maç programı maç saati sonuçları "
-        + "1 Eylül 2026 Türkiye"
+        + "Türkiye"
     )
 
 
