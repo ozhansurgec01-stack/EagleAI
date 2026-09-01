@@ -407,82 +407,189 @@ def web_kaynak_url(url):
 
 
 def web_arastir(sorgu, limit=6):
-    """DuckDuckGo üzerinden ücretsiz web araması."""
+    """Güncel web araması. DuckDuckGo çalışmazsa Google fallback kullanır."""
+    
+    def sonuclari_ayikla(soup, kaynak):
+        sonuclar = []
+
+        # DuckDuckGo
+        if kaynak == "duckduckgo":
+            bloklar = soup.select(".result")
+
+            for sonuc in bloklar[:limit]:
+                baslik = sonuc.select_one(".result__a")
+                aciklama = sonuc.select_one(".result__snippet")
+
+                if not baslik:
+                    continue
+
+                sonuclar.append({
+                    "title": baslik.get_text(" ", strip=True),
+                    "url": web_kaynak_url(
+                        baslik.get("href", "").strip()
+                    ),
+                    "snippet": (
+                        aciklama.get_text(" ", strip=True)
+                        if aciklama else ""
+                    )
+                })
+
+        # Google
+        else:
+            bloklar = soup.select("div.MjjYud")
+
+            for sonuc in bloklar:
+                baslik = sonuc.select_one("h3")
+
+                if not baslik:
+                    continue
+
+                link = baslik.find_parent("a")
+
+                if not link:
+                    continue
+
+                aciklama = sonuc.select_one(
+                    "div.VwiC3b, div.yXK7lf"
+                )
+
+                sonuclar.append({
+                    "title": baslik.get_text(" ", strip=True),
+                    "url": link.get("href", "").strip(),
+                    "snippet": (
+                        aciklama.get_text(" ", strip=True)
+                        if aciklama else ""
+                    )
+                })
+
+                if len(sonuclar) >= limit:
+                    break
+
+        return sonuclar
+
     try:
-        url = (
+        sorgu = sorgu[:400]
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Linux; Android 15) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/140.0.0.0 Mobile Safari/537.36"
+            ),
+            "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7",
+            "Accept": "text/html,application/xhtml+xml"
+        }
+
+        # ========================================================
+        # 1) DUCKDUCKGO
+        # ========================================================
+
+        ddg_url = (
             "https://html.duckduckgo.com/html/?q="
-            + quote(sorgu[:400])
+            + quote(sorgu)
         )
 
-        cevap = requests.get(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Android 15) "
-                    "AppleWebKit/537.36 "
-                    "Chrome/140 Mobile Safari/537.36"
-                ),
-                "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
-            },
-            timeout=15
-        )
+        try:
+            cevap = requests.get(
+                ddg_url,
+                headers=headers,
+                timeout=15
+            )
 
-        if cevap.status_code != 200:
             print(
-                f"⚠️ Web arama HTTP {cevap.status_code}",
+                f"🌐 DuckDuckGo HTTP {cevap.status_code}",
+                flush=True
+            )
+
+            if cevap.status_code == 200:
+                soup = BeautifulSoup(
+                    cevap.text,
+                    "html.parser"
+                )
+
+                sonuclar = sonuclari_ayikla(
+                    soup,
+                    "duckduckgo"
+                )
+
+                if sonuclar:
+                    print(
+                        f"✅ DuckDuckGo: {len(sonuclar)} sonuç",
+                        flush=True
+                    )
+                    return sonuclar
+
+        except Exception as e:
+            print(
+                f"⚠️ DuckDuckGo hatası: {e}",
+                flush=True
+            )
+
+        # ========================================================
+        # 2) GOOGLE FALLBACK
+        # ========================================================
+
+        print(
+            "🔄 Google web araması fallback deneniyor...",
+            flush=True
+        )
+
+        google_url = (
+            "https://www.google.com/search?q="
+            + quote(sorgu)
+            + "&hl=tr&gl=tr"
+        )
+
+        try:
+            cevap = requests.get(
+                google_url,
+                headers=headers,
+                timeout=15
+            )
+
+            print(
+                f"🌐 Google HTTP {cevap.status_code}",
+                flush=True
+            )
+
+            if cevap.status_code != 200:
+                print(
+                    f"⚠️ Google web arama HTTP {cevap.status_code}",
+                    flush=True
+                )
+                return []
+
+            soup = BeautifulSoup(
+                cevap.text,
+                "html.parser"
+            )
+
+            sonuclar = sonuclari_ayikla(
+                soup,
+                "google"
+            )
+
+            print(
+                f"🌐 Google: {len(sonuclar)} sonuç",
+                flush=True
+            )
+
+            return sonuclar
+
+        except Exception as e:
+            print(
+                f"⚠️ Google web arama hatası: {e}",
                 flush=True
             )
             return []
 
-        soup = BeautifulSoup(
-            cevap.text,
-            "html.parser"
-        )
-
-        sonuclar = []
-
-        for sonuc in soup.select(".result")[:limit]:
-            baslik = sonuc.select_one(".result__a")
-            aciklama = sonuc.select_one(".result__snippet")
-
-            if not baslik:
-                continue
-
-            sonuclar.append({
-                "title": baslik.get_text(
-                    " ",
-                    strip=True
-                ),
-                "url": web_kaynak_url(
-                    baslik.get(
-                        "href",
-                        ""
-                    ).strip()
-                ),
-                "snippet": (
-                    aciklama.get_text(
-                        " ",
-                        strip=True
-                    )
-                    if aciklama
-                    else ""
-                )
-            })
-
-        print(
-            f"🌐 Web araştırması: {len(sonuclar)} sonuç",
-            flush=True
-        )
-
-        return sonuclar
-
     except Exception as e:
         print(
-            f"⚠️ Web araştırma hatası: {e}",
+            f"⚠️ Web araştırma genel hata: {e}",
             flush=True
         )
         return []
-
 
 def web_sonuclari_metni(sonuclar):
     """Web sonuçlarını Gemini'ye aktarılacak metne çevirir."""
