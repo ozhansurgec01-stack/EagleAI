@@ -422,8 +422,10 @@ def web_kaynak_url(url):
 
 
 def tvf_voleybol_getir():
-    """TVF resmi fikstür sayfasından güncel voleybol maçlarını çeker."""
+    """TVF resmi fikstüründen Türkiye'nin güncel ve yaklaşan maçlarını çeker."""
     try:
+        from datetime import datetime
+
         url = "https://fikstur.tvf.org.tr/Takvim"
 
         cevap = requests.get(
@@ -440,79 +442,123 @@ def tvf_voleybol_getir():
             timeout=8
         )
 
-        print(
-            f"🏐 TVF HTTP {cevap.status_code}",
-            flush=True
-        )
+        print(f"🏐 TVF HTTP {cevap.status_code}", flush=True)
 
         if cevap.status_code != 200:
             return []
 
-        soup = BeautifulSoup(
-            cevap.text,
-            "html.parser"
-        )
+        soup = BeautifulSoup(cevap.text, "html.parser")
+        metin = soup.get_text(" ", strip=True)
 
-        metin = soup.get_text(
-            " ",
-            strip=True
-        )
+        bugun = datetime.now().strftime("%d.%m.%Y")
 
         sonuclar = []
 
-        # Türkiye-Azerbaycan gibi milli takım maçlarını yakala
-        desenler = [
-            r'(\d{1,2}:\d{2})\s+TRT 1\s+TÜRKİYE\s+AZERBAYCAN',
-            r'(\d{1,2}:\d{2})\s+TÜRKİYE\s+AZERBAYCAN',
-            r'(\d{1,2}:\d{2})\s+TÜRKİYE\s+([A-ZÇĞİÖŞÜ]+)'
+        # Türkiye maçlarını tarih + saat + rakip ile yakala.
+        desen = re.compile(
+            r'([A-ZÇĞİÖŞÜ]+)\s+Vs\s+Türkiye\s*/\s*'
+            r'(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{1,2}:\d{2})\s*/\s*'
+            r'(.*?)(?=\s+[A-ZÇĞİÖŞÜ]+\s+Vs\s+|$)',
+            re.IGNORECASE
+        )
+
+        desen2 = re.compile(
+            r'Türkiye\s+Vs\s+([A-ZÇĞİÖŞÜ]+)\s*/\s*'
+            r'(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{1,2}:\d{2})\s*/\s*'
+            r'(.*?)(?=\s+[A-ZÇĞİÖŞÜ]+\s+Vs\s+|$)',
+            re.IGNORECASE
+        )
+
+        maclar = []
+
+        for m in desen.finditer(metin):
+            maclar.append({
+                "rakip": m.group(1).strip(),
+                "tarih": m.group(2),
+                "saat": m.group(3),
+                "yer": m.group(4).strip()
+            })
+
+        for m in desen2.finditer(metin):
+            maclar.append({
+                "rakip": m.group(1).strip(),
+                "tarih": m.group(2),
+                "saat": m.group(3),
+                "yer": m.group(4).strip()
+            })
+
+        # Aynı maçı iki regex yakalarsa tekrar etmesin.
+        benzersiz = []
+        gorulen = set()
+
+        for mac in maclar:
+            anahtar = (
+                mac["rakip"],
+                mac["tarih"],
+                mac["saat"]
+            )
+
+            if anahtar not in gorulen:
+                gorulen.add(anahtar)
+                benzersiz.append(mac)
+
+        # Önce BUGÜN oynanan Türkiye maçları.
+        bugun_maclari = [
+            m for m in benzersiz
+            if m["tarih"] == bugun
         ]
 
-        for desen in desenler:
-            for eslesme in re.finditer(
-                desen,
-                metin,
-                re.IGNORECASE
-            ):
-                saat = eslesme.group(1)
-                rakip = eslesme.group(2)
-
+        if bugun_maclari:
+            for m in bugun_maclari:
                 sonuclar.append({
-                    "title": f"Türkiye - {rakip}",
+                    "title": f"{m['rakip']} - Türkiye",
                     "url": url,
                     "snippet": (
-                        f"Bugün {saat} — "
-                        f"TVF resmi fikstüründen alınmıştır."
+                        f"BUGÜN {m['tarih']} - {m['saat']} — "
+                        f"Yer: {m['yer']} — TVF resmi fikstürü."
                     )
                 })
 
-            if sonuclar:
-                break
+            print(
+                f"🏐 TVF: BUGÜN {len(sonuclar)} Türkiye maçı bulundu",
+                flush=True
+            )
+            return sonuclar[:8]
 
-        # Genel olarak bugünkü Türkiye maçını yakalayamazsa
-        # sayfanın ilgili bölümünü sonuç olarak gönder.
-        if not sonuclar and "TÜRKİYE" in metin.upper():
-            idx = metin.upper().find("TÜRKİYE")
-            parca = metin[max(0, idx - 150):idx + 350]
+        # Bugün maç yoksa en yakın gelecek Türkiye maçlarını ver.
+        gelecek = [
+            m for m in benzersiz
+            if m["tarih"] > bugun
+        ]
 
+        gelecek.sort(
+            key=lambda x: (
+                datetime.strptime(x["tarih"], "%d.%m.%Y"),
+                x["saat"]
+            )
+        )
+
+        for m in gelecek[:8]:
             sonuclar.append({
-                "title": "TVF Güncel Maç Takvimi",
+                "title": f"{m['rakip']} - Türkiye",
                 "url": url,
-                "snippet": parca
+                "snippet": (
+                    f"{m['tarih']} - {m['saat']} — "
+                    f"Yer: {m['yer']} — TVF resmi fikstürü."
+                )
             })
 
         print(
-            f"🏐 TVF: {len(sonuclar)} sonuç",
+            f"🏐 TVF: Bugün maç yok, {len(sonuclar)} yaklaşan maç bulundu",
             flush=True
         )
 
-        return sonuclar[:8]
+        return sonuclar
 
     except Exception as e:
-        print(
-            f"⚠️ TVF arama hatası: {e}",
-            flush=True
-        )
+        print(f"⚠️ TVF arama hatası: {e}", flush=True)
         return []
+
 
 
 def web_arastir(sorgu, limit=6):
