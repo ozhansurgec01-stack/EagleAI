@@ -420,6 +420,101 @@ def web_kaynak_url(url):
         return url
 
 
+
+def tvf_voleybol_getir():
+    """TVF resmi fikstür sayfasından güncel voleybol maçlarını çeker."""
+    try:
+        url = "https://fikstur.tvf.org.tr/Takvim"
+
+        cevap = requests.get(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Linux; Android 15) "
+                    "AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) "
+                    "Chrome/140 Mobile Safari/537.36"
+                ),
+                "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
+            },
+            timeout=8
+        )
+
+        print(
+            f"🏐 TVF HTTP {cevap.status_code}",
+            flush=True
+        )
+
+        if cevap.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(
+            cevap.text,
+            "html.parser"
+        )
+
+        metin = soup.get_text(
+            " ",
+            strip=True
+        )
+
+        sonuclar = []
+
+        # Türkiye-Azerbaycan gibi milli takım maçlarını yakala
+        desenler = [
+            r'(\d{1,2}:\d{2})\s+TRT 1\s+TÜRKİYE\s+AZERBAYCAN',
+            r'(\d{1,2}:\d{2})\s+TÜRKİYE\s+AZERBAYCAN',
+            r'(\d{1,2}:\d{2})\s+TÜRKİYE\s+([A-ZÇĞİÖŞÜ]+)'
+        ]
+
+        for desen in desenler:
+            for eslesme in re.finditer(
+                desen,
+                metin,
+                re.IGNORECASE
+            ):
+                saat = eslesme.group(1)
+                rakip = eslesme.group(2)
+
+                sonuclar.append({
+                    "title": f"Türkiye - {rakip}",
+                    "url": url,
+                    "snippet": (
+                        f"Bugün {saat} — "
+                        f"TVF resmi fikstüründen alınmıştır."
+                    )
+                })
+
+            if sonuclar:
+                break
+
+        # Genel olarak bugünkü Türkiye maçını yakalayamazsa
+        # sayfanın ilgili bölümünü sonuç olarak gönder.
+        if not sonuclar and "TÜRKİYE" in metin.upper():
+            idx = metin.upper().find("TÜRKİYE")
+            parca = metin[max(0, idx - 150):idx + 350]
+
+            sonuclar.append({
+                "title": "TVF Güncel Maç Takvimi",
+                "url": url,
+                "snippet": parca
+            })
+
+        print(
+            f"🏐 TVF: {len(sonuclar)} sonuç",
+            flush=True
+        )
+
+        return sonuclar[:8]
+
+    except Exception as e:
+        print(
+            f"⚠️ TVF arama hatası: {e}",
+            flush=True
+        )
+        return []
+
+
 def web_arastir(sorgu, limit=6):
     """Güncel web araması. DuckDuckGo çalışmazsa Google fallback kullanır."""
     
@@ -613,17 +708,21 @@ def web_sonuclari_metni(sonuclar):
     satirlar = [
         "",
         "===== ÜCRETSİZ WEB ARAŞTIRMASI =====",
-        "Aşağıdaki bilgiler internet aramasından alınmıştır.",
-        "Kaynakları dikkate al ve desteklenmeyen bilgi uydurma.",
-        ""
+        "Aşağıdaki bilgiler internetten, mümkünse resmi kaynaklardan alınmıştır.",
+        "ÖNEMLİ: Kullanıcı güncel maç/spor bilgisi soruyorsa aşağıdaki veriyi kullan.",
+        "Veri mevcutsa 'veri yok', 'bakamıyorum' veya 'hangi takımı arıyorsun' deme.",
+        "Tarih ve saatleri değiştirme veya uydurma.",
+        "Bugünün tarihi sistem tarafından ayrıca biliniyor olabilir; kaynakta açıkça yazan tarihleri aynen dikkate al.",
+        "Kaynakta maç görünüyorsa takım adını, rakibi, tarihi, saati ve varsa salon/şehir bilgisini cevapta belirt.",
+        "",
     ]
 
     for i, sonuc in enumerate(sonuclar, 1):
         satirlar.append(
             f"[KAYNAK {i}]\n"
-            f"Başlık: {sonuc['title']}\n"
-            f"Adres: {sonuc['url']}\n"
-            f"Özet: {sonuc['snippet']}\n"
+            f"Başlık: {sonuc.get('title', '')}\n"
+            f"Adres: {sonuc.get('url', '')}\n"
+            f"Özet: {sonuc.get('snippet', '')}\n"
         )
 
     satirlar.append(
@@ -631,6 +730,7 @@ def web_sonuclari_metni(sonuclar):
     )
 
     return "\n".join(satirlar)
+
 
 
 def hafiza_metni():
@@ -745,8 +845,21 @@ def sohbet():
 
     if web_arastirma_gerekli(mesaj):
         if spor_sorgusu_mu(mesaj):
-            arama_sorgusu = spor_arama_sorgusu(mesaj)
-            web_verisi = web_arastir(arama_sorgusu, limit=8)
+            # 🏐 Spor sorularında önce resmi TVF kaynağı
+            if any(k in mesaj.lower() for k in [
+                "voleybol",
+                "filenin sultanları",
+                "filenin efeleri"
+            ]):
+                web_verisi = tvf_voleybol_getir()
+
+            # TVF sonuç vermezse mevcut web araması
+            if not web_verisi:
+                arama_sorgusu = spor_arama_sorgusu(mesaj)
+                web_verisi = web_arastir(
+                    arama_sorgusu,
+                    limit=8
+                )
         else:
             web_verisi = web_arastir(mesaj)
 
