@@ -263,6 +263,8 @@ public class MainActivity extends Activity {
             PopupMenu popup = new PopupMenu(this, menuBtn);
             popup.getMenu().add("🧠 Hafıza");
             popup.getMenu().add("💳 Borçlar");
+            popup.getMenu().add("➕ Borç Ekle");
+            popup.getMenu().add("💵 Ödeme Yap");
             popup.getMenu().add("❓ Yardım");
             popup.getMenu().add("🆕 Yeni");
               popup.getMenu().add("🕘 Son Sohbetler");
@@ -293,6 +295,10 @@ public class MainActivity extends Activity {
                             );
                         });
                     });
+                } else if (secim.contains("Borç Ekle")) {
+                    borcEkleDialog();
+                } else if (secim.contains("Ödeme Yap")) {
+                    odemeYapDialog();
                 } else if (secim.contains("Hafıza")) {
                     yerelMesajEkle("🧠 Eagle-AI hafızası yükleniyor...");
 
@@ -525,6 +531,373 @@ public class MainActivity extends Activity {
         }
     }
 
+
+    private void borcEkleDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(40, 20, 40, 10);
+
+        EditText aciklama = new EditText(this);
+        aciklama.setHint("Borç / Harcama açıklaması");
+        layout.addView(aciklama);
+
+        EditText tutar = new EditText(this);
+        tutar.setHint("Tutar (TL)");
+        tutar.setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
+                android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        layout.addView(tutar);
+
+        EditText taksit = new EditText(this);
+        taksit.setHint("Taksit sayısı");
+        taksit.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        layout.addView(taksit);
+
+        EditText kategori = new EditText(this);
+        kategori.setHint("Kategori (Kredi, Elektrik, Su vb.)");
+        layout.addView(kategori);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("➕ BORÇ EKLE")
+                .setView(layout)
+                .setNegativeButton("İPTAL", null)
+                .setPositiveButton("KAYDET", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            Button kaydet = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+
+            kaydet.setOnClickListener(v -> {
+                String ad = aciklama.getText().toString().trim();
+                String tutarMetni = tutar.getText().toString().trim();
+                String taksitMetni = taksit.getText().toString().trim();
+                String kat = kategori.getText().toString().trim();
+
+                if (ad.isEmpty()) {
+                    aciklama.setError("Açıklama gerekli");
+                    return;
+                }
+
+                if (tutarMetni.isEmpty()) {
+                    tutar.setError("Tutar gerekli");
+                    return;
+                }
+
+                double tutarDegeri;
+                try {
+                    tutarDegeri = Double.parseDouble(
+                            tutarMetni.replace(",", ".")
+                    );
+                } catch (Exception e) {
+                    tutar.setError("Geçerli bir tutar gir");
+                    return;
+                }
+
+                if (tutarDegeri <= 0) {
+                    tutar.setError("Tutar 0'dan büyük olmalı");
+                    return;
+                }
+
+                int taksitSayisi = 1;
+                if (!taksitMetni.isEmpty()) {
+                    try {
+                        taksitSayisi = Integer.parseInt(taksitMetni);
+                    } catch (Exception e) {
+                        taksit.setError("Geçerli bir sayı gir");
+                        return;
+                    }
+                }
+
+                if (taksitSayisi < 1) {
+                    taksit.setError("En az 1 taksit");
+                    return;
+                }
+
+                if (kat.isEmpty()) {
+                    kat = "Genel";
+                }
+
+                dialog.dismiss();
+
+                yerelMesajEkle("💳 Borç kaydediliyor...");
+
+                final String finalAd = ad;
+                final String finalKategori = kat;
+                final double finalTutar = tutarDegeri;
+                final int finalTaksit = taksitSayisi;
+
+                executor.execute(() -> {
+                    String sonuc = borcEkleIstek(
+                            finalAd,
+                            finalKategori,
+                            finalTutar,
+                            finalTaksit
+                    );
+
+                    runOnUiThread(() -> {
+                        yerelMesajEkle(sonuc);
+                    });
+                });
+            });
+        });
+
+        dialog.show();
+    }
+
+    private void odemeYapDialog() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(40, 20, 40, 10);
+
+        EditText borcAdi = new EditText(this);
+        borcAdi.setHint("Borç adı");
+        layout.addView(borcAdi);
+
+        EditText tutar = new EditText(this);
+        tutar.setHint("Ödeme tutarı (TL)");
+        tutar.setInputType(android.text.InputType.TYPE_CLASS_NUMBER |
+                android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        layout.addView(tutar);
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("💵 ÖDEME YAP")
+                .setView(layout)
+                .setNegativeButton("İPTAL", null)
+                .setPositiveButton("ÖDE", null)
+                .create();
+
+        dialog.setOnShowListener(d -> {
+            Button ode = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+
+            ode.setOnClickListener(v -> {
+                String ad = borcAdi.getText().toString().trim();
+                String tutarMetni = tutar.getText().toString().trim();
+
+                if (ad.isEmpty()) {
+                    borcAdi.setError("Borç adı gerekli");
+                    return;
+                }
+
+                if (tutarMetni.isEmpty()) {
+                    tutar.setError("Tutar gerekli");
+                    return;
+                }
+
+                double tutarDegeri;
+                try {
+                    tutarDegeri = Double.parseDouble(
+                            tutarMetni.replace(",", ".")
+                    );
+                } catch (Exception e) {
+                    tutar.setError("Geçerli bir tutar gir");
+                    return;
+                }
+
+                if (tutarDegeri <= 0) {
+                    tutar.setError("Tutar 0'dan büyük olmalı");
+                    return;
+                }
+
+                dialog.dismiss();
+
+                yerelMesajEkle("💵 Ödeme işleniyor...");
+
+                final String finalAd = ad;
+                final double finalTutar = tutarDegeri;
+
+                executor.execute(() -> {
+                    String sonuc = odemeYapIstek(
+                            finalAd,
+                            finalTutar
+                    );
+
+                    runOnUiThread(() -> {
+                        yerelMesajEkle(sonuc);
+                    });
+                });
+            });
+        });
+
+        dialog.show();
+    }
+
+    private String borcEkleIstek(
+            String ad,
+            String kategori,
+            double tutar,
+            int taksit) {
+
+        HttpURLConnection baglanti = null;
+
+        try {
+            URL url = new URL(
+                    API_URL.replace("/api/sohbet", "/api/borc-ekle")
+            );
+
+            baglanti = (HttpURLConnection) url.openConnection();
+            baglanti.setRequestMethod("POST");
+            baglanti.setConnectTimeout(10000);
+            baglanti.setReadTimeout(30000);
+            baglanti.setDoOutput(true);
+            baglanti.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=UTF-8"
+            );
+
+            JSONObject veri = new JSONObject();
+            veri.put("kisi", ad);
+            veri.put("kategori", kategori);
+            veri.put("tutar", tutar);
+            veri.put("taksit", taksit);
+
+            OutputStream output = baglanti.getOutputStream();
+            output.write(
+                    veri.toString().getBytes(StandardCharsets.UTF_8)
+            );
+            output.flush();
+            output.close();
+
+            int kod = baglanti.getResponseCode();
+
+            InputStream input = kod >= 200 && kod < 300
+                    ? baglanti.getInputStream()
+                    : baglanti.getErrorStream();
+
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(
+                            input,
+                            StandardCharsets.UTF_8
+                    )
+            );
+
+            StringBuilder sonuc = new StringBuilder();
+            String satir;
+
+            while ((satir = reader.readLine()) != null) {
+                sonuc.append(satir);
+            }
+
+            reader.close();
+
+            JSONObject json = new JSONObject(sonuc.toString());
+
+            if (kod >= 200 && kod < 300 &&
+                    json.optBoolean("success", false)) {
+
+                return "✅ Borç başarıyla eklendi.\n\n" +
+                        "💳 " + ad + "\n" +
+                        "💰 Tutar: " +
+                        String.format(
+                                Locale.US,
+                                "%,.3f TL",
+                                tutar
+                        ) +
+                        "\n📅 Taksit: " + taksit;
+            }
+
+            return "❌ Borç eklenemedi: " +
+                    json.optString(
+                            "error",
+                            json.optString(
+                                    "mesaj",
+                                    "Bilinmeyen hata."
+                            )
+                    );
+
+        } catch (Exception e) {
+            return "❌ Borç ekleme hatası: " +
+                    e.getClass().getSimpleName() +
+                    " - " + e.getMessage();
+
+        } finally {
+            if (baglanti != null) {
+                baglanti.disconnect();
+            }
+        }
+    }
+
+    private String odemeYapIstek(
+            String borcAdi,
+            double tutar) {
+
+        HttpURLConnection baglanti = null;
+
+        try {
+            URL url = new URL(
+                    API_URL.replace("/api/sohbet", "/api/odeme-yap")
+            );
+
+            baglanti = (HttpURLConnection) url.openConnection();
+            baglanti.setRequestMethod("POST");
+            baglanti.setConnectTimeout(10000);
+            baglanti.setReadTimeout(30000);
+            baglanti.setDoOutput(true);
+            baglanti.setRequestProperty(
+                    "Content-Type",
+                    "application/json; charset=UTF-8"
+            );
+
+            JSONObject veri = new JSONObject();
+            veri.put("kisi", borcAdi);
+            veri.put("tutar", tutar);
+
+            OutputStream output = baglanti.getOutputStream();
+            output.write(
+                    veri.toString().getBytes(StandardCharsets.UTF_8)
+            );
+            output.flush();
+            output.close();
+
+            int kod = baglanti.getResponseCode();
+
+            InputStream input = kod >= 200 && kod < 300
+                    ? baglanti.getInputStream()
+                    : baglanti.getErrorStream();
+
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(
+                            input,
+                            StandardCharsets.UTF_8
+                    )
+            );
+
+            StringBuilder sonuc = new StringBuilder();
+            String satir;
+
+            while ((satir = reader.readLine()) != null) {
+                sonuc.append(satir);
+            }
+
+            reader.close();
+
+            JSONObject json = new JSONObject(sonuc.toString());
+
+            if (kod >= 200 && kod < 300 &&
+                    json.optBoolean("success", false)) {
+
+                return "✅ Ödeme başarıyla işlendi.";
+            }
+
+            return "❌ Ödeme yapılamadı: " +
+                    json.optString(
+                            "error",
+                            json.optString(
+                                    "message",
+                                    "Bilinmeyen hata."
+                            )
+                    );
+
+        } catch (Exception e) {
+            return "❌ Ödeme hatası: " +
+                    e.getClass().getSimpleName() +
+                    " - " + e.getMessage();
+
+        } finally {
+            if (baglanti != null) {
+                baglanti.disconnect();
+            }
+        }
+    }
+
     private String borclarIstek() {
         HttpURLConnection baglanti = null;
 
@@ -595,21 +968,21 @@ public class MainActivity extends Activity {
                                 .append("  Toplam: ")
                                 .append(String.format(
                                         java.util.Locale.US,
-                                        "%,.2f TL",
+                                        "%,.3f TL",
                                         borc.optDouble("toplam_borc", 0)
                                 ))
                                 .append("\n")
                                 .append("  Ödenen: ")
                                 .append(String.format(
                                         java.util.Locale.US,
-                                        "%,.2f TL",
+                                        "%,.3f TL",
                                         borc.optDouble("odenen_tutar", 0)
                                 ))
                                 .append("\n")
                                 .append("  Kalan: ")
                                 .append(String.format(
                                         java.util.Locale.US,
-                                        "%,.2f TL",
+                                        "%,.3f TL",
                                         borc.optDouble("kalan_borc", 0)
                                 ))
                                 .append("\n")
@@ -625,19 +998,19 @@ public class MainActivity extends Activity {
                 metin.append("💰 Genel Toplam: ")
                         .append(String.format(
                                 java.util.Locale.US,
-                                "%,.2f TL",
+                                "%,.3f TL",
                                 rapor.optDouble("toplam_borc", 0)
                         ))
                         .append("\n💵 Ödenen: ")
                         .append(String.format(
                                 java.util.Locale.US,
-                                "%,.2f TL",
+                                "%,.3f TL",
                                 rapor.optDouble("toplam_odenen", 0)
                         ))
                         .append("\n📌 Kalan: ")
                         .append(String.format(
                                 java.util.Locale.US,
-                                "%,.2f TL",
+                                "%,.3f TL",
                                 rapor.optDouble("toplam_kalan", 0)
                         ));
 
