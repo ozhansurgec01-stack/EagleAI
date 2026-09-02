@@ -171,7 +171,7 @@ public class MainActivity extends Activity {
         // 📎 Dosya butonu
           // 📎 DOSYA BUTONU
           Button dosya = new Button(this);
-          dosya.setText("📎");
+          dosya.setText("+");
           dosya.setTextSize(24);
           dosya.setTextColor(Color.WHITE);
           dosya.setAllCaps(false);
@@ -237,11 +237,12 @@ public class MainActivity extends Activity {
 
         // ➤ Gönder butonu
         Button gonder = new Button(this);
-        gonder.setText("➤");
+        gonder.setText("▲");
         gonder.setTextSize(22);
         gonder.setTextColor(Color.WHITE);
         gonder.setAllCaps(false);
         gonder.setGravity(Gravity.CENTER);
+        gonder.setPadding(0, 0, 0, 0);
         gonder.setBackgroundColor(Color.rgb(10, 132, 255));
 
         LinearLayout.LayoutParams gonderLp =
@@ -1041,15 +1042,78 @@ public class MainActivity extends Activity {
     }
 
     private void dosyaSec() {
+        String[] secenekler = {"📷 Kamera", "🖼️ Galeri", "📁 Dosyalar"};
+
+        new AlertDialog.Builder(this)
+                .setTitle("Ekle")
+                .setItems(secenekler, (dialog, which) -> {
+                    if (which == 0) {
+                        kameraAc();
+                    } else if (which == 1) {
+                        galeriAc();
+                    } else {
+                        dosyalardanSec();
+                    }
+                })
+                .show();
+    }
+
+    private void galeriAc() {
+        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("image/*");
+        startActivityForResult(intent, 1001);
+    }
+
+    private void dosyalardanSec() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
         startActivityForResult(intent, 1001);
     }
 
+    private void kameraAc() {
+        Intent intent = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+        if (intent.resolveActivity(getPackageManager()) != null) {
+            startActivityForResult(intent, 1002);
+        } else {
+            Toast.makeText(this, "Kamera bulunamadı", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == 1002) {
+            if (resultCode == RESULT_OK && data != null && data.getExtras() != null) {
+                android.graphics.Bitmap foto =
+                        (android.graphics.Bitmap) data.getExtras().get("data");
+
+                if (foto != null) {
+                    ImageView onizleme = new ImageView(this);
+                    onizleme.setImageBitmap(foto);
+                    onizleme.setAdjustViewBounds(true);
+                    onizleme.setScaleType(ImageView.ScaleType.CENTER_CROP);
+
+                    LinearLayout.LayoutParams resimLp =
+                            new LinearLayout.LayoutParams(
+                                    LinearLayout.LayoutParams.MATCH_PARENT,
+                                    420
+                            );
+                    resimLp.setMargins(18, 10, 18, 10);
+
+                    mesajAlani.addView(onizleme, resimLp);
+
+                    kaydirma.post(() ->
+                            kaydirma.fullScroll(View.FOCUS_DOWN)
+                    );
+
+                    Toast.makeText(this, "📷 Fotoğraf eklendi", Toast.LENGTH_SHORT).show();
+                }
+            }
+            return;
+        }
 
         if (requestCode == 2001) {
             if (resultCode == RESULT_OK && data != null) {
