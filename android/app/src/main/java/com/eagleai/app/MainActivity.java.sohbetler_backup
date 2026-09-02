@@ -28,7 +28,6 @@ import android.content.SharedPreferences;
 import android.widget.PopupMenu;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -93,7 +92,7 @@ public class MainActivity extends Activity {
 
         LinearLayout ana = new LinearLayout(this);
         ana.setOrientation(LinearLayout.VERTICAL);
-        ana.setBackgroundColor(Color.rgb(230, 230, 232));
+        ana.setBackgroundColor(Color.rgb(245, 245, 245));
 
           // ===== ÜST BAR =====
           LinearLayout ustBar = new LinearLayout(this);
@@ -264,7 +263,6 @@ public class MainActivity extends Activity {
             popup.getMenu().add("🧠 Hafıza");
             popup.getMenu().add("❓ Yardım");
             popup.getMenu().add("🆕 Yeni");
-              popup.getMenu().add("🕘 Son Sohbetler");
             popup.getMenu().add("🗑️ Temizle");
             popup.getMenu().add("🔊 Ses Seç");
             popup.getMenu().add(sesAcik ? "🔇 Sesi Kapat" : "🔊 Sesi Aç");
@@ -301,12 +299,8 @@ public class MainActivity extends Activity {
                             "• Termux komutu iste\n\n" +
                             "Eagle-AI mümkün olduğunca doğrudan çalışabilir çözüm üretir."
                     );
-                } else if (secim.contains("Son Sohbetler")) {
-                      startActivity(new Intent(this, SohbetlerActivity.class));
-                  } else if (secim.contains("Yeni")) {
-                      yeniSohbet();
-                  } else if (secim.contains("Temizle")) {
-                      gecmisiTemizle();
+                } else if (secim.contains("Yeni") || secim.contains("Temizle")) {
+                    gecmisiTemizle();
                 } else if (secim.contains("Ses Seç")) {
                     sesSecimMenusuGoster();
                 } else if (secim.contains("Sesi Kapat") || secim.contains("Sesi Aç")) {
@@ -352,7 +346,6 @@ public class MainActivity extends Activity {
 
         mesajAlani.addView(mesajOlustur("Sen: " + mesaj));
         gecmiseKaydet("Sen: " + mesaj);
-          sohbeteMesajEkle("Sen: " + mesaj);
         mesajKutusu.setText("");
 
         final LinearLayout durum = mesajOlustur(
@@ -384,7 +377,6 @@ public class MainActivity extends Activity {
                         mesajOlustur("🦅\n\n" + cevapFinal)
                 );
                 gecmiseKaydet("🦅\n\n" + cevapFinal);
-                  sohbeteMesajEkle("🦅\n\n" + cevapFinal);
                 metniSesliOku(cevapFinal);
 
                 kaydirma.post(() ->
@@ -671,10 +663,6 @@ public class MainActivity extends Activity {
         );
     }
 
-    private static final String SOHBET_PREF = "eagle_sohbetler";
-    private static final String SOHBET_KEY = "sohbetler";
-    private static String aktifSohbetId = null;
-
     private static final String GECMIS_PREF = "eagle_gecmis";
     private static final String GECMIS_KEY = "mesajlar";
 
@@ -715,266 +703,6 @@ public class MainActivity extends Activity {
         ));
     }
 
-
-      private void sonSohbetleriGoster() {
-          try {
-              SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
-              String mevcut = sp.getString(SOHBET_KEY, "[]");
-              JSONArray sohbetler = new JSONArray(mevcut);
-
-              LinearLayout liste = new LinearLayout(this);
-              liste.setOrientation(LinearLayout.VERTICAL);
-              int padding = 24;
-              liste.setPadding(padding, padding, padding, padding);
-
-              if (sohbetler.length() == 0) {
-                  TextView bos = new TextView(this);
-                  bos.setText("🕘 Henüz kayıtlı sohbet yok.");
-                  bos.setTextSize(17);
-                  bos.setPadding(12, 20, 12, 20);
-                  liste.addView(bos);
-              } else {
-                  for (int i = 0; i < sohbetler.length(); i++) {
-                      JSONObject sohbet = sohbetler.getJSONObject(i);
-
-                      String id = sohbet.optString("id", "");
-                      String baslik = sohbet.optString("baslik", "Yeni Sohbet");
-                      String tarih = sohbet.optString("tarih", "");
-
-                      TextView satir = new TextView(this);
-                      satir.setText("💬 " + baslik + "\n🕒 " + tarih);
-                      satir.setTextSize(16);
-                      satir.setPadding(16, 20, 16, 20);
-
-                      satir.setOnClickListener(v -> sohbetYukle(id));
-
-                      satir.setOnLongClickListener(v -> {
-                          sohbetSilOnayi(id, baslik);
-                          return true;
-                      });
-
-                      liste.addView(satir);
-
-                      View ayirici = new View(this);
-                      ayirici.setLayoutParams(new LinearLayout.LayoutParams(
-                              LinearLayout.LayoutParams.MATCH_PARENT, 1
-                      ));
-                      liste.addView(ayirici);
-                  }
-              }
-
-              AlertDialog dialog = new AlertDialog.Builder(this)
-                      .setTitle("🕘 Son Sohbetler")
-                      .setView(liste)
-                      .setPositiveButton("Kapat", null)
-                      .create();
-
-              dialog.show();
-
-          } catch (Exception e) {
-              Toast.makeText(
-                      this,
-                      "Sohbetler yüklenemedi.",
-                      Toast.LENGTH_SHORT
-              ).show();
-          }
-      }
-
-              private void yeniSohbet() {
-            aktifSohbetId = null;
-            mesajAlani.removeAllViews();
-
-            mesajAlani.addView(
-                    mesajOlustur(
-                            "🦅 Özhan, hoş geldin!\n\n" +
-                            "Nasıl yardımcı olabilirim?"
-                    )
-            );
-        }
-
-private void sohbetYukle(String id) {
-        try {
-            SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
-            String mevcut = sp.getString(SOHBET_KEY, "[]");
-            JSONArray sohbetler = new JSONArray(mevcut);
-
-            for (int i = 0; i < sohbetler.length(); i++) {
-                JSONObject sohbet = sohbetler.getJSONObject(i);
-
-                if (id.equals(sohbet.optString("id", ""))) {
-                    aktifSohbetId = id;
-
-                    mesajAlani.removeAllViews();
-
-                    JSONArray mesajlar = sohbet.optJSONArray("mesajlar");
-
-                    if (mesajlar != null) {
-                        for (int j = 0; j < mesajlar.length(); j++) {
-                            mesajAlani.addView(
-                                    mesajOlustur(mesajlar.getString(j))
-                            );
-                        }
-                    }
-
-                    kaydirma.post(() ->
-                            kaydirma.fullScroll(View.FOCUS_DOWN)
-                    );
-
-                    Toast.makeText(
-                            this,
-                            "💬 Sohbet açıldı",
-                            Toast.LENGTH_SHORT
-                    ).show();
-
-                    break;
-                }
-            }
-
-        } catch (Exception e) {
-            Toast.makeText(
-                    this,
-                    "Sohbet açılamadı.",
-                    Toast.LENGTH_SHORT
-            ).show();
-        }
-    }
-
-    private void sohbetSilOnayi(String id, String baslik) {
-          new AlertDialog.Builder(this)
-                  .setTitle("🗑️ Sohbeti Sil")
-                  .setMessage(
-                          "Bu sohbet silinsin mi?\n\n" +
-                          baslik
-                  )
-                  .setNegativeButton("Vazgeç", null)
-                  .setPositiveButton("Sil", (dialog, which) -> sohbetSil(id))
-                  .show();
-      }
-
-      private void sohbetSil(String id) {
-          try {
-              SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
-              String mevcut = sp.getString(SOHBET_KEY, "[]");
-              JSONArray eski = new JSONArray(mevcut);
-              JSONArray yeni = new JSONArray();
-
-              for (int i = 0; i < eski.length(); i++) {
-                  JSONObject sohbet = eski.getJSONObject(i);
-
-                  if (!id.equals(sohbet.optString("id", ""))) {
-                      yeni.put(sohbet);
-                  }
-              }
-
-              sp.edit()
-                      .putString(SOHBET_KEY, yeni.toString())
-                      .apply();
-
-              if (id.equals(aktifSohbetId)) {
-                  aktifSohbetId = null;
-              }
-
-              Toast.makeText(
-                      this,
-                      "🗑️ Sohbet silindi",
-                      Toast.LENGTH_SHORT
-              ).show();
-
-          } catch (Exception e) {
-              Toast.makeText(
-                      this,
-                      "Sohbet silinemedi.",
-                      Toast.LENGTH_SHORT
-              ).show();
-          }
-      }
-
-    private void sohbeteMesajEkle(String metin) {
-        try {
-            SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
-            String mevcut = sp.getString(SOHBET_KEY, "[]");
-            JSONArray sohbetler = new JSONArray(mevcut);
-
-            if (aktifSohbetId == null) {
-                String id = String.valueOf(System.currentTimeMillis());
-
-                String baslik = metin;
-                if (baslik.startsWith("Sen: ")) {
-                    baslik = baslik.substring(5).trim();
-                }
-
-                if (baslik.length() > 45) {
-                    baslik = baslik.substring(0, 45) + "...";
-                }
-
-                JSONObject sohbet = new JSONObject();
-                sohbet.put("id", id);
-                sohbet.put("baslik", baslik);
-                sohbet.put(
-                        "tarih",
-                        new SimpleDateFormat(
-                                "dd.MM.yyyy HH:mm",
-                                java.util.Locale.getDefault()
-                        ).format(new Date())
-                );
-
-                JSONArray mesajlar = new JSONArray();
-                mesajlar.put(metin);
-                sohbet.put("mesajlar", mesajlar);
-
-                JSONArray yeniSohbetler = new JSONArray();
-                yeniSohbetler.put(sohbet);
-
-                for (int i = 0; i < sohbetler.length(); i++) {
-                    yeniSohbetler.put(sohbetler.getJSONObject(i));
-                }
-
-                sp.edit()
-                        .putString(SOHBET_KEY, yeniSohbetler.toString())
-                        .apply();
-
-                aktifSohbetId = id;
-
-            } else {
-                for (int i = 0; i < sohbetler.length(); i++) {
-                    JSONObject sohbet = sohbetler.getJSONObject(i);
-
-                    if (aktifSohbetId.equals(sohbet.optString("id", ""))) {
-                        JSONArray mesajlar = sohbet.optJSONArray("mesajlar");
-
-                        if (mesajlar == null) {
-                            mesajlar = new JSONArray();
-                            sohbet.put("mesajlar", mesajlar);
-                        }
-
-                        mesajlar.put(metin);
-
-                        sohbet.put(
-                                "tarih",
-                                new SimpleDateFormat(
-                                        "dd.MM.yyyy HH:mm",
-                                        java.util.Locale.getDefault()
-                                ).format(new Date())
-                        );
-
-                        break;
-                    }
-                }
-
-                sp.edit()
-                        .putString(SOHBET_KEY, sohbetler.toString())
-                        .apply();
-            }
-
-        } catch (Exception e) {
-            Toast.makeText(
-                    this,
-                    "Sohbet kaydedilemedi.",
-                    Toast.LENGTH_SHORT
-            ).show();
-        }
-    }
-
     private CharSequence renklendirKod(String kod) {
         SpannableStringBuilder styled = new SpannableStringBuilder(kod);
         Pattern tokenPattern = Pattern.compile(
@@ -1002,74 +730,10 @@ private void sohbetYukle(String id) {
     private TextView normalMetinOlustur(String metin) {
         TextView tv = new TextView(this);
         tv.setText(metin.trim());
-        tv.setTextSize(16);
+        tv.setTextSize(17);
         tv.setTextColor(Color.rgb(25, 25, 25));
-        tv.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
-        tv.setLineSpacing(2f, 1.05f);
         tv.setTextIsSelectable(true);
         return tv;
-    }
-
-    private void uzunMetinOlustur(LinearLayout kutu, String metin) {
-        String temiz = metin.trim();
-
-        if (temiz.length() <= 1200) {
-            kutu.addView(normalMetinOlustur(temiz));
-            return;
-        }
-
-        final int limit = 500;
-        int kes = temiz.lastIndexOf(" ", limit);
-
-        if (kes < 300) {
-            kes = limit;
-        }
-
-        final String kisaMetin = temiz.substring(0, kes).trim();
-        final String tamMetin = temiz;
-
-        LinearLayout alan = new LinearLayout(this);
-        alan.setOrientation(LinearLayout.VERTICAL);
-
-        TextView metinTv = normalMetinOlustur(kisaMetin);
-
-        TextView devamBtn = new TextView(this);
-        devamBtn.setText("Daha fazlasını göster");
-        devamBtn.setTextSize(14);
-        devamBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        devamBtn.setTextColor(Color.rgb(0, 122, 255));
-        devamBtn.setGravity(Gravity.CENTER);
-        devamBtn.setPadding(18, 12, 18, 12);
-
-        GradientDrawable kenarlik = new GradientDrawable();
-        kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 122, 255));
-        kenarlik.setCornerRadius(24);
-        devamBtn.setBackground(kenarlik);
-
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        btnLp.gravity = Gravity.CENTER_HORIZONTAL;
-        btnLp.setMargins(0, 12, 0, 4);
-        devamBtn.setLayoutParams(btnLp);
-
-        devamBtn.setOnClickListener(v -> {
-            boolean acik = "Daha azını göster".contentEquals(devamBtn.getText());
-
-            if (!acik) {
-                metinTv.setText(tamMetin);
-                devamBtn.setText("Daha azını göster");
-            } else {
-                metinTv.setText(kisaMetin);
-                devamBtn.setText("Daha fazlasını göster");
-            }
-        });
-
-        alan.addView(metinTv);
-        alan.addView(devamBtn);
-        kutu.addView(alan);
     }
 
     private LinearLayout kodKutusuOlustur(String kod) {
@@ -1141,7 +805,7 @@ private void sohbetYukle(String id) {
 
         TextView tv = new TextView(this);
         tv.setText(renklendirKod(kodTrim), TextView.BufferType.SPANNABLE);
-        tv.setTextSize(13);
+        tv.setTextSize(15);
         tv.setTypeface(Typeface.MONOSPACE);
         tv.setTextIsSelectable(true);
 
@@ -1164,7 +828,7 @@ private void sohbetYukle(String id) {
             if (start > sonBitis) {
                 String normalMetin = metin.substring(sonBitis, start);
                 if (!normalMetin.trim().isEmpty()) {
-                    uzunMetinOlustur(kutu, normalMetin);
+                    kutu.addView(normalMetinOlustur(normalMetin));
                 }
             }
 
@@ -1177,98 +841,9 @@ private void sohbetYukle(String id) {
         if (sonBitis < metin.length()) {
             String kalan = metin.substring(sonBitis);
             if (!kalan.trim().isEmpty()) {
-                uzunMetinOlustur(kutu, kalan);
+                kutu.addView(normalMetinOlustur(kalan));
             }
         }
-    }
-
-    private void icerikleriGuvenliEkle(LinearLayout kutu, String metin) {
-        final int esik = 1500;
-        final int onizlemeHedefi = 600;
-
-        if (metin.length() <= esik) {
-            mesajIcerigiEkle(kutu, metin);
-            return;
-        }
-
-        int kes = metin.lastIndexOf(" ", onizlemeHedefi);
-        if (kes < 300) {
-            kes = onizlemeHedefi;
-        }
-
-        int fenceSayisi = 0;
-        int aranan = 0;
-        while (true) {
-            int bulunan = metin.indexOf("```", aranan);
-            if (bulunan == -1 || bulunan >= kes) {
-                break;
-            }
-            fenceSayisi++;
-            aranan = bulunan + 3;
-        }
-
-        if (fenceSayisi % 2 != 0) {
-            int kapanis = metin.indexOf("```", kes);
-            if (kapanis != -1) {
-                kes = kapanis + 3;
-            } else {
-                kes = metin.length();
-            }
-        }
-
-        final int kesFinal = Math.min(kes, metin.length());
-        final String kisaMetin = metin.substring(0, kesFinal).trim();
-        final String tamMetin = metin;
-
-        if (kesFinal >= metin.length()) {
-            mesajIcerigiEkle(kutu, metin);
-            return;
-        }
-
-        final LinearLayout alan = new LinearLayout(this);
-        alan.setOrientation(LinearLayout.VERTICAL);
-
-        final TextView devamBtn = new TextView(this);
-        devamBtn.setText("Daha fazlasını göster");
-        devamBtn.setTextSize(14);
-        devamBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        devamBtn.setTextColor(Color.rgb(0, 122, 255));
-        devamBtn.setGravity(Gravity.CENTER);
-        devamBtn.setPadding(18, 14, 18, 14);
-
-        GradientDrawable kenarlik = new GradientDrawable();
-        kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 122, 255));
-        kenarlik.setCornerRadius(24);
-        devamBtn.setBackground(kenarlik);
-
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        btnLp.gravity = Gravity.CENTER_HORIZONTAL;
-        btnLp.setMargins(0, 12, 0, 4);
-        devamBtn.setLayoutParams(btnLp);
-
-        mesajIcerigiEkle(alan, kisaMetin);
-        alan.addView(devamBtn);
-
-        devamBtn.setOnClickListener(v -> {
-            boolean acik = "Daha azını göster".contentEquals(devamBtn.getText());
-            alan.removeAllViews();
-
-            if (!acik) {
-                mesajIcerigiEkle(alan, tamMetin);
-                alan.addView(devamBtn);
-                devamBtn.setText("Daha azını göster");
-            } else {
-                mesajIcerigiEkle(alan, kisaMetin);
-                alan.addView(devamBtn);
-                devamBtn.setText("Daha fazlasını göster");
-            }
-        });
-
-        kutu.addView(alan);
     }
 
     private LinearLayout mesajOlustur(String metin) {
@@ -1276,14 +851,7 @@ private void sohbetYukle(String id) {
         kutu.setOrientation(LinearLayout.VERTICAL);
         kutu.setPadding(18, 18, 18, 18);
 
-        if (metin.startsWith("Sen: ")) {
-            kutu.setBackgroundResource(R.drawable.kullanici_mesaji_cercevesi);
-        } else {
-            kutu.setBackgroundResource(R.drawable.eagle_mesaji_cercevesi);
-        }
-        kutu.setElevation(6f);
-
-        icerikleriGuvenliEkle(kutu, metin);
+        mesajIcerigiEkle(kutu, metin);
 
         TextView saat = new TextView(this);
         saat.setText(
@@ -1306,73 +874,6 @@ private void sohbetYukle(String id) {
         kutu.setLayoutParams(lp);
 
         return kutu;
-    }
-
-    private void uzunCevapOlustur(LinearLayout kutu, String metin) {
-        final int limit = 500;
-
-        int kes = metin.lastIndexOf(" ", limit);
-
-        if (kes < 300) {
-            kes = limit;
-        }
-
-        final String kisaMetin = metin.substring(0, kes).trim();
-        final String tamMetin = metin;
-
-        LinearLayout alan = new LinearLayout(this);
-        alan.setOrientation(LinearLayout.VERTICAL);
-
-        TextView metinTv = normalMetinOlustur(kisaMetin);
-
-        TextView devamBtn = new TextView(this);
-        devamBtn.setText("Daha fazlasını göster");
-        devamBtn.setTextSize(14);
-        devamBtn.setTypeface(
-                Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        );
-        devamBtn.setTextColor(Color.rgb(0, 122, 255));
-        devamBtn.setGravity(Gravity.CENTER);
-        devamBtn.setPadding(18, 12, 18, 12);
-
-        GradientDrawable kenarlik = new GradientDrawable();
-        kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 122, 255));
-        kenarlik.setCornerRadius(24);
-        devamBtn.setBackground(kenarlik);
-
-        LinearLayout.LayoutParams btnLp =
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                );
-
-        btnLp.gravity = Gravity.CENTER_HORIZONTAL;
-        btnLp.setMargins(0, 12, 0, 4);
-        devamBtn.setLayoutParams(btnLp);
-
-        devamBtn.setOnClickListener(v -> {
-            boolean acik =
-                    "Daha azını göster".contentEquals(devamBtn.getText());
-
-            alan.removeAllViews();
-
-            if (!acik) {
-                // Açıldığında mevcut kod blokları da normal şekilde çizilecek.
-                mesajIcerigiEkle(alan, tamMetin);
-                alan.addView(devamBtn);
-                devamBtn.setText("Daha azını göster");
-            } else {
-                // Tekrar kısa önizlemeye dön.
-                alan.addView(normalMetinOlustur(kisaMetin));
-                alan.addView(devamBtn);
-                devamBtn.setText("Daha fazlasını göster");
-            }
-        });
-
-        alan.addView(metinTv);
-        alan.addView(devamBtn);
-        kutu.addView(alan);
     }
 
     private void sesiMetneCevir() {
@@ -1526,14 +1027,7 @@ private void sohbetYukle(String id) {
 
         String temizMetin = metin.replaceAll("```[a-zA-Z]*\\n[\\s\\S]*?```", " ");
         temizMetin = temizMetin.replaceAll("[\\*#_>`]", "");
-
-        // Emoji ve sembolleri seslendirmeden çıkar.
-        temizMetin = temizMetin.replaceAll(
-                "[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[\\u2600-\\u27BF]|[\\uFE00-\\uFE0F]",
-                " "
-        );
-
-        temizMetin = temizMetin.replaceAll("\\s{2,}", " ").trim();
+        temizMetin = temizMetin.trim();
 
         if (temizMetin.isEmpty()) {
             return;

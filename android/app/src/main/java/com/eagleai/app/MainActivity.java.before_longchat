@@ -93,7 +93,7 @@ public class MainActivity extends Activity {
 
         LinearLayout ana = new LinearLayout(this);
         ana.setOrientation(LinearLayout.VERTICAL);
-        ana.setBackgroundColor(Color.rgb(230, 230, 232));
+        ana.setBackgroundColor(Color.rgb(245, 245, 245));
 
           // ===== ÜST BAR =====
           LinearLayout ustBar = new LinearLayout(this);
@@ -1002,7 +1002,7 @@ private void sohbetYukle(String id) {
     private TextView normalMetinOlustur(String metin) {
         TextView tv = new TextView(this);
         tv.setText(metin.trim());
-        tv.setTextSize(16);
+        tv.setTextSize(17);
         tv.setTextColor(Color.rgb(25, 25, 25));
         tv.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
         tv.setLineSpacing(2f, 1.05f);
@@ -1141,7 +1141,7 @@ private void sohbetYukle(String id) {
 
         TextView tv = new TextView(this);
         tv.setText(renklendirKod(kodTrim), TextView.BufferType.SPANNABLE);
-        tv.setTextSize(13);
+        tv.setTextSize(15);
         tv.setTypeface(Typeface.MONOSPACE);
         tv.setTextIsSelectable(true);
 
@@ -1182,108 +1182,12 @@ private void sohbetYukle(String id) {
         }
     }
 
-    private void icerikleriGuvenliEkle(LinearLayout kutu, String metin) {
-        final int esik = 1500;
-        final int onizlemeHedefi = 600;
-
-        if (metin.length() <= esik) {
-            mesajIcerigiEkle(kutu, metin);
-            return;
-        }
-
-        int kes = metin.lastIndexOf(" ", onizlemeHedefi);
-        if (kes < 300) {
-            kes = onizlemeHedefi;
-        }
-
-        int fenceSayisi = 0;
-        int aranan = 0;
-        while (true) {
-            int bulunan = metin.indexOf("```", aranan);
-            if (bulunan == -1 || bulunan >= kes) {
-                break;
-            }
-            fenceSayisi++;
-            aranan = bulunan + 3;
-        }
-
-        if (fenceSayisi % 2 != 0) {
-            int kapanis = metin.indexOf("```", kes);
-            if (kapanis != -1) {
-                kes = kapanis + 3;
-            } else {
-                kes = metin.length();
-            }
-        }
-
-        final int kesFinal = Math.min(kes, metin.length());
-        final String kisaMetin = metin.substring(0, kesFinal).trim();
-        final String tamMetin = metin;
-
-        if (kesFinal >= metin.length()) {
-            mesajIcerigiEkle(kutu, metin);
-            return;
-        }
-
-        final LinearLayout alan = new LinearLayout(this);
-        alan.setOrientation(LinearLayout.VERTICAL);
-
-        final TextView devamBtn = new TextView(this);
-        devamBtn.setText("Daha fazlasını göster");
-        devamBtn.setTextSize(14);
-        devamBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        devamBtn.setTextColor(Color.rgb(0, 122, 255));
-        devamBtn.setGravity(Gravity.CENTER);
-        devamBtn.setPadding(18, 14, 18, 14);
-
-        GradientDrawable kenarlik = new GradientDrawable();
-        kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 122, 255));
-        kenarlik.setCornerRadius(24);
-        devamBtn.setBackground(kenarlik);
-
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-        );
-        btnLp.gravity = Gravity.CENTER_HORIZONTAL;
-        btnLp.setMargins(0, 12, 0, 4);
-        devamBtn.setLayoutParams(btnLp);
-
-        mesajIcerigiEkle(alan, kisaMetin);
-        alan.addView(devamBtn);
-
-        devamBtn.setOnClickListener(v -> {
-            boolean acik = "Daha azını göster".contentEquals(devamBtn.getText());
-            alan.removeAllViews();
-
-            if (!acik) {
-                mesajIcerigiEkle(alan, tamMetin);
-                alan.addView(devamBtn);
-                devamBtn.setText("Daha azını göster");
-            } else {
-                mesajIcerigiEkle(alan, kisaMetin);
-                alan.addView(devamBtn);
-                devamBtn.setText("Daha fazlasını göster");
-            }
-        });
-
-        kutu.addView(alan);
-    }
-
     private LinearLayout mesajOlustur(String metin) {
         LinearLayout kutu = new LinearLayout(this);
         kutu.setOrientation(LinearLayout.VERTICAL);
         kutu.setPadding(18, 18, 18, 18);
 
-        if (metin.startsWith("Sen: ")) {
-            kutu.setBackgroundResource(R.drawable.kullanici_mesaji_cercevesi);
-        } else {
-            kutu.setBackgroundResource(R.drawable.eagle_mesaji_cercevesi);
-        }
-        kutu.setElevation(6f);
-
-        icerikleriGuvenliEkle(kutu, metin);
+        mesajIcerigiEkle(kutu, metin);
 
         TextView saat = new TextView(this);
         saat.setText(
@@ -1306,73 +1210,6 @@ private void sohbetYukle(String id) {
         kutu.setLayoutParams(lp);
 
         return kutu;
-    }
-
-    private void uzunCevapOlustur(LinearLayout kutu, String metin) {
-        final int limit = 500;
-
-        int kes = metin.lastIndexOf(" ", limit);
-
-        if (kes < 300) {
-            kes = limit;
-        }
-
-        final String kisaMetin = metin.substring(0, kes).trim();
-        final String tamMetin = metin;
-
-        LinearLayout alan = new LinearLayout(this);
-        alan.setOrientation(LinearLayout.VERTICAL);
-
-        TextView metinTv = normalMetinOlustur(kisaMetin);
-
-        TextView devamBtn = new TextView(this);
-        devamBtn.setText("Daha fazlasını göster");
-        devamBtn.setTextSize(14);
-        devamBtn.setTypeface(
-                Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        );
-        devamBtn.setTextColor(Color.rgb(0, 122, 255));
-        devamBtn.setGravity(Gravity.CENTER);
-        devamBtn.setPadding(18, 12, 18, 12);
-
-        GradientDrawable kenarlik = new GradientDrawable();
-        kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 122, 255));
-        kenarlik.setCornerRadius(24);
-        devamBtn.setBackground(kenarlik);
-
-        LinearLayout.LayoutParams btnLp =
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                );
-
-        btnLp.gravity = Gravity.CENTER_HORIZONTAL;
-        btnLp.setMargins(0, 12, 0, 4);
-        devamBtn.setLayoutParams(btnLp);
-
-        devamBtn.setOnClickListener(v -> {
-            boolean acik =
-                    "Daha azını göster".contentEquals(devamBtn.getText());
-
-            alan.removeAllViews();
-
-            if (!acik) {
-                // Açıldığında mevcut kod blokları da normal şekilde çizilecek.
-                mesajIcerigiEkle(alan, tamMetin);
-                alan.addView(devamBtn);
-                devamBtn.setText("Daha azını göster");
-            } else {
-                // Tekrar kısa önizlemeye dön.
-                alan.addView(normalMetinOlustur(kisaMetin));
-                alan.addView(devamBtn);
-                devamBtn.setText("Daha fazlasını göster");
-            }
-        });
-
-        alan.addView(metinTv);
-        alan.addView(devamBtn);
-        kutu.addView(alan);
     }
 
     private void sesiMetneCevir() {
