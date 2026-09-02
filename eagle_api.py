@@ -695,6 +695,184 @@ def premier_lig_getir(mesaj=""):
         )
         return []
 
+
+def super_lig_getir(mesaj=""):
+    """TFF resmi fikstüründen güncel Süper Lig maçlarını getirir."""
+
+    try:
+        from datetime import datetime
+
+        url = "https://www.tff.org/default.aspx?pageID=198"
+
+        cevap = requests.get(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Linux; Android 15) "
+                    "AppleWebKit/537.36 "
+                    "Chrome/140 Mobile Safari/537.36"
+                ),
+                "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
+            },
+            timeout=15
+        )
+
+        print(
+            f"🇹🇷 TFF Süper Lig HTTP {cevap.status_code}",
+            flush=True
+        )
+
+        if cevap.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(cevap.text, "html.parser")
+        metin = soup.get_text(" ", strip=True)
+
+        desen = re.compile(
+            r'(\d{2}\.\d{2}\.\d{4})\s+'
+            r'(\d{1,2}:\d{2})\s+'
+            r'(.+?)\s+-\s+'
+            r'(.+?)\s+Detaylar',
+            re.IGNORECASE
+        )
+
+        maclar = []
+
+        for eslesme in desen.finditer(metin):
+            tarih = eslesme.group(1).strip()
+            saat = eslesme.group(2).strip()
+            ev = eslesme.group(3).strip()
+            deplasman = eslesme.group(4).strip()
+
+            try:
+                dt = datetime.strptime(
+                    f"{tarih} {saat}",
+                    "%d.%m.%Y %H:%M"
+                )
+            except Exception:
+                continue
+
+            maclar.append({
+                "ev": ev,
+                "deplasman": deplasman,
+                "tarih": tarih,
+                "saat": saat,
+                "_tarih": dt
+            })
+
+        if not maclar:
+            print(
+                "⚠️ TFF Süper Lig fikstür maçları bulunamadı.",
+                flush=True
+            )
+            return []
+
+        benzersiz = {}
+
+        for mac in maclar:
+            anahtar = (
+                mac["tarih"],
+                mac["saat"],
+                mac["ev"],
+                mac["deplasman"]
+            )
+            benzersiz[anahtar] = mac
+
+        maclar = list(benzersiz.values())
+        maclar.sort(key=lambda x: x["_tarih"])
+
+        mesaj_kucuk = (
+            (mesaj or "")
+            .casefold()
+            .replace("\u0307", "")
+        )
+
+        takim_anahtarlari = {
+            "galatasaray": ["galatasaray"],
+            "fenerbahçe": ["fenerbahçe", "fenerbahce"],
+            "beşiktaş": ["beşiktaş", "besiktas"],
+            "trabzonspor": ["trabzonspor"],
+            "başakşehir": ["başakşehir", "basaksehir"],
+            "samsunspor": ["samsunspor"],
+            "göztepe": ["göztepe", "goztepe"],
+            "kocaelispor": ["kocaelispor"],
+            "çaykur rizespor": ["çaykur rizespor", "caykur rizespor"],
+            "alanyaspor": ["alanyaspor"],
+            "gaziantep": ["gaziantep"],
+            "kasımpaşa": ["kasımpaşa", "kasimpasa"],
+            "eyüpspor": ["eyüpspor", "eyupspor"],
+            "gençlerbirliği": ["gençlerbirliği", "genclerbirligi"],
+            "konyaspor": ["konyaspor"],
+            "erzurumspor": ["erzurumspor"],
+            "amed": ["amed"],
+            "çorum": ["çorum", "corum"]
+        }
+
+        istenen_anahtarlar = []
+
+        for anahtarlar in takim_anahtarlari.values():
+            if any(k in mesaj_kucuk for k in anahtarlar):
+                istenen_anahtarlar.extend(anahtarlar)
+
+        if istenen_anahtarlar:
+            maclar = [
+                mac for mac in maclar
+                if any(
+                    anahtar in (
+                        f"{mac['ev']} {mac['deplasman']}"
+                    ).casefold().replace("\u0307", "")
+                    for anahtar in istenen_anahtarlar
+                )
+            ]
+
+        bugun = datetime.now().date()
+
+        bugunun_maclari = [
+            mac for mac in maclar
+            if mac["_tarih"].date() == bugun
+        ]
+
+        if bugunun_maclari:
+            secilecek = bugunun_maclari[:8]
+        else:
+            gelecek = [
+                mac for mac in maclar
+                if mac["_tarih"].date() > bugun
+            ]
+            secilecek = gelecek[:8]
+
+        sonuc = []
+
+        for mac in secilecek:
+            sonuc.append({
+                "title": (
+                    f"Süper Lig: "
+                    f"{mac['ev']} - {mac['deplasman']}"
+                ),
+                "url": url,
+                "snippet": (
+                    f"{mac['tarih']} {mac['saat']} Türkiye saati | "
+                    f"{mac['ev']} - {mac['deplasman']} | "
+                    f"{'BUGÜN' if mac['_tarih'].date() == bugun else 'GELECEK MAÇ'} | "
+                    f"TFF resmi fikstürü."
+                )
+            })
+
+        print(
+            f"✅ TFF Süper Lig kullanılabilir maç: {len(sonuc)}",
+            flush=True
+        )
+
+        return sonuc
+
+    except Exception as e:
+        print(
+            f"⚠️ TFF Süper Lig hatası: {e}",
+            flush=True
+        )
+        return []
+
+
 def tvf_voleybol_getir():
     """TVF resmi fikstüründen Türkiye'nin güncel ve yaklaşan maçlarını çeker."""
     try:
@@ -1187,7 +1365,16 @@ def sohbet():
             if ingiltere_mi and not web_verisi:
                 web_verisi = premier_lig_getir(mesaj)
 
-            # TVF / resmi kaynak sonuç vermezse mevcut web araması
+            # 🇹🇷 Türkiye / Süper Lig için resmi TFF fikstürü
+            super_lig_mi = any(k in mesaj_spor for k in [
+                "süper lig",
+                "super lig"
+            ])
+
+            if super_lig_mi and not web_verisi:
+                web_verisi = super_lig_getir(mesaj)
+
+            # Resmi kaynak sonuç vermezse mevcut web araması
             if not web_verisi:
                 arama_sorgusu = spor_arama_sorgusu(mesaj)
                 web_verisi = web_arastir(
