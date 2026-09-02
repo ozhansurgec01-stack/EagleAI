@@ -6,6 +6,8 @@ from urllib.parse import quote, urlparse, parse_qs, unquote
 from bs4 import BeautifulSoup
 import re
 import json
+import ast
+import operator
 from pathlib import Path
 
 app = Flask(__name__)
@@ -19,6 +21,196 @@ GEMINI_URL = (
 )
 
 MEMORY_FILE = Path("eagle_ai_memory.json")
+
+# ===== GÜVENLİ HESAPLAMA MOTORU =====
+_GUVENLI_ISLEMLER = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+
+def guvenli_hesapla(ifade):
+    try:
+        agac = ast.parse(str(ifade), mode="eval")
+
+        def hesapla(node):
+            if isinstance(node, ast.Expression):
+                return hesapla(node.body)
+
+            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                return node.value
+
+            if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+                deger = hesapla(node.operand)
+                return deger if isinstance(node.op, ast.UAdd) else -deger
+
+            if isinstance(node, ast.BinOp) and type(node.op) in _GUVENLI_ISLEMLER:
+                sol = hesapla(node.left)
+                sag = hesapla(node.right)
+
+                if type(node.op) is ast.Pow and abs(sag) > 10:
+                    raise ValueError("Üs çok büyük")
+
+                return _GUVENLI_ISLEMLER[type(node.op)](sol, sag)
+
+            raise ValueError("İzin verilmeyen ifade")
+
+        return True, hesapla(agac)
+
+    except Exception as e:
+        return False, str(e)
+
+
+
+def guvenli_mantiksal_hesapla(metin):
+    """Basit değişken atamalarını ve karşılaştırmaları güvenli AST ile doğrular."""
+    try:
+        # Örn: A=20, B=A*3, C=B-15, D=C/5, E=D+7
+        # ile 6) E=24 ... kısmını ayır.
+        parcalar = re.split(r'\s+(?=\d+\))', str(metin).strip(), maxsplit=1)
+        atama_metni = parcalar[0]
+        iddialar_metni = parcalar[1] if len(parcalar) > 1 else ""
+
+        ortam = {}
+
+        # Değişken atamalarını yalnızca basit sayı/aritmetik ifadeler olarak kabul et.
+        atamalar = re.findall(
+            r'(?:^|,\s*)([A-Za-z_]\w*)\s*=\s*([^,]+)',
+            atama_metni
+        )
+
+        if not atamalar:
+            return False, ""
+
+        for ad, ifade in atamalar:
+            ifade = ifade.strip()
+            try:
+                agac = ast.parse(ifade, mode="eval")
+
+                def hesapla(node):
+                    if isinstance(node, ast.Expression):
+                        return hesapla(node.body)
+
+                    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                        return node.value
+
+                    if isinstance(node, ast.Name) and node.id in ortam:
+                        return ortam[node.id]
+
+                    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+                        deger = hesapla(node.operand)
+                        return deger if isinstance(node.op, ast.UAdd) else -deger
+
+                    if isinstance(node, ast.BinOp) and type(node.op) in _GUVENLI_ISLEMLER:
+                        sol = hesapla(node.left)
+                        sag = hesapla(node.right)
+
+                        if type(node.op) is ast.Pow and abs(sag) > 10:
+                            raise ValueError("Üs çok büyük")
+
+                        return _GUVENLI_ISLEMLER[type(node.op)](sol, sag)
+
+                    raise ValueError("İzin verilmeyen ifade")
+
+                ortam[ad] = hesapla(agac)
+
+            except Exception:
+                return False, ""
+
+        if not iddialar_metni:
+            return False, ""
+
+        # 6) E=24 7) E>20 gibi maddeleri ayır.
+        iddialar = re.findall(
+            r'(\d+)\)\s*(.+?)(?=\s+\d+\)|$)',
+            iddialar_metni
+        )
+
+        if not iddialar:
+            return False, ""
+
+        dogru = 0
+        yanlis = 0
+        detay = []
+
+        for numara, ifade in iddialar:
+            ifade = ifade.strip().rstrip(".")
+            ifade = re.sub(r'(?<![<>=!])=(?!=)', '==', ifade)
+            agac = ast.parse(ifade, mode="eval").body
+
+            if not isinstance(agac, ast.Compare):
+                continue
+
+            def deger(node):
+                if isinstance(node, ast.Name) and node.id in ortam:
+                    return ortam[node.id]
+                if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+                    return node.value
+                if isinstance(node, ast.BinOp) and type(node.op) in _GUVENLI_ISLEMLER:
+                    sol = deger(node.left)
+                    sag = deger(node.right)
+                    if type(node.op) is ast.Pow and abs(sag) > 10:
+                        raise ValueError("Üs çok büyük")
+                    return _GUVENLI_ISLEMLER[type(node.op)](sol, sag)
+                raise ValueError("İzin verilmeyen ifade")
+
+            sol = deger(agac.left)
+            sonuc = True
+
+            for op, comp in zip(agac.ops, agac.comparators):
+                sag = deger(comp)
+
+                if isinstance(op, ast.Eq):
+                    parca = sol == sag
+                elif isinstance(op, ast.NotEq):
+                    parca = sol != sag
+                elif isinstance(op, ast.Gt):
+                    parca = sol > sag
+                elif isinstance(op, ast.GtE):
+                    parca = sol >= sag
+                elif isinstance(op, ast.Lt):
+                    parca = sol < sag
+                elif isinstance(op, ast.LtE):
+                    parca = sol <= sag
+                else:
+                    raise ValueError("İzin verilmeyen karşılaştırma")
+
+                sonuc = sonuc and parca
+                sol = sag
+
+            if sonuc:
+                dogru += 1
+                durum = "DOĞRU"
+            else:
+                yanlis += 1
+                durum = "YANLIŞ"
+
+            detay.append(f"{numara}) {ifade} → {durum}")
+
+        if dogru + yanlis == 0:
+            return False, ""
+
+        sonuc_metni = (
+            "\n\n===== GERÇEK MANTIKSAL DOĞRULAMA =====\n"
+            + "\n".join(f"{ad} = {deger}" for ad, deger in ortam.items())
+            + "\n\n"
+            + "\n".join(detay)
+            + f"\n\nDoğru: {dogru}\n"
+            + f"Yanlış: {yanlis}\n"
+            + "Bu sonuç EagleAI güvenli doğrulama motoruyla hesaplandı. "
+            "Cevap verirken bu sonucu esas al.\n"
+            + "===== MANTIKSAL DOĞRULAMA SONU ====="
+        )
+
+        return True, sonuc_metni
+
+    except Exception:
+        return False, ""
+
 
 SYSTEM_PROMPT = """Sen Eagle-AI'sin. Kullanıcıyla Türkçe, doğal, içten ve samimi konuşan gelişmiş bir yapay zeka asistanısın.
 
@@ -34,6 +226,8 @@ Konuşma tarzın:
 - Kullanıcı selamlaşırsa doğal şekilde karşılık ver.
 - Kullanıcı sohbet etmek isterse sohbet et.
 - Kullanıcı teknik yardım isterse doğrudan çözüm üret.
+- Matematiksel hesaplama, mantıksal karşılaştırma veya kod sonucunu doğrulama gerektiğinde sonucu tahmin etme; verilen doğrulama sonucunu esas al.
+- Bir hesaplama sonucunu "Python ile çalıştırdım" veya "kod çıktısı" olarak sunma; gerçek doğrulama sonucu yoksa bunu çalıştırılmış gibi gösterme.
 - Kullanıcı kod isterse mümkün olduğunca çalışabilir, kopyala-yapıştır hazır kod ver. Kodu MUTLAKA uygun dil etiketiyle bir kod bloğu içinde ver (örn. ```python). Açıklamayı kod bloğunun dışında, kısa ve net tut. Mümkünse kodun altına küçük bir kullanım örneği ekle.
 - Hata çıktısı verilirse önce hatanın nedenini bul, sonra çözümü ver.
 - Termux, Android, Java, Python, Flask, HTML, CSS, JavaScript ve Gradle konularında yardımcı ol.
@@ -1386,6 +1580,28 @@ def sohbet():
 
     web_metni = web_sonuclari_metni(web_verisi)
 
+    # 🧮 Güvenli matematik doğrulaması
+    hesaplama_metni = ""
+    if re.fullmatch(r"[0-9+*/().%\-\s]+", mesaj):
+        ifade = mesaj.replace("%", "/100")
+        ok, sonuc_hesap = guvenli_hesapla(ifade)
+        if ok:
+            hesaplama_metni = (
+                "\n\n===== GERÇEK HESAPLAMA SONUCU =====\n"
+                f"İfade: {ifade}\n"
+                f"Sonuç: {sonuc_hesap}\n"
+                "Bu sonuç EagleAI güvenli hesaplama motoruyla doğrulandı. "
+                "Cevap verirken bu sonucu esas al.\n"
+                "===== HESAPLAMA SONU ====="
+            )
+
+
+    # 🧠 Güvenli mantıksal doğrulama
+    mantiksal_metni = ""
+    ok, sonuc_mantiksal = guvenli_mantiksal_hesapla(mesaj)
+    if ok:
+        mantiksal_metni = sonuc_mantiksal
+
     hava_metni = ""
 
     if hava_verisi and hava_verisi.get("ok"):
@@ -1417,6 +1633,8 @@ def sohbet():
         + "\n===== HAFIZA SONU ====="
         + hava_metni
         + web_metni
+          + hesaplama_metni
+        + mantiksal_metni
     )
 
     contents = [
