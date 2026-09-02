@@ -512,6 +512,189 @@ def web_kaynak_url(url):
 
 
 
+
+def premier_lig_getir(mesaj=""):
+    """Premier League resmi API'sinden güncel ve gelecek maçları getirir."""
+
+    try:
+        from datetime import datetime, timedelta
+
+        mesaj_kucuk = (mesaj or "").lower().replace("\u0307", "")
+
+        base_url = (
+            "https://sdp-prem-prod.premier-league-prod.pulselive.com"
+            "/api/v1/competitions/8/seasons/2026"
+        )
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Linux; Android 15) "
+                "AppleWebKit/537.36 "
+                "Chrome/140.0.0.0 Mobile Safari/537.36"
+            ),
+            "Accept": "application/json",
+            "Origin": "https://www.premierleague.com",
+            "Referer": "https://www.premierleague.com/"
+        }
+
+        simdi = datetime.now()
+        bugun = simdi.date()
+
+        maclar = []
+
+        # Mevcut ve yakın gelecek haftaları kontrol et.
+        for hafta in range(2, 7):
+            url = f"{base_url}/matchweeks/{hafta}/matches"
+
+            cevap = requests.get(
+                url,
+                headers=headers,
+                timeout=10
+            )
+
+            print(
+                f"🏴 Premier League hafta {hafta}: HTTP {cevap.status_code}",
+                flush=True
+            )
+
+            if cevap.status_code != 200:
+                continue
+
+            veri = cevap.json()
+
+            if isinstance(veri, dict):
+                liste = veri.get("data", [])
+            elif isinstance(veri, list):
+                liste = veri
+            else:
+                liste = []
+
+            if isinstance(liste, list):
+                maclar.extend(liste)
+
+        if not maclar:
+            print("⚠️ Premier League API maç verisi bulunamadı.", flush=True)
+            return []
+
+        # Aynı maçı iki kez eklemeyi önle.
+        benzersiz = {}
+        for mac in maclar:
+            mac_id = mac.get("matchId") or mac.get("id")
+            if mac_id:
+                benzersiz[str(mac_id)] = mac
+
+        maclar = list(benzersiz.values())
+
+        takim_anahtarlari = [
+            "liverpool",
+            "arsenal",
+            "chelsea",
+            "manchester united",
+            "manchester city",
+            "tottenham",
+            "newcastle",
+            "everton",
+            "aston villa",
+            "brighton",
+            "bournemouth",
+            "brentford",
+            "crystal palace",
+            "fulham",
+            "sunderland",
+            "leeds",
+            "nottingham forest",
+            "hull",
+            "coventry",
+            "ipswich"
+        ]
+
+        istenen_takim = None
+
+        for takim in takim_anahtarlari:
+            if takim in mesaj_kucuk:
+                istenen_takim = takim
+                break
+
+        sonuc = []
+
+        for mac in maclar:
+            kickoff = mac.get("kickoff")
+            if not kickoff:
+                continue
+
+            try:
+                dt = datetime.fromisoformat(
+                    kickoff.replace("Z", "+00:00")
+                )
+
+                # API saati UTC+1/İngiltere saati olarak geliyor.
+                # Türkiye UTC+3 olduğu için mevcut tarih için +2 saat.
+                turkiye_saati = dt.replace(tzinfo=None) + timedelta(hours=2)
+
+            except Exception:
+                continue
+
+            ev = mac.get("homeTeam", {})
+            deplasman = mac.get("awayTeam", {})
+
+            ev_adi = ev.get("name", "Ev Sahibi")
+            deplasman_adi = deplasman.get("name", "Deplasman")
+
+            mac_metni = (
+                f"{ev_adi} {deplasman_adi}"
+            ).lower()
+
+            if istenen_takim and istenen_takim not in mac_metni:
+                continue
+
+            sonuc.append({
+                "title": f"Premier League: {ev_adi} - {deplasman_adi}",
+                "url": "https://www.premierleague.com/en/fixtures",
+                "snippet": (
+                    f"{turkiye_saati.strftime('%d.%m.%Y')} "
+                    f"{turkiye_saati.strftime('%H:%M')} Türkiye saati | "
+                    f"{ev_adi} - {deplasman_adi} | "
+                    f"Durum: {mac.get('status', 'PreMatch')} | "
+                    f"{'BUGÜN' if turkiye_saati.date() == bugun else 'GELECEK MAÇ'}"
+                ),
+                "_tarih": turkiye_saati
+            })
+
+        sonuc.sort(key=lambda x: x["_tarih"])
+
+        # Bugünün maçları varsa yalnızca onları göster.
+        bugunun_maclari = [
+            x for x in sonuc
+            if x["_tarih"].date() == bugun
+        ]
+
+        if bugunun_maclari:
+            secilecek = bugunun_maclari[:8]
+        else:
+            # Bugün maç yoksa bugünden sonraki ilk maçları göster.
+            gelecek = [
+                x for x in sonuc
+                if x["_tarih"].date() > bugun
+            ]
+            secilecek = gelecek[:8]
+
+        for x in secilecek:
+            x.pop("_tarih", None)
+
+        print(
+            f"✅ Premier League kullanılabilir maç: {len(secilecek)}",
+            flush=True
+        )
+
+        return secilecek
+
+    except Exception as e:
+        print(
+            f"⚠️ Premier League API hatası: {e}",
+            flush=True
+        )
+        return []
+
 def tvf_voleybol_getir():
     """TVF resmi fikstüründen Türkiye'nin güncel ve yaklaşan maçlarını çeker."""
     try:
@@ -990,7 +1173,21 @@ def sohbet():
             ]):
                 web_verisi = tvf_voleybol_getir()
 
-            # TVF sonuç vermezse mevcut web araması
+            # 🇬🇧 İngiltere / Premier League için resmi canlı API
+            mesaj_spor = mesaj.lower().replace("\u0307", "")
+
+            ingiltere_mi = any(k in mesaj_spor for k in [
+                "ingiltere",
+                "ingiltere'de",
+                "ingilterede",
+                "premier lig",
+                "premier league"
+            ])
+
+            if ingiltere_mi and not web_verisi:
+                web_verisi = premier_lig_getir(mesaj)
+
+            # TVF / resmi kaynak sonuç vermezse mevcut web araması
             if not web_verisi:
                 arama_sorgusu = spor_arama_sorgusu(mesaj)
                 web_verisi = web_arastir(
