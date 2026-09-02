@@ -1,4 +1,4 @@
-package com.eagleai.app;
+package com.eagleai.borclar;
 
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
@@ -262,6 +262,7 @@ public class MainActivity extends Activity {
         menuBtn.setOnClickListener(v -> {
             PopupMenu popup = new PopupMenu(this, menuBtn);
             popup.getMenu().add("🧠 Hafıza");
+            popup.getMenu().add("💳 Borçlar");
             popup.getMenu().add("❓ Yardım");
             popup.getMenu().add("🆕 Yeni");
               popup.getMenu().add("🕘 Son Sohbetler");
@@ -272,7 +273,27 @@ public class MainActivity extends Activity {
             popup.setOnMenuItemClickListener(item -> {
                 String secim = item.getTitle().toString();
 
-                if (secim.contains("Hafıza")) {
+                if (secim.contains("Borçlar")) {
+                    yerelMesajEkle("💳 Borçlar yükleniyor...");
+
+                    executor.execute(() -> {
+                        String sonuc = borclarIstek();
+                        final String cevapFinal = sonuc;
+
+                        runOnUiThread(() -> {
+                            mesajAlani.addView(
+                                    mesajOlustur(
+                                            "💳 BORÇ VE TAKSİT RAPORU\n\n" +
+                                            cevapFinal
+                                    )
+                            );
+
+                            kaydirma.post(() ->
+                                    kaydirma.fullScroll(View.FOCUS_DOWN)
+                            );
+                        });
+                    });
+                } else if (secim.contains("Hafıza")) {
                     yerelMesajEkle("🧠 Eagle-AI hafızası yükleniyor...");
 
                     executor.execute(() -> {
@@ -501,6 +522,143 @@ public class MainActivity extends Activity {
 
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    private String borclarIstek() {
+        HttpURLConnection baglanti = null;
+
+        try {
+            URL url = new URL(
+                    API_URL.replace("/api/sohbet", "/api/borclar")
+            );
+
+            baglanti = (HttpURLConnection) url.openConnection();
+            baglanti.setRequestMethod("GET");
+            baglanti.setConnectTimeout(10000);
+            baglanti.setReadTimeout(30000);
+
+            int kod = baglanti.getResponseCode();
+
+            InputStreamReader inputReader;
+
+            if (kod >= 200 && kod < 300) {
+                inputReader = new InputStreamReader(
+                        baglanti.getInputStream(),
+                        StandardCharsets.UTF_8
+                );
+            } else {
+                inputReader = new InputStreamReader(
+                        baglanti.getErrorStream(),
+                        StandardCharsets.UTF_8
+                );
+            }
+
+            BufferedReader reader = new BufferedReader(inputReader);
+
+            StringBuilder sonuc = new StringBuilder();
+            String satir;
+
+            while ((satir = reader.readLine()) != null) {
+                sonuc.append(satir);
+            }
+
+            reader.close();
+
+            JSONObject json = new JSONObject(sonuc.toString());
+
+            if (kod >= 200 &&
+                    kod < 300 &&
+                    json.optBoolean("success", false)) {
+
+                JSONObject rapor = json.optJSONObject("rapor");
+
+                if (rapor == null) {
+                    return "Borç raporu alınamadı.";
+                }
+
+                JSONArray borclar = json.optJSONArray("borclar");
+                StringBuilder metin = new StringBuilder();
+
+                if (borclar != null && borclar.length() > 0) {
+
+                    for (int i = 0; i < borclar.length(); i++) {
+
+                        JSONObject borc = borclar.getJSONObject(i);
+
+                        metin.append("• ")
+                                .append(borc.optString("ad", "Borç"))
+                                .append("\n")
+                                .append("  Kategori: ")
+                                .append(borc.optString("kategori", "-"))
+                                .append("\n")
+                                .append("  Toplam: ")
+                                .append(String.format(
+                                        java.util.Locale.US,
+                                        "%,.2f TL",
+                                        borc.optDouble("toplam_borc", 0)
+                                ))
+                                .append("\n")
+                                .append("  Ödenen: ")
+                                .append(String.format(
+                                        java.util.Locale.US,
+                                        "%,.2f TL",
+                                        borc.optDouble("odenen_tutar", 0)
+                                ))
+                                .append("\n")
+                                .append("  Kalan: ")
+                                .append(String.format(
+                                        java.util.Locale.US,
+                                        "%,.2f TL",
+                                        borc.optDouble("kalan_borc", 0)
+                                ))
+                                .append("\n")
+                                .append("  Taksit: ")
+                                .append(borc.optInt("taksit_sayisi", 1))
+                                .append("\n\n");
+                    }
+
+                } else {
+                    metin.append("Kayıtlı borç bulunmuyor.\n\n");
+                }
+
+                metin.append("💰 Genel Toplam: ")
+                        .append(String.format(
+                                java.util.Locale.US,
+                                "%,.2f TL",
+                                rapor.optDouble("toplam_borc", 0)
+                        ))
+                        .append("\n💵 Ödenen: ")
+                        .append(String.format(
+                                java.util.Locale.US,
+                                "%,.2f TL",
+                                rapor.optDouble("toplam_odenen", 0)
+                        ))
+                        .append("\n📌 Kalan: ")
+                        .append(String.format(
+                                java.util.Locale.US,
+                                "%,.2f TL",
+                                rapor.optDouble("toplam_kalan", 0)
+                        ));
+
+                return metin.toString();
+            }
+
+            return "API hatası: " +
+                    json.optString("error", "Bilinmeyen hata.");
+
+        } catch (Exception e) {
+
+            return "Borç API bağlantı hatası: " +
+                    e.getClass().getSimpleName() +
+                    " - " +
+                    e.getMessage();
+
+        } finally {
+
+            if (baglanti != null) {
+                baglanti.disconnect();
+            }
         }
     }
 

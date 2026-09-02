@@ -3,11 +3,11 @@ plugins {
 }
 
 android {
-    namespace 'com.eagleai.app'
+    namespace 'com.eagleai.borclar'
     compileSdk 34
 
     defaultConfig {
-        applicationId 'com.eagleai.app'
+        applicationId 'com.eagleai.borclar'
         minSdk 23
         targetSdk 34
         versionCode 1

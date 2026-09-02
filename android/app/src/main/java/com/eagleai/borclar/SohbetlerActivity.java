@@ -1,4 +1,4 @@
-package com.eagleai.app;
+package com.eagleai.borclar;
 
 import android.app.Activity;
 import android.os.Bundle;

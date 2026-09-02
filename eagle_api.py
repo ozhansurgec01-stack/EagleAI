@@ -12,6 +12,61 @@ from pathlib import Path
 
 app = Flask(__name__)
 
+
+# --- EAGLE BORÇ/TAKSİT ENTEGRASYONU ---
+from flask import request, jsonify
+import borc_modulu
+
+@app.route('/api/borclar', methods=['GET'])
+def api_borclari_getir():
+    try:
+        veri = borc_modulu.borclari_yukle()
+        rapor = borc_modulu.genel_rapor()
+        return jsonify({'success': True, 'borclar': veri, 'rapor': rapor})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/borc-ekle', methods=['POST'])
+def api_borc_ekle():
+    try:
+        data = request.get_json() or {}
+        mesaj = data.get('mesaj') or data.get('metin')
+        if mesaj:
+            sonuc = borc_modulu.borc_mesaji_isle(mesaj)
+            return jsonify({'success': True, 'mesaj': sonuc})
+        
+        # Manuel ekleme alanları
+        kisi = data.get('kisi')
+        tutar = data.get('tutar')
+        kategori = data.get('kategori', 'Genel')
+        taksit = data.get('taksit', 1)
+        if kisi and tutar:
+            borc_modulu.borc_ekle(
+                kisi,
+                kategori,
+                float(tutar),
+                int(taksit)
+            )
+            return jsonify({'success': True, 'message': 'Borç başarıyla eklendi.'})
+            
+        return jsonify({'success': False, 'error': 'Geçersiz parametreler.'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/odeme-yap', methods=['POST'])
+def api_odeme_yap():
+    try:
+        data = request.get_json() or {}
+        kisi = data.get('kisi')
+        tutar = data.get('tutar')
+        if kisi and tutar:
+            sonuc = borc_modulu.odeme_yap(kisi, float(tutar))
+            return jsonify({'success': True, 'message': sonuc})
+        return jsonify({'success': False, 'error': 'Kisi ve tutar gerekli.'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 MODEL = "gemini-3.5-flash-lite"
 
@@ -1728,6 +1783,7 @@ def sohbet():
         # 🌐 Güncel internet araştırması için Google Search
         response = requests.post(
             GEMINI_URL,
+            params={"key": GEMINI_API_KEY},
             json={
                 "contents": contents
             },
