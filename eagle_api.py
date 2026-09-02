@@ -69,13 +69,15 @@ def api_borc_guncelle():
         kategori = data.get('kategori')
         tutar = data.get('tutar')
         taksit = data.get('taksit')
+        odenen = data.get('odenen')
 
         basari, guncel = borc_modulu.borc_guncelle(
             borc_id,
             ad=ad,
             kategori=kategori,
             toplam_borc=float(tutar) if tutar is not None else None,
-            taksit_sayisi=int(taksit) if taksit is not None else None
+            taksit_sayisi=int(taksit) if taksit is not None else None,
+            odenen_tutar=float(odenen) if odenen is not None else None
         )
 
         if not basari:

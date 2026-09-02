@@ -48,7 +48,8 @@ def borc_guncelle(
     ad=None,
     kategori=None,
     toplam_borc=None,
-    taksit_sayisi=None
+    taksit_sayisi=None,
+    odenen_tutar=None
 ):
     borclar = borclari_yukle()
 
@@ -78,6 +79,16 @@ def borc_guncelle(
             if yeni_taksit < 1:
                 yeni_taksit = 1
             b["taksit_sayisi"] = yeni_taksit
+
+        if odenen_tutar is not None:
+            yeni_odenen = float(odenen_tutar)
+            if yeni_odenen < 0:
+                return False, None
+            b["odenen_tutar"] = yeni_odenen
+            b["kalan_borc"] = max(
+                0.0,
+                float(b.get("toplam_borc", 0.0)) - yeni_odenen
+            )
 
         borclari_kaydet(borclar)
         return True, b
