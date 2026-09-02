@@ -53,6 +53,83 @@ def api_borc_ekle():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/borc-guncelle', methods=['POST'])
+def api_borc_guncelle():
+    try:
+        data = request.get_json() or {}
+
+        borc_id = data.get('id')
+        if borc_id is None:
+            return jsonify({
+                'success': False,
+                'error': 'Borç ID gerekli.'
+            }), 400
+
+        ad = data.get('kisi')
+        kategori = data.get('kategori')
+        tutar = data.get('tutar')
+        taksit = data.get('taksit')
+
+        basari, guncel = borc_modulu.borc_guncelle(
+            borc_id,
+            ad=ad,
+            kategori=kategori,
+            toplam_borc=float(tutar) if tutar is not None else None,
+            taksit_sayisi=int(taksit) if taksit is not None else None
+        )
+
+        if not basari:
+            return jsonify({
+                'success': False,
+                'error': 'Borç bulunamadı veya geçersiz tutar.'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'message': 'Borç başarıyla güncellendi.',
+            'borc': guncel
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/borc-sil', methods=['POST'])
+def api_borc_sil():
+    try:
+        data = request.get_json() or {}
+
+        borc_id = data.get('id')
+        if borc_id is None:
+            return jsonify({
+                'success': False,
+                'error': 'Borç ID gerekli.'
+            }), 400
+
+        basari, silinen = borc_modulu.borc_sil(borc_id)
+
+        if not basari:
+            return jsonify({
+                'success': False,
+                'error': 'Borç bulunamadı.'
+            }), 404
+
+        return jsonify({
+            'success': True,
+            'message': 'Borç başarıyla silindi.',
+            'borc': silinen
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/odeme-yap', methods=['POST'])
 def api_odeme_yap():
     try:

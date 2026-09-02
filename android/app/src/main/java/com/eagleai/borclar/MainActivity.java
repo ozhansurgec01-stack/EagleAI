@@ -264,6 +264,7 @@ public class MainActivity extends Activity {
             popup.getMenu().add("🧠 Hafıza");
             popup.getMenu().add("💳 Borçlar");
             popup.getMenu().add("➕ Borç Ekle");
+            popup.getMenu().add("✏️ Borç Düzenle");
             popup.getMenu().add("💵 Ödeme Yap");
             popup.getMenu().add("❓ Yardım");
             popup.getMenu().add("🆕 Yeni");
@@ -297,6 +298,8 @@ public class MainActivity extends Activity {
                     });
                 } else if (secim.contains("Borç Ekle")) {
                     borcEkleDialog();
+                } else if (secim.contains("Borç Düzenle")) {
+                    borcDuzenleDialog();
                 } else if (secim.contains("Ödeme Yap")) {
                     odemeYapDialog();
                 } else if (secim.contains("Hafıza")) {
@@ -532,6 +535,30 @@ public class MainActivity extends Activity {
     }
 
 
+    private double paraDegeriniOku(String metin) {
+        String s = metin.trim().replace(" ", "");
+
+        if (s.contains(",") && s.contains(".")) {
+            if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+                s = s.replace(".", "").replace(",", ".");
+            } else {
+                s = s.replace(",", "");
+            }
+        } else if (s.contains(",")) {
+            s = s.replace(",", ".");
+        } else if (s.contains(".")) {
+            String[] parcalar = s.split("\\.", -1);
+            if (parcalar.length == 2 && parcalar[1].length() <= 2) {
+                // 12.50 -> 12.50
+            } else {
+                // 2.834 -> 2.834
+                // Noktayı ondalık kabul ediyoruz.
+            }
+        }
+
+        return Double.parseDouble(s);
+    }
+
     private void borcEkleDialog() {
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
@@ -584,9 +611,7 @@ public class MainActivity extends Activity {
 
                 double tutarDegeri;
                 try {
-                    tutarDegeri = Double.parseDouble(
-                            tutarMetni.replace(",", ".")
-                    );
+                    tutarDegeri = paraDegeriniOku(tutarMetni);
                 } catch (Exception e) {
                     tutar.setError("Geçerli bir tutar gir");
                     return;
@@ -684,9 +709,7 @@ public class MainActivity extends Activity {
 
                 double tutarDegeri;
                 try {
-                    tutarDegeri = Double.parseDouble(
-                            tutarMetni.replace(",", ".")
-                    );
+                    tutarDegeri = paraDegeriniOku(tutarMetni);
                 } catch (Exception e) {
                     tutar.setError("Geçerli bir tutar gir");
                     return;
@@ -895,6 +918,370 @@ public class MainActivity extends Activity {
             if (baglanti != null) {
                 baglanti.disconnect();
             }
+        }
+    }
+
+    private void borcGuncelleIstek(
+            String id,
+            String ad,
+            String kategori,
+            double tutar,
+            int taksit
+    ) {
+        executor.execute(() -> {
+            HttpURLConnection baglanti = null;
+
+            try {
+                URL url = new URL(
+                        API_URL.replace(
+                                "/api/sohbet",
+                                "/api/borc-guncelle"
+                        )
+                );
+
+                baglanti = (HttpURLConnection) url.openConnection();
+                baglanti.setRequestMethod("POST");
+                baglanti.setConnectTimeout(10000);
+                baglanti.setReadTimeout(30000);
+                baglanti.setDoOutput(true);
+                baglanti.setRequestProperty(
+                        "Content-Type",
+                        "application/json; charset=UTF-8"
+                );
+
+                JSONObject veri = new JSONObject();
+                veri.put("id", id);
+                veri.put("kisi", ad);
+                veri.put("kategori", kategori);
+                veri.put("tutar", tutar);
+                veri.put("taksit", taksit);
+
+                byte[] gonderilecek =
+                        veri.toString().getBytes(StandardCharsets.UTF_8);
+
+                baglanti.getOutputStream().write(gonderilecek);
+                baglanti.getOutputStream().close();
+
+                int kod = baglanti.getResponseCode();
+
+                InputStreamReader inputReader;
+
+                if (kod >= 200 && kod < 300) {
+                    inputReader = new InputStreamReader(
+                            baglanti.getInputStream(),
+                            StandardCharsets.UTF_8
+                    );
+                } else {
+                    inputReader = new InputStreamReader(
+                            baglanti.getErrorStream(),
+                            StandardCharsets.UTF_8
+                    );
+                }
+
+                BufferedReader reader =
+                        new BufferedReader(inputReader);
+
+                StringBuilder sonuc = new StringBuilder();
+                String satir;
+
+                while ((satir = reader.readLine()) != null) {
+                    sonuc.append(satir);
+                }
+
+                reader.close();
+
+                JSONObject json =
+                        new JSONObject(sonuc.toString());
+
+                if (kod < 200 || kod >= 300 ||
+                        !json.optBoolean("success", false)) {
+
+                    final String hata = json.optString(
+                            "error",
+                            "Borç güncellenemedi."
+                    );
+
+                    runOnUiThread(() ->
+                            Toast.makeText(
+                                    this,
+                                    "❌ " + hata,
+                                    Toast.LENGTH_LONG
+                            ).show()
+                    );
+
+                    return;
+                }
+
+                runOnUiThread(() ->
+                        Toast.makeText(
+                                this,
+                                "✅ Borç başarıyla güncellendi.",
+                                Toast.LENGTH_LONG
+                        ).show()
+                );
+
+                executor.execute(() -> {
+                    String rapor = borclarIstek();
+
+                    runOnUiThread(() -> {
+                        if (rapor != null && !rapor.isEmpty()) {
+                            mesajAlani.addView(
+                                    mesajOlustur(rapor)
+                            );
+
+                            scrollMesajAlaniAlta();
+                        }
+                    });
+                });
+
+            } catch (Exception e) {
+                final String hata = e.getMessage() != null
+                        ? e.getMessage()
+                        : "Bilinmeyen hata";
+
+                runOnUiThread(() ->
+                        Toast.makeText(
+                                this,
+                                "❌ Borç güncellenemedi: " + hata,
+                                Toast.LENGTH_LONG
+                        ).show()
+                );
+
+            } finally {
+                if (baglanti != null) {
+                    baglanti.disconnect();
+                }
+            }
+        });
+    }
+
+    private void borcDuzenleDialog() {
+        executor.execute(() -> {
+            HttpURLConnection baglanti = null;
+
+            try {
+                URL url = new URL(
+                        API_URL.replace("/api/sohbet", "/api/borclar")
+                );
+
+                baglanti = (HttpURLConnection) url.openConnection();
+                baglanti.setRequestMethod("GET");
+                baglanti.setConnectTimeout(10000);
+                baglanti.setReadTimeout(30000);
+
+                int kod = baglanti.getResponseCode();
+
+                InputStreamReader inputReader;
+
+                if (kod >= 200 && kod < 300) {
+                    inputReader = new InputStreamReader(
+                            baglanti.getInputStream(),
+                            StandardCharsets.UTF_8
+                    );
+                } else {
+                    inputReader = new InputStreamReader(
+                            baglanti.getErrorStream(),
+                            StandardCharsets.UTF_8
+                    );
+                }
+
+                BufferedReader reader = new BufferedReader(inputReader);
+                StringBuilder sonuc = new StringBuilder();
+                String satir;
+
+                while ((satir = reader.readLine()) != null) {
+                    sonuc.append(satir);
+                }
+
+                reader.close();
+
+                JSONObject json = new JSONObject(sonuc.toString());
+
+                if (kod < 200 || kod >= 300 ||
+                        !json.optBoolean("success", false)) {
+
+                    final String hata = json.optString(
+                            "error",
+                            "Borçlar alınamadı."
+                    );
+
+                    runOnUiThread(() ->
+                            Toast.makeText(
+                                    this,
+                                    "❌ " + hata,
+                                    Toast.LENGTH_LONG
+                            ).show()
+                    );
+                    return;
+                }
+
+                JSONArray borclar = json.optJSONArray("borclar");
+
+                if (borclar == null || borclar.length() == 0) {
+                    runOnUiThread(() ->
+                            Toast.makeText(
+                                    this,
+                                    "Kayıtlı borç bulunmuyor.",
+                                    Toast.LENGTH_LONG
+                            ).show()
+                    );
+                    return;
+                }
+
+                final JSONObject[] secilecek = new JSONObject[borclar.length()];
+                final String[] secenekler = new String[borclar.length()];
+
+                for (int i = 0; i < borclar.length(); i++) {
+                    JSONObject borc = borclar.getJSONObject(i);
+                    secilecek[i] = borc;
+
+                    secenekler[i] =
+                            "ID " + borc.optString("id", "?") +
+                            " — " + borc.optString("ad", "Borç") +
+                            " — " +
+                            String.format(
+                                    java.util.Locale.US,
+                                    "%,.3f TL",
+                                    borc.optDouble("toplam_borc", 0)
+                            );
+                }
+
+                runOnUiThread(() -> {
+                    new AlertDialog.Builder(this)
+                            .setTitle("✏️ Düzenlenecek Borcu Seç")
+                            .setItems(secenekler, (dialog, which) -> {
+                                try {
+                                    JSONObject secilen = secilecek[which];
+                                    borcDuzenleFormuGoster(secilen);
+                                } catch (Exception e) {
+                                    Toast.makeText(
+                                            this,
+                                            "❌ Borç bilgisi okunamadı.",
+                                            Toast.LENGTH_LONG
+                                    ).show();
+                                }
+                            })
+                            .setNegativeButton("İptal", null)
+                            .show();
+                });
+
+            } catch (Exception e) {
+                final String hata = e.getMessage() != null
+                        ? e.getMessage()
+                        : "Bilinmeyen hata";
+
+                runOnUiThread(() ->
+                        Toast.makeText(
+                                this,
+                                "❌ Borç listesi alınamadı: " + hata,
+                                Toast.LENGTH_LONG
+                        ).show()
+                );
+            } finally {
+                if (baglanti != null) {
+                    baglanti.disconnect();
+                }
+            }
+        });
+    }
+
+    private void borcDuzenleFormuGoster(JSONObject borc) {
+        try {
+            LinearLayout layout = new LinearLayout(this);
+            layout.setOrientation(LinearLayout.VERTICAL);
+            int padding = (int) (20 * getResources().getDisplayMetrics().density);
+            layout.setPadding(padding, padding, padding, padding);
+
+            EditText kisi = new EditText(this);
+            kisi.setHint("Borç adı");
+            kisi.setText(borc.optString("ad", ""));
+            layout.addView(kisi);
+
+            EditText kategori = new EditText(this);
+            kategori.setHint("Kategori");
+            kategori.setText(borc.optString("kategori", ""));
+            layout.addView(kategori);
+
+            EditText tutar = new EditText(this);
+            tutar.setHint("Toplam borç");
+            tutar.setInputType(
+                    android.text.InputType.TYPE_CLASS_NUMBER |
+                    android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            );
+            tutar.setText(
+                    String.valueOf(borc.optDouble("toplam_borc", 0))
+            );
+            layout.addView(tutar);
+
+            EditText taksit = new EditText(this);
+            taksit.setHint("Taksit sayısı");
+            taksit.setInputType(
+                    android.text.InputType.TYPE_CLASS_NUMBER
+            );
+            taksit.setText(
+                    String.valueOf(borc.optInt("taksit_sayisi", 1))
+            );
+            layout.addView(taksit);
+
+            new AlertDialog.Builder(this)
+                    .setTitle(
+                            "✏️ Borç Düzenle — ID " +
+                            borc.optString("id", "?")
+                    )
+                    .setView(layout)
+                    .setNegativeButton("İptal", null)
+                    .setPositiveButton("Kaydet", (dialog, which) -> {
+                        try {
+                            String ad = kisi.getText().toString().trim();
+                            String kat = kategori.getText().toString().trim();
+                            String tutarMetni = tutar.getText().toString().trim();
+                            String taksitMetni = taksit.getText().toString().trim();
+
+                            if (ad.isEmpty() || tutarMetni.isEmpty()) {
+                                Toast.makeText(
+                                        this,
+                                        "⚠️ Borç adı ve tutar gerekli.",
+                                        Toast.LENGTH_LONG
+                                ).show();
+                                return;
+                            }
+
+                            double tutarDegeri = paraDegeriniOku(tutarMetni);
+                            int taksitDegeri = Integer.parseInt(taksitMetni);
+
+                            if (tutarDegeri <= 0 || taksitDegeri < 1) {
+                                Toast.makeText(
+                                        this,
+                                        "⚠️ Tutar ve taksit bilgisi geçersiz.",
+                                        Toast.LENGTH_LONG
+                                ).show();
+                                return;
+                            }
+
+                            borcGuncelleIstek(
+                                    borc.optString("id", ""),
+                                    ad,
+                                    kat,
+                                    tutarDegeri,
+                                    taksitDegeri
+                            );
+
+                        } catch (Exception e) {
+                            Toast.makeText(
+                                    this,
+                                    "❌ Geçersiz bilgi: " + e.getMessage(),
+                                    Toast.LENGTH_LONG
+                            ).show();
+                        }
+                    })
+                    .show();
+
+        } catch (Exception e) {
+            Toast.makeText(
+                    this,
+                    "❌ Düzenleme formu açılamadı.",
+                    Toast.LENGTH_LONG
+            ).show();
         }
     }
 
@@ -2328,5 +2715,16 @@ private void sohbetYukle(String id) {
 
         super.onDestroy();
     }
-}
 
+    private void scrollMesajAlaniAlta() {
+        try {
+            if (kaydirma != null) {
+                kaydirma.post(() ->
+                        kaydirma.fullScroll(android.view.View.FOCUS_DOWN)
+                );
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}

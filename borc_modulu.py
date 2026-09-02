@@ -42,6 +42,61 @@ def borc_ekle(ad, kategori, toplam_borc, taksit_sayisi=1):
     borclari_kaydet(borclar)
     return yeni_borc
 
+
+def borc_guncelle(
+    borc_id,
+    ad=None,
+    kategori=None,
+    toplam_borc=None,
+    taksit_sayisi=None
+):
+    borclar = borclari_yukle()
+
+    for b in borclar:
+        if str(b.get("id")) != str(borc_id):
+            continue
+
+        if ad is not None and str(ad).strip():
+            b["ad"] = str(ad).strip()
+
+        if kategori is not None and str(kategori).strip():
+            b["kategori"] = str(kategori).strip().capitalize()
+
+        if toplam_borc is not None:
+            yeni_toplam = float(toplam_borc)
+            if yeni_toplam <= 0:
+                return False, None
+
+            b["toplam_borc"] = yeni_toplam
+            b["kalan_borc"] = max(
+                0.0,
+                yeni_toplam - float(b.get("odenen_tutar", 0.0))
+            )
+
+        if taksit_sayisi is not None:
+            yeni_taksit = int(taksit_sayisi)
+            if yeni_taksit < 1:
+                yeni_taksit = 1
+            b["taksit_sayisi"] = yeni_taksit
+
+        borclari_kaydet(borclar)
+        return True, b
+
+    return False, None
+
+
+def borc_sil(borc_id):
+    borclar = borclari_yukle()
+
+    for i, b in enumerate(borclar):
+        if str(b.get("id")) == str(borc_id):
+            silinen = borclar.pop(i)
+            borclari_kaydet(borclar)
+            return True, silinen
+
+    return False, None
+
+
 def odeme_yap(borc_adi_veya_id, odenen_tutar):
     borclar = borclari_yukle()
     odenen_tutar = float(odenen_tutar)
@@ -100,6 +155,20 @@ def genel_rapor():
         "kategoriler": kategoriler
     }
 
+def para_degerini_oku(metin):
+    s = str(metin).strip().replace(" ", "")
+
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s:
+        s = s.replace(",", ".")
+    
+    return float(s)
+
+
 def borc_mesaji_isle(mesaj):
     """Kullanıcının doğal Türkçe mesajını analiz eder ve ilgili borç işlemine yönlendirir."""
     mesaj_kucuk = mesaj.lower().replace("İ", "i").replace("I", "ı")
@@ -124,9 +193,9 @@ def borc_mesaji_isle(mesaj):
     # 2. Ödeme yapma (Örn: "Elektrik borcuma 500 TL ödeme yaptım")
     if "ödeme" in mesaj_kucuk or "odedim" in mesaj_kucuk or "yatırdım" in mesaj_kucuk or "yatirdim" in mesaj_kucuk:
         # Sayı bul
-        sayilar = re.findall(r'\d+(?:[.,]\d+)?', mesaj.replace('.', '').replace(',', '.'))
+        sayilar = re.findall(r'\d+(?:[.,]\d+)?', mesaj)
         if sayilar:
-            tutar = float(sayilar[-1])
+            tutar = para_degerini_oku(sayilar[-1])
             # Borç adını bulmaya çalış
             borclar = borclari_yukle()
             hedef_borc = None
@@ -150,9 +219,9 @@ def borc_mesaji_isle(mesaj):
 
     # 3. Borç ekleme (Örn: "Elektrik borcu ekle: 3000 TL" veya "Kredi borcu 50000 TL")
     if "ekle" in mesaj_kucuk or "borcum var" in mesaj_kucuk or "borç ekle" in mesaj_kucuk:
-        sayilar = re.findall(r'\d+(?:[.,]\d+)?', mesaj.replace('.', '').replace(',', '.'))
+        sayilar = re.findall(r'\d+(?:[.,]\d+)?', mesaj)
         if sayilar:
-            tutar = float(sayilar[-1])
+            tutar = para_degerini_oku(sayilar[-1])
             
             # Kategori tespiti
             kategori = "Diğer"
