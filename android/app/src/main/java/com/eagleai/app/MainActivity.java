@@ -13,6 +13,10 @@ import android.app.Activity;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import android.speech.RecognizerIntent;
+import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
+import java.util.Locale;
+import java.util.Set;
 import android.content.Intent;
 import android.app.AlertDialog;
 import android.os.Bundle;
@@ -74,10 +78,14 @@ public class MainActivity extends Activity {
     private long sonMesajZamani = 0;
     private static final long MESAJ_BEKLEME_MS = 4000;
 
+    private TextToSpeech konusmaMotoru;
+    private boolean sesAcik = true;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         arayuzOlustur();
+        sesMotoruBaslat();
     }
 
     private void arayuzOlustur() {
@@ -255,6 +263,8 @@ public class MainActivity extends Activity {
             popup.getMenu().add("❓ Yardım");
             popup.getMenu().add("🆕 Yeni");
             popup.getMenu().add("🗑️ Temizle");
+            popup.getMenu().add("🔊 Ses Seç");
+            popup.getMenu().add(sesAcik ? "🔇 Sesi Kapat" : "🔊 Sesi Aç");
 
             popup.setOnMenuItemClickListener(item -> {
                 String secim = item.getTitle().toString();
@@ -290,6 +300,18 @@ public class MainActivity extends Activity {
                     );
                 } else if (secim.contains("Yeni") || secim.contains("Temizle")) {
                     gecmisiTemizle();
+                } else if (secim.contains("Ses Seç")) {
+                    sesSecimMenusuGoster();
+                } else if (secim.contains("Sesi Kapat") || secim.contains("Sesi Aç")) {
+                    sesAcik = !sesAcik;
+                    if (!sesAcik && konusmaMotoru != null) {
+                        konusmaMotoru.stop();
+                    }
+                    Toast.makeText(
+                            this,
+                            sesAcik ? "🔊 Sesli cevap açık" : "🔇 Sesli cevap kapalı",
+                            Toast.LENGTH_SHORT
+                    ).show();
                 }
 
                 return true;
@@ -354,6 +376,7 @@ public class MainActivity extends Activity {
                         mesajOlustur("🦅\n\n" + cevapFinal)
                 );
                 gecmiseKaydet("🦅\n\n" + cevapFinal);
+                metniSesliOku(cevapFinal);
 
                 kaydirma.post(() ->
                         kaydirma.fullScroll(View.FOCUS_DOWN)
@@ -896,6 +919,127 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void sesSecimMenusuGoster() {
+        if (konusmaMotoru == null) {
+            Toast.makeText(this, "Ses motoru hazır değil", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        java.util.List<Voice> turkceSesler = new java.util.ArrayList<>();
+        java.util.List<String> gosterimListesi = new java.util.ArrayList<>();
+
+        try {
+            Set<Voice> sesler = konusmaMotoru.getVoices();
+            if (sesler != null) {
+                for (Voice v : sesler) {
+                    if (v.getLocale().getLanguage().equals("tr")) {
+                        turkceSesler.add(v);
+                        gosterimListesi.add(v.getName());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Sesler alınamadı", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (turkceSesler.isEmpty()) {
+            Toast.makeText(this, "Türkçe ses bulunamadı", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        String[] isimler = gosterimListesi.toArray(new String[0]);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Bir ses seç (dinlemek için dokun)")
+                .setItems(isimler, (dialog, which) -> {
+                    Voice secilen = turkceSesler.get(which);
+                    konusmaMotoru.setVoice(secilen);
+
+                    SharedPreferences sp = getSharedPreferences("eagle_ses", MODE_PRIVATE);
+                    sp.edit().putString("secili_ses", secilen.getName()).apply();
+
+                    konusmaMotoru.speak(
+                            "Merhaba, ben Eagle Yapay Zeka. Bu benim sesim.",
+                            TextToSpeech.QUEUE_FLUSH,
+                            null,
+                            "ses_testi"
+                    );
+                })
+                .setNegativeButton("Kapat", null)
+                .show();
+    }
+
+    private void sesMotoruBaslat() {
+        konusmaMotoru = new TextToSpeech(this, status -> {
+            if (status == TextToSpeech.SUCCESS) {
+                konusmaMotoru.setLanguage(new Locale("tr", "TR"));
+                konusmaMotoru.setPitch(1.05f);
+                konusmaMotoru.setSpeechRate(1.0f);
+
+                try {
+                    Set<Voice> sesler = konusmaMotoru.getVoices();
+                    if (sesler != null) {
+                        Voice enIyi = null;
+                        for (Voice v : sesler) {
+                            if (v.getLocale().getLanguage().equals("tr")
+                                    && v.getName().toLowerCase().contains("female")) {
+                                enIyi = v;
+                                break;
+                            }
+                        }
+                        if (enIyi == null) {
+                            for (Voice v : sesler) {
+                                if (v.getLocale().getLanguage().equals("tr")) {
+                                    enIyi = v;
+                                    break;
+                                }
+                            }
+                        }
+                        SharedPreferences sp = getSharedPreferences("eagle_ses", MODE_PRIVATE);
+                        String kayitliSes = sp.getString("secili_ses", null);
+
+                        if (kayitliSes != null) {
+                            for (Voice v : sesler) {
+                                if (v.getName().equals(kayitliSes)) {
+                                    enIyi = v;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (enIyi != null) {
+                            konusmaMotoru.setVoice(enIyi);
+                        }
+                    }
+                } catch (Exception e) {
+                    // Ses listesi alinamazsa varsayilan sesle devam.
+                }
+            }
+        });
+    }
+
+    private void metniSesliOku(String metin) {
+        if (konusmaMotoru == null || !sesAcik) {
+            return;
+        }
+
+        String temizMetin = metin.replaceAll("```[a-zA-Z]*\\n[\\s\\S]*?```", " ");
+        temizMetin = temizMetin.replaceAll("[\\*#_>`]", "");
+        temizMetin = temizMetin.trim();
+
+        if (temizMetin.isEmpty()) {
+            return;
+        }
+
+        konusmaMotoru.speak(
+                temizMetin,
+                TextToSpeech.QUEUE_FLUSH,
+                null,
+                "eagle_cevap"
+        );
+    }
+
     private void dosyaSec() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -1073,6 +1217,11 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+
+        if (konusmaMotoru != null) {
+            konusmaMotoru.stop();
+            konusmaMotoru.shutdown();
+        }
     
         executor.shutdownNow();
 
