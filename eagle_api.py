@@ -338,7 +338,8 @@ def spor_sorgusu_mu(mesaj):
     kelimeler = [
         "maç", "mac", "maçlar", "maclar",
         "voleybol", "futbol", "basketbol",
-        "tenis", "hentbol",
+        "tenis", "hentbol", "spor",
+        "karşılaşma", "karsilasma",
         "milli takım", "milli takim",
         "şampiyonlar ligi", "süper lig", "super lig",
         "premier lig", "la liga", "serie a", "bundesliga",
@@ -347,32 +348,122 @@ def spor_sorgusu_mu(mesaj):
         "hangi maç", "hangi mac"
     ]
 
-    mesaj_kucuk = mesaj.lower()
+    mesaj_kucuk = mesaj.lower().replace("\u0307", "")
     return any(kelime in mesaj_kucuk for kelime in kelimeler)
 
 
 def spor_arama_sorgusu(mesaj):
-    """Spor sorusunu güncel ve resmi kaynak öncelikli aramaya dönüştürür."""
-    mesaj_kucuk = mesaj.lower()
+    """Spor sorusunu ülke ve lig bağlamına göre güncel aramaya dönüştürür."""
+    mesaj_kucuk = mesaj.casefold().replace('\u0307', '')
 
-    # Voleybol sorularında resmi TVF kaynaklarını özellikle hedefle.
-    if any(k in mesaj_kucuk for k in [
+    # 🇹🇷 Türkiye
+    turkiye_kelimeleri = [
+        "türkiye", "turkiye",
+        "bizim takım", "bizim takim",
+        "milli takım", "milli takim",
+        "milli maç", "milli mac",
+        "filenin sultanları", "filenin sultanlari",
+        "filenin efeleri",
+        "süper lig", "super lig"
+    ]
+
+    # 🇬🇧 İngiltere
+    ingiltere_kelimeleri = [
+        "ingiltere", "ingiltere'de", "ingilterede",
+        "premier lig", "premier league"
+    ]
+
+    # 🇪🇸 İspanya
+    ispanya_kelimeleri = [
+        "ispanya", "ispanya'da", "ispanyada",
+        "la liga"
+    ]
+
+    # 🇩🇪 Almanya
+    almanya_kelimeleri = [
+        "almanya", "almanya'da", "almanyada",
+        "bundesliga"
+    ]
+
+    # 🇮🇹 İtalya
+    italya_kelimeleri = [
+        "italya", "italya'da", "italyada",
+        "serie a"
+    ]
+
+    # 🇫🇷 Fransa
+    fransa_kelimeleri = [
+        "fransa", "fransa'da", "fransada",
+        "ligue 1"
+    ]
+
+    # 🏐 Voleybol
+    voleybol_mu = any(k in mesaj_kucuk for k in [
         "voleybol",
-        "filenin sultanları",
+        "filenin sultanları", "filenin sultanlari",
         "filenin efeleri"
-    ]):
-        return (
-            mesaj.strip()
-            + " bugün maç programı maç saati "
-            + "site:tvf.org.tr OR site:fikstur.tvf.org.tr"
-        )
+    ])
 
+    # ⚽ Futbol
+    futbol_mu = any(k in mesaj_kucuk for k in [
+        "futbol", "süper lig", "super lig",
+        "premier lig", "premier league",
+        "la liga", "bundesliga", "serie a", "ligue 1"
+    ])
+
+    # 🏀 Basketbol
+    basketbol_mu = "basketbol" in mesaj_kucuk
+
+    # 🎾 Tenis
+    tenis_mu = "tenis" in mesaj_kucuk
+
+    # 🇹🇷 Türkiye
+    if any(k in mesaj_kucuk for k in turkiye_kelimeleri):
+        if voleybol_mu:
+            return "Türkiye bugün voleybol maç programı resmi TVF fikstür"
+        if futbol_mu:
+            return "Türkiye bugün futbol maç programı Süper Lig resmi fikstür"
+        if basketbol_mu:
+            return "Türkiye bugün basketbol maç programı resmi fikstür"
+        if tenis_mu:
+            return "Türkiye tenisçiler bugün maç programı"
+        return "Türkiye bugün spor müsabakaları maç programı"
+
+    # 🇬🇧 İngiltere
+    if any(k in mesaj_kucuk for k in ingiltere_kelimeleri):
+        if futbol_mu:
+            return "İngiltere bugün futbol maç programı Premier League resmi fikstür"
+        return "İngiltere bugün spor maç programı Premier League futbol"
+
+    # 🇪🇸 İspanya
+    if any(k in mesaj_kucuk for k in ispanya_kelimeleri):
+        if futbol_mu:
+            return "İspanya bugün futbol maç programı La Liga resmi fikstür"
+        return "İspanya bugün spor maç programı La Liga futbol"
+
+    # 🇩🇪 Almanya
+    if any(k in mesaj_kucuk for k in almanya_kelimeleri):
+        if futbol_mu:
+            return "Almanya bugün futbol maç programı Bundesliga resmi fikstür"
+        return "Almanya bugün spor maç programı Bundesliga futbol"
+
+    # 🇮🇹 İtalya
+    if any(k in mesaj_kucuk for k in italya_kelimeleri):
+        if futbol_mu:
+            return "İtalya bugün futbol maç programı Serie A resmi fikstür"
+        return "İtalya bugün spor maç programı Serie A futbol"
+
+    # 🇫🇷 Fransa
+    if any(k in mesaj_kucuk for k in fransa_kelimeleri):
+        if futbol_mu:
+            return "Fransa bugün futbol maç programı Ligue 1 resmi fikstür"
+        return "Fransa bugün spor maç programı Ligue 1 futbol"
+
+    # 🌍 Genel spor
     return (
-        mesaj.strip()
-        + " bugün maç programı maç saati sonuçları "
-        + "Türkiye"
+        "bugün maç programı spor müsabakaları "
+        "Türkiye ve yabancı ligler futbol basketbol voleybol tenis"
     )
-
 
 def web_arastirma_gerekli(mesaj):
     """Mesaj güncel internet bilgisi gerektiriyor mu?"""
@@ -889,7 +980,7 @@ def sohbet():
     # 🌐 Güncel bilgi gerekiyorsa ücretsiz web araştırması yap
     web_verisi = []
 
-    if web_arastirma_gerekli(mesaj):
+    if web_arastirma_gerekli(mesaj) or spor_sorgusu_mu(mesaj):
         if spor_sorgusu_mu(mesaj):
             # 🏐 Spor sorularında önce resmi TVF kaynağı
             if any(k in mesaj.lower() for k in [
