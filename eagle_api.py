@@ -1796,12 +1796,19 @@ def sohbet():
             "details": sonuc
         }), 500
 
-    except requests.exceptions.Timeout:
-
+    except requests.exceptions.RequestException as e:
+        hata_mesaji = "Gemini bağlantısı zaman aşımına uğradı veya ağ hatası oluştu: " + str(e)
+        print("⚠️ " + hata_mesaji, flush=True)
+        try:
+            with open("eagle_api.log", "a", encoding="utf-8") as log_f:
+                import datetime
+                zaman = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                log_f.write("[" + zaman + "] TIMEOUT/NETWORK ERROR: " + hata_mesaji + "\n")
+        except Exception:
+            pass
         return jsonify({
             "ok": False,
-            "error":
-            "Gemini bağlantısı zaman aşımına uğradı."
+            "error": "Gemini bağlantısı zaman aşımına uğradı."
         }), 504
 
     except Exception as e:
