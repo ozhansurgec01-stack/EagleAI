@@ -1681,37 +1681,109 @@ def web_arastir(sorgu, limit=6):
         )
         return []
 
+def web_sayfa_oku(url, limit=7000):
+    """Web sayfasını indirir ve Gemini için temiz metne dönüştürür."""
+    try:
+        url = web_kaynak_url(url)
+        if not url or not url.startswith(("http://", "https://")):
+            return ""
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Linux; Android 15) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/140.0.0.0 Mobile Safari/537.36"
+            ),
+            "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
+        }
+
+        cevap = requests.get(
+            url,
+            headers=headers,
+            timeout=12
+        )
+
+        if cevap.status_code != 200:
+            print(
+                f"⚠️ Web sayfa HTTP {cevap.status_code}: {url}",
+                flush=True
+            )
+            return ""
+
+        soup = BeautifulSoup(
+            cevap.text,
+            "html.parser"
+        )
+
+        for etiket in soup(["script", "style", "noscript"]):
+            etiket.decompose()
+
+        metin = " ".join(soup.stripped_strings)
+        metin = re.sub(r"\s+", " ", metin).strip()
+
+        if len(metin) > limit:
+            metin = metin[:limit]
+
+        print(
+            f"📖 Web sayfa okundu: {len(metin)} karakter",
+            flush=True
+        )
+
+        return metin
+
+    except Exception as e:
+        print(
+            f"⚠️ Web sayfa okuma hatası: {e}",
+            flush=True
+        )
+        return ""
+
+
 def web_sonuclari_metni(sonuclar):
-    """Web sonuçlarını Gemini'ye aktarılacak metne çevirir."""
+    """Web arama sonuçlarını ve gerçek kaynak sayfalarını Gemini'ye aktarır."""
     if not sonuclar:
         return ""
 
     satirlar = [
         "",
         "===== ÜCRETSİZ WEB ARAŞTIRMASI =====",
-        "Aşağıdaki bilgiler internetten, mümkünse resmi kaynaklardan alınmıştır.",
-        "ÖNEMLİ: Kullanıcı güncel maç/spor bilgisi soruyorsa aşağıdaki veriyi kullan.",
-        "Veri mevcutsa 'veri yok', 'bakamıyorum' veya 'hangi takımı arıyorsun' deme.",
-        "Tarih ve saatleri değiştirme veya uydurma.",
-        "Bugünün tarihi sistem tarafından ayrıca biliniyor olabilir; kaynakta açıkça yazan tarihleri aynen dikkate al.",
-        "Kaynakta maç görünüyorsa takım adını, rakibi, tarihi, saati ve varsa salon/şehir bilgisini cevapta belirt.",
-        "",
+        "Aşağıdaki bilgiler internetten alınmıştır.",
+        "ÖNEMLİ: Güncel bilgi sorularında gerçek kaynak sayfasındaki verileri esas al.",
+        "Veri mevcutsa 'veri yok', 'bakamıyorum' veya gereksiz açıklamalar yapma.",
+        "Tarih, saat, takım ve skorları değiştirme veya uydurma.",
+        "Kaynaklarda açıkça yazan bilgileri aynen dikkate al.",
+        ""
     ]
 
-    for i, sonuc in enumerate(sonuclar, 1):
+    for i, sonuc in enumerate(sonuclar[:3], 1):
+        url = sonuc.get("url", "")
+        sayfa_metni = web_sayfa_oku(url, limit=3500)
+
         satirlar.append(
             f"[KAYNAK {i}]\n"
             f"Başlık: {sonuc.get('title', '')}\n"
-            f"Adres: {sonuc.get('url', '')}\n"
-            f"Özet: {sonuc.get('snippet', '')}\n"
+            f"Adres: {url}\n"
+            f"Arama özeti: {sonuc.get('snippet', '')}\n"
         )
+
+        if sayfa_metni:
+            satirlar.append(
+                "GERÇEK SAYFA İÇERİĞİ:\n"
+                + sayfa_metni
+                + "\n"
+            )
+        else:
+            satirlar.append(
+                "GERÇEK SAYFA İÇERİĞİ: Okunamadı. "
+                "Yalnızca arama özeti kullanılabilir.\n"
+            )
 
     satirlar.append(
         "===== WEB ARAŞTIRMASI SONU ====="
     )
 
     return "\n".join(satirlar)
-
 
 
 def hafiza_metni():
