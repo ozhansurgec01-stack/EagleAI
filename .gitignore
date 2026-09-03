@@ -6,3 +6,9 @@ android/.gradle/
 android/build/
 android/app/build/
 *.oncesi*
+
+# Yedek ve log dosyaları
+*.before_*
+*.bak
+.eagle_backups/
+*.log
