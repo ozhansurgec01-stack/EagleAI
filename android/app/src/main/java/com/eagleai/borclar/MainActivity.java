@@ -810,8 +810,8 @@ public class MainActivity extends Activity {
                         "💳 " + ad + "\n" +
                         "💰 Tutar: " +
                         String.format(
-                                Locale.US,
-                                "%,.3f TL",
+                                new java.util.Locale("tr", "TR"),
+                                "%,.0f TL",
                                 tutar
                         ) +
                         "\n📅 Taksit: " + taksit;
@@ -1140,8 +1140,8 @@ public class MainActivity extends Activity {
                             " — " + borc.optString("ad", "Borç") +
                             " — " +
                             String.format(
-                                    java.util.Locale.US,
-                                    "%,.3f TL",
+                                    new java.util.Locale("tr", "TR"),
+                                    "%,.0f TL",
                                     borc.optDouble("toplam_borc", 0)
                             );
                 }
@@ -1354,22 +1354,22 @@ public class MainActivity extends Activity {
                                 .append("\n")
                                 .append("  Toplam: ")
                                 .append(String.format(
-                                        java.util.Locale.US,
-                                        "%,.3f TL",
+                                        new java.util.Locale("tr", "TR"),
+                                        "%,.0f TL",
                                         borc.optDouble("toplam_borc", 0)
                                 ))
                                 .append("\n")
                                 .append("  Ödenen: ")
                                 .append(String.format(
-                                        java.util.Locale.US,
-                                        "%,.3f TL",
+                                        new java.util.Locale("tr", "TR"),
+                                        "%,.0f TL",
                                         borc.optDouble("odenen_tutar", 0)
                                 ))
                                 .append("\n")
                                 .append("  Kalan: ")
                                 .append(String.format(
-                                        java.util.Locale.US,
-                                        "%,.3f TL",
+                                        new java.util.Locale("tr", "TR"),
+                                        "%,.0f TL",
                                         borc.optDouble("kalan_borc", 0)
                                 ))
                                 .append("\n")
@@ -1384,20 +1384,20 @@ public class MainActivity extends Activity {
 
                 metin.append("💰 Genel Toplam: ")
                         .append(String.format(
-                                java.util.Locale.US,
-                                "%,.3f TL",
+                                new java.util.Locale("tr", "TR"),
+                                "%,.0f TL",
                                 rapor.optDouble("toplam_borc", 0)
                         ))
                         .append("\n💵 Ödenen: ")
                         .append(String.format(
-                                java.util.Locale.US,
-                                "%,.3f TL",
+                                new java.util.Locale("tr", "TR"),
+                                "%,.0f TL",
                                 rapor.optDouble("toplam_odenen", 0)
                         ))
                         .append("\n📌 Kalan: ")
                         .append(String.format(
-                                java.util.Locale.US,
-                                "%,.3f TL",
+                                new java.util.Locale("tr", "TR"),
+                                "%,.0f TL",
                                 rapor.optDouble("toplam_kalan", 0)
                         ));
 
