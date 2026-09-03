@@ -146,18 +146,54 @@ def taksit_hesapla(borc_adi_veya_id, taksit_sayisi=None):
 
 def genel_rapor():
     borclar = borclari_yukle()
-    toplam_borc = sum(b["toplam_borc"] for b in borclar)
-    toplam_odenen = sum(b["odenen_tutar"] for b in borclar)
-    toplam_kalan = sum(b["kalan_borc"] for b in borclar)
-    
-    kategoriler = {}
+
+    toplam_borc = 0.0
+    toplam_odenen = 0.0
+    toplam_kalan = 0.0
+
     for b in borclar:
-        kat = b["kategori"]
+        toplam = float(b.get("toplam_borc", 0.0))
+        odenen = float(b.get("odenen_tutar", 0.0))
+        kalan = max(0.0, toplam - odenen)
+
+        b["toplam_borc"] = toplam
+        b["odenen_tutar"] = odenen
+        b["kalan_borc"] = kalan
+
+        taksit = int(b.get("taksit_sayisi", 1) or 1)
+        if taksit < 1:
+            taksit = 1
+
+        aylik_taksit = toplam / taksit
+
+        if kalan > 0:
+            kalan_taksit = int((kalan + aylik_taksit - 0.000001) // aylik_taksit)
+            if kalan_taksit < 1:
+                kalan_taksit = 1
+        else:
+            kalan_taksit = 0
+
+        b["aylik_taksit"] = round(aylik_taksit, 2)
+        b["kalan_taksit"] = kalan_taksit
+
+        toplam_borc += toplam
+        toplam_odenen += odenen
+        toplam_kalan += kalan
+
+    kategoriler = {}
+
+    for b in borclar:
+        kat = b.get("kategori", "Diğer")
+
         if kat not in kategoriler:
-            kategoriler[kat] = {"toplam": 0.0, "kalan": 0.0}
-        kategoriler[kat]["toplam"] += b["toplam_borc"]
-        kategoriler[kat]["kalan"] += b["kalan_borc"]
-        
+            kategoriler[kat] = {
+                "toplam": 0.0,
+                "kalan": 0.0
+            }
+
+        kategoriler[kat]["toplam"] += float(b.get("toplam_borc", 0.0))
+        kategoriler[kat]["kalan"] += float(b.get("kalan_borc", 0.0))
+
     return {
         "toplam_borc": toplam_borc,
         "toplam_odenen": toplam_odenen,
@@ -165,6 +201,7 @@ def genel_rapor():
         "borclar": borclar,
         "kategoriler": kategoriler
     }
+
 
 def para_degerini_oku(metin):
     s = str(metin).strip().replace(" ", "")
@@ -190,11 +227,29 @@ def borc_mesaji_isle(mesaj):
         if not rapor["borclar"]:
             return "Henüz kayıtlı bir borcunuz bulunmuyor. 'Elektrik borcu ekle: 3000 TL' şeklinde ekleme yapabilirsiniz."
         
-        yanit = "📋 **Borç ve Taksit Takip Raporu:**\n\n"
+        def tl_format(sayi):
+            return f"{sayi:,.0f}".replace(",", ".")
+
+        yanit = "BORÇ VE TAKSİT RAPORU\\n\\n"
+
         for b in rapor["borclar"]:
-            yanit += f"• **{b['ad']}** ({b['kategori']}): Toplam: {b['toplam_borc']:,.2f} TL | Ödenen: {b['odenen_tutar']:,.2f} TL | **Kalan: {b['kalan_borc']:,.2f} TL** (Taksit: {b['taksit_sayisi']})\n"
-        
-        yanit += f"\n💰 **Genel Toplam:** {rapor['toplam_borc']:,.2f} TL | **Ödenen:** {rapor['toplam_odenen']:,.2f} TL | **Kalan:** {rapor['toplam_kalan']:,.2f} TL"
+            yanit += (
+                f"• {b['ad']}\\n"
+                f"  Kategori: {b['kategori']}\\n"
+                f"  Aylık taksit: {tl_format(b.get('aylik_taksit', 0.0))} TL\\n"
+                f"  Toplam borç: {tl_format(b['toplam_borc'])} TL\\n"
+                f"  Ödenen: {tl_format(b['odenen_tutar'])} TL\\n"
+                f"  Kalan: {tl_format(b['kalan_borc'])} TL\\n"
+                f"  Taksit: {b['taksit_sayisi']}\\n"
+                f"  Kalan taksit: {b.get('kalan_taksit', 0)}\\n\\n"
+            )
+
+        yanit += (
+            f"💰 Genel Toplam: {tl_format(rapor['toplam_borc'])} TL\\n"
+            f"💵 Ödenen: {tl_format(rapor['toplam_odenen'])} TL\\n"
+            f"📌 Kalan: {tl_format(rapor['toplam_kalan'])} TL"
+        )
+
         return yanit
 
     if any(k in mesaj_kucuk for k in ["borçlarımın toplamı", "borclarimin toplami", "toplam borç ne kadar", "toplam borc ne kadar"]):

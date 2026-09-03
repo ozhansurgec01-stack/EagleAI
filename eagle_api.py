@@ -793,6 +793,154 @@ def spor_arama_sorgusu(mesaj):
         "Türkiye ve yabancı ligler futbol basketbol voleybol tenis"
     )
 
+
+def eagle_karar_motoru(mesaj):
+    """
+    EagleAI karar motoru v1.
+    Sadece karar verir; herhangi bir işlem yapmaz ve dosya değiştirmez.
+    """
+    metin = str(mesaj or "").strip()
+    k = metin.lower()
+
+    karar = {
+        "intent": "sohbet",
+        "guven": "orta",
+        "neden": "Özel bir araç gerektiren açık bir istek algılanmadı.",
+        "arac": "gemini"
+    }
+
+    if not metin:
+        karar.update({
+            "intent": "bos",
+            "guven": "yüksek",
+            "neden": "Mesaj boş.",
+            "arac": "yok"
+        })
+        return karar
+
+    # 🧠 HAFIZA
+    hafiza_kelimeleri = [
+        "hatırla", "hatirla", "unutma",
+        "hafızam", "hafizam", "hafıza", "hafiza",
+        "daha önce sana", "daha once sana",
+        "ne söylemiştim", "ne soylemistim",
+        "hatırlıyor musun", "hatirliyor musun"
+    ]
+
+    if any(x in k for x in hafiza_kelimeleri):
+        karar.update({
+            "intent": "hafiza",
+            "guven": "yüksek",
+            "neden": "Hafıza ile ilgili bir istek algılandı.",
+            "arac": "hafiza"
+        })
+        return karar
+
+    # 💳 BORÇ
+    borc_kelimeleri = [
+        "borç", "borc", "borcum",
+        "taksit", "ödeme", "odeme",
+        "kredi kartı", "kredi karti",
+        "kredi borcu", "borç raporu", "borc raporu"
+    ]
+
+    if any(x in k for x in borc_kelimeleri):
+        karar.update({
+            "intent": "borc",
+            "guven": "yüksek",
+            "neden": "Borç veya taksit işlemi algılandı.",
+            "arac": "borc_modulu"
+        })
+        return karar
+
+    # 💻 KOD / HATA
+    kod_kelimeleri = [
+        "kod", "python", "java", "javascript",
+        "flask", "android", "gradle", "termux",
+        "html", "css", "api", "fonksiyon",
+        "syntax", "sözdizimi", "sozdizimi",
+        "hata", "exception", "traceback",
+        "çalışmıyor", "calismiyor", "derlenmiyor",
+        "compile", "build failed"
+    ]
+
+    if any(x in k for x in kod_kelimeleri):
+        karar.update({
+            "intent": "kod_hata",
+            "guven": "yüksek",
+            "neden": "Kod geliştirme veya hata analizi isteği algılandı.",
+            "arac": "kod_analiz"
+        })
+        return karar
+
+    # 🌦️ HAVA
+    hava_kelimeleri = [
+        "hava", "hava durumu", "sıcaklık", "sicaklik",
+        "kaç derece", "kac derece", "yağmur", "yagmur",
+        "rüzgar", "ruzgar", "nem", "fırtına", "firtina"
+    ]
+
+    if any(x in k for x in hava_kelimeleri):
+        karar.update({
+            "intent": "hava",
+            "guven": "yüksek",
+            "neden": "Hava durumu isteği algılandı.",
+            "arac": "hava_api"
+        })
+        return karar
+
+    # 🏟️ SPOR
+    spor_kelimeleri = [
+        "maç", "mac", "maçlar", "maclar",
+        "skor", "fikstür", "fikstur",
+        "puan durumu", "voleybol", "futbol",
+        "basketbol", "tenis", "vnl",
+        "süper lig", "super lig",
+        "premier lig", "premier league",
+        "şampiyonlar ligi", "sampiyonlar ligi",
+        "filenin sultanları", "filenin efeleri"
+    ]
+
+    if any(x in k for x in spor_kelimeleri):
+        karar.update({
+            "intent": "spor",
+            "guven": "yüksek",
+            "neden": "Spor veya maç isteği algılandı.",
+            "arac": "spor_kaynaklari"
+        })
+        return karar
+
+    # 🧮 MATEMATİK
+    if re.fullmatch(r"[0-9+*/().,%\-\s]+", metin):
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Mesaj doğrudan matematiksel bir ifade.",
+            "arac": "guvenli_hesaplama"
+        })
+        return karar
+
+    # 🌐 GÜNCEL BİLGİ
+    guncel_kelimeleri = [
+        "bugün", "bugun", "şimdi", "simdi",
+        "şu an", "su an", "güncel", "guncel",
+        "son dakika", "haber", "araştır", "arastir",
+        "internetten", "webde", "web'de",
+        "en son", "son durum", "ne oldu"
+    ]
+
+    if any(x in k for x in guncel_kelimeleri):
+        karar.update({
+            "intent": "guncel_bilgi",
+            "guven": "yüksek",
+            "neden": "Güncel bilgi gerektiren bir istek algılandı.",
+            "arac": "web_arastirma"
+        })
+        return karar
+
+    return karar
+
+
 def web_arastirma_gerekli(mesaj):
     """Mesaj güncel internet bilgisi gerektiriyor mu?"""
     kelimeler = [
@@ -1663,6 +1811,18 @@ def sohbet():
             break
 
     kalici_hafiza = hafiza_metni()
+    karar = eagle_karar_motoru(mesaj)
+    print(f"🧠 EAGLE KARAR: {karar}", flush=True)
+
+    # 🧠 Karar motorunun seçtiği aracı çalıştır
+    borc_modulu_sonucu = ""
+    if karar.get("arac") == "borc_modulu":
+        try:
+            borc_modulu_sonucu = borc_modulu.borc_mesaji_isle(mesaj)
+            print("🧾 BORÇ MODÜLÜ ÇALIŞTI", flush=True)
+        except Exception as e:
+            borc_modulu_sonucu = f"Borç modülü çalıştırılırken hata oluştu: {e}"
+            print(f"❌ BORÇ MODÜLÜ HATASI: {e}", flush=True)
 
     hava_verisi = hava_durumu_getir(mesaj)
 
@@ -1769,6 +1929,16 @@ def sohbet():
         + web_metni
           + hesaplama_metni
         + mantiksal_metni
+        + (
+            "\n\n===== GERÇEK BORÇ MODÜLÜ SONUCU =====\n"
+            "Aşağıdaki bilgi EagleAI borç modülünden alınmıştır. "
+            "Borçlarla ilgili cevap verirken bu veriyi esas al, "
+            "rakamları değiştirme veya uydurma.\n"
+            + borc_modulu_sonucu
+            + "\n===== BORÇ MODÜLÜ SONU ====="
+            if borc_modulu_sonucu
+            else ""
+        )
     )
 
     contents = [

@@ -1,3 +1,15 @@
 {
-  "borclar": []
+  "borclar": [
+    {
+      "id": "1",
+      "ad": "Klima",
+      "kategori": "Kredi kartı",
+      "toplam_borc": 34008.0,
+      "odenen_tutar": 31174.0,
+      "kalan_borc": 2834.0,
+      "taksit_sayisi": 12,
+      "aylik_taksit": 2834.0,
+      "kalan_taksit": 1
+    }
+  ]
 }
