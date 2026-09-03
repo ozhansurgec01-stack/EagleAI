@@ -788,10 +788,7 @@ def spor_arama_sorgusu(mesaj):
         return "Fransa bugün spor maç programı Ligue 1 futbol"
 
     # 🌍 Genel spor
-    return (
-        "bugün maç programı spor müsabakaları "
-        "Türkiye ve yabancı ligler futbol basketbol voleybol tenis"
-    )
+    return "bugün maç programı"
 
 
 def eagle_karar_motoru(mesaj):
@@ -806,7 +803,9 @@ def eagle_karar_motoru(mesaj):
         "intent": "sohbet",
         "guven": "orta",
         "neden": "Özel bir araç gerektiren açık bir istek algılanmadı.",
-        "arac": "gemini"
+        "arac": "gemini",
+        "islem": "cevapla",
+        "dogrulama": False
     }
 
     if not metin:
@@ -849,7 +848,9 @@ def eagle_karar_motoru(mesaj):
             "intent": "borc",
             "guven": "yüksek",
             "neden": "Borç veya taksit işlemi algılandı.",
-            "arac": "borc_modulu"
+            "arac": "borc_modulu",
+            "islem": "veri_getir",
+            "dogrulama": True
         })
         return karar
 
@@ -885,7 +886,9 @@ def eagle_karar_motoru(mesaj):
             "intent": "hava",
             "guven": "yüksek",
             "neden": "Hava durumu isteği algılandı.",
-            "arac": "hava_api"
+            "arac": "hava_api",
+            "islem": "veri_getir",
+            "dogrulama": True
         })
         return karar
 
@@ -906,7 +909,9 @@ def eagle_karar_motoru(mesaj):
             "intent": "spor",
             "guven": "yüksek",
             "neden": "Spor veya maç isteği algılandı.",
-            "arac": "spor_kaynaklari"
+            "arac": "spor_kaynaklari",
+            "islem": "veri_getir",
+            "dogrulama": True
         })
         return karar
 
@@ -916,7 +921,9 @@ def eagle_karar_motoru(mesaj):
             "intent": "matematik",
             "guven": "yüksek",
             "neden": "Mesaj doğrudan matematiksel bir ifade.",
-            "arac": "guvenli_hesaplama"
+            "arac": "guvenli_hesaplama",
+            "islem": "hesapla",
+            "dogrulama": True
         })
         return karar
 
@@ -1585,7 +1592,7 @@ def web_arastir(sorgu, limit=6):
                 flush=True
             )
 
-            if cevap.status_code == 200:
+            if cevap.status_code in (200, 202):
                 soup = BeautifulSoup(
                     cevap.text,
                     "html.parser"
@@ -1829,8 +1836,8 @@ def sohbet():
     # 🌐 Güncel bilgi gerekiyorsa ücretsiz web araştırması yap
     web_verisi = []
 
-    if web_arastirma_gerekli(mesaj) or spor_sorgusu_mu(mesaj):
-        if spor_sorgusu_mu(mesaj):
+    if karar.get("arac") == "spor_kaynaklari":
+        if karar.get("intent") == "spor":
             # 🏐 Spor sorularında önce resmi TVF kaynağı
             if any(k in mesaj.lower() for k in [
                 "voleybol",
