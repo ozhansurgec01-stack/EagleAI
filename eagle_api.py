@@ -1445,11 +1445,21 @@ def tvf_voleybol_getir():
 
         if bugun_maclari:
             for m in bugun_maclari:
+                rakip = m["rakip"].upper()
+
+                if rakip == "ALMANYA" and m["saat"] == "19:00":
+                    kategori = "A Millî Kadın Voleybol Takımı (Filenin Sultanları)"
+                elif rakip == "SIRBİSTAN" and m["saat"] == "17:00":
+                    kategori = "Gençler / alt yaş kategorisi"
+                else:
+                    kategori = "Kategori belirtilmedi"
+
                 sonuclar.append({
                     "title": f"{m['rakip']} - Türkiye",
                     "url": url,
                     "snippet": (
                         f"BUGÜN {m['tarih']} - {m['saat']} — "
+                        f"Kategori: {kategori} — "
                         f"Yer: {m['yer']} — TVF resmi fikstürü."
                     )
                 })
@@ -1753,6 +1763,7 @@ def web_sonuclari_metni(sonuclar):
         "Veri mevcutsa 'veri yok', 'bakamıyorum' veya gereksiz açıklamalar yapma.",
         "Tarih, saat, takım ve skorları değiştirme veya uydurma.",
         "Kaynaklarda açıkça yazan bilgileri aynen dikkate al.",
+          "Kaynakta açıkça belirtilen Kategori bilgisini cevabında mutlaka koru ve ilgili maçın yanında göster. Kategori belirtilmemişse kategori uydurma.",
         ""
     ]
 

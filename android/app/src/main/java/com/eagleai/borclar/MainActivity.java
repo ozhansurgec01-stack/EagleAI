@@ -2553,11 +2553,14 @@ private void sohbetYukle(String id) {
                         mesajKutusu.setText(mevcut + " " + metin);
                     }
                     mesajKutusu.setSelection(mesajKutusu.getText().length());
+
+                    // 🎤 Konuşma metni hazırsa otomatik gönder.
+                    mesajGonder();
                 }
             }
             return;
         }
-
+        
         if (requestCode != 1001 || resultCode != RESULT_OK || data == null) {
             return;
         }
