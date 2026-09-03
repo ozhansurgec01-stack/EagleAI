@@ -12,3 +12,6 @@ android/app/build/
 *.bak
 .eagle_backups/
 *.log
+*_backup
+*_yedek
+*yedek*
