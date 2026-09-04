@@ -1395,7 +1395,7 @@ def super_lig_getir(mesaj=""):
         return []
 
 
-def tvf_voleybol_getir(sadece_bugun=False):
+def tvf_voleybol_getir(hedef_tarih=None):
     """TVF resmi fikstüründen Türkiye'nin güncel ve yaklaşan maçlarını çeker."""
     try:
         from datetime import datetime
@@ -1476,6 +1476,29 @@ def tvf_voleybol_getir(sadece_bugun=False):
                 gorulen.add(anahtar)
                 benzersiz.append(mac)
 
+        # 🎯 Hedef tarih verilmişse SADECE o tarihin maçlarını döndür.
+        if hedef_tarih:
+            hedef_maclari = [
+                m for m in benzersiz
+                if m["tarih"] == hedef_tarih
+            ]
+
+            for m in hedef_maclari:
+                sonuclar.append({
+                    "title": f"{m['rakip']} - Türkiye",
+                    "url": url,
+                    "snippet": (
+                        f"{m['tarih']} - {m['saat']} — "
+                        f"Yer: {m['yer']} — TVF resmi fikstürü."
+                    )
+                })
+
+            print(
+                f"🏐 TVF: {hedef_tarih} için {len(sonuclar)} Türkiye maçı bulundu",
+                flush=True
+            )
+            return sonuclar[:8]
+
         # Önce BUGÜN oynanan Türkiye maçları.
         bugun_maclari = [
             m for m in benzersiz
@@ -1508,11 +1531,6 @@ def tvf_voleybol_getir(sadece_bugun=False):
                 flush=True
             )
             return sonuclar[:8]
-
-        # Sadece bugün isteniyorsa gelecek maçları gösterme.
-        if sadece_bugun:
-            print("🏐 TVF: Bugün Türkiye maçı yok", flush=True)
-            return []
 
         # Bugün maç yoksa en yakın gelecek Türkiye maçlarını ver.
         gelecek = [
@@ -1975,17 +1993,70 @@ def sohbet():
             ])
 
             if voleybol_mu and not gecmis_mac:
-                sadece_bugun = any(k in mesaj.lower() for k in [
+                from datetime import datetime, timedelta
+
+                mesaj_kucuk = mesaj.lower()
+                bugun_istegi = any(k in mesaj_kucuk for k in [
                     "bugün", "bugun"
                 ])
-                web_verisi = tvf_voleybol_getir(sadece_bugun=sadece_bugun)
+                yarin_istegi = any(k in mesaj_kucuk for k in [
+                    "yarın", "yarin"
+                ])
 
-                # 🏐 Bugün voleybol sorusunda TVF boş dönerse
-                # genel futbol/web aramasına düşme.
-                if sadece_bugun and not web_verisi:
+                if bugun_istegi:
+                    hedef_tarih = datetime.now().strftime("%d.%m.%Y")
+                    web_verisi = tvf_voleybol_getir(hedef_tarih=hedef_tarih)
+
+                elif yarin_istegi:
+                    hedef_tarih = (
+                        datetime.now() + timedelta(days=1)
+                    ).strftime("%d.%m.%Y")
+                    web_verisi = tvf_voleybol_getir(hedef_tarih=hedef_tarih)
+
+                else:
+                    web_verisi = tvf_voleybol_getir()
+
+                # 🏐 BUGÜN/YARIN VOLEYBOL: TVF SONUCU DOĞRUDAN CEVAPLA.
+                # Genel web araması, sayfa okuma ve Gemini zincirine girme.
+                if bugun_istegi or yarin_istegi:
+                    gun_adi = "bugün" if bugun_istegi else "yarın"
+
+                    if not web_verisi:
+                        return jsonify({
+                            "ok": True,
+                            "answer": f"🏐 {gun_adi.capitalize()} Türkiye'nin resmi voleybol fikstüründe maç görünmüyor.",
+                            "eagle_direct": True,
+                            "web_search": False,
+                            "memory_count": len(hafiza_yukle())
+                        })
+
+                    satirlar = [
+                        "🏐 GÜNCEL VOLEYBOL BİLGİSİ"
+                    ]
+
+                    for sonuc in web_verisi[:8]:
+                        baslik = str(sonuc.get("title", "")).strip()
+                        ozet = str(sonuc.get("snippet", "")).strip()
+
+                        if baslik:
+                            satirlar.append(baslik)
+                        if ozet:
+                            satirlar.append(ozet)
+
                     return jsonify({
                         "ok": True,
-                        "answer": "🏐 Bugün Türkiye'nin resmi voleybol fikstüründe maç görünmüyor.",
+                        "answer": "\n".join(satirlar),
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
+                # 🏐 Bugün/yarın sorgusunda TVF boşsa genel spor aramasına düşme.
+                if (bugun_istegi or yarin_istegi) and not web_verisi:
+                    gun_adi = "bugün" if bugun_istegi else "yarın"
+                    return jsonify({
+                        "ok": True,
+                        "answer": f"🏐 {gun_adi.capitalize()} Türkiye'nin resmi voleybol fikstüründe maç görünmüyor.",
                         "eagle_direct": True,
                         "web_search": False,
                         "memory_count": len(hafiza_yukle())
@@ -2118,7 +2189,8 @@ def sohbet():
         })
 
     if karar.get("intent") == "spor" and web_verisi:
-        spor_satirlari = ["⚽ GÜNCEL SPOR BİLGİSİ"]
+        spor_baslik = "🏐 GÜNCEL VOLEYBOL BİLGİSİ" if voleybol_mu else "⚽ GÜNCEL SPOR BİLGİSİ"
+        spor_satirlari = [spor_baslik]
         for sonuc in web_verisi[:8]:
             baslik = str(sonuc.get("title", "")).strip()
             ozet = str(sonuc.get("snippet", "")).strip()
