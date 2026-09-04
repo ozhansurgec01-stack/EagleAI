@@ -1968,15 +1968,28 @@ def sohbet():
                 "skor", "skorları", "skorlari"
             ])
 
-            if any(k in mesaj.lower() for k in [
+            voleybol_mu = any(k in mesaj.lower() for k in [
                 "voleybol",
                 "filenin sultanları",
                 "filenin efeleri"
-            ]) and not gecmis_mac:
+            ])
+
+            if voleybol_mu and not gecmis_mac:
                 sadece_bugun = any(k in mesaj.lower() for k in [
                     "bugün", "bugun"
                 ])
                 web_verisi = tvf_voleybol_getir(sadece_bugun=sadece_bugun)
+
+                # 🏐 Bugün voleybol sorusunda TVF boş dönerse
+                # genel futbol/web aramasına düşme.
+                if sadece_bugun and not web_verisi:
+                    return jsonify({
+                        "ok": True,
+                        "answer": "🏐 Bugün Türkiye'nin resmi voleybol fikstüründe maç görünmüyor.",
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
 
             # 🇬🇧 İngiltere / Premier League için resmi canlı API
             mesaj_spor = mesaj.lower().replace("\u0307", "")
