@@ -447,6 +447,109 @@ def hafiza_ekle(bilgi):
 
 
 
+
+KNOWLEDGE_FILE = Path("eagle_bilgi.json")
+
+def bilgi_bankasi_yukle():
+    try:
+        if KNOWLEDGE_FILE.exists():
+            veri = json.loads(KNOWLEDGE_FILE.read_text(encoding="utf-8"))
+            if isinstance(veri, dict):
+                return veri
+    except Exception as e:
+        print("⚠️ Bilgi bankası okunamadı:", e, flush=True)
+    return {}
+
+def bilgi_bankasi_ara(mesaj):
+    metin = str(mesaj or "").lower()
+
+    kelimeler = re.findall(
+        r"[a-zA-ZçğıöşüÇĞİÖŞÜ]+",
+        metin
+    )
+
+    # Soru kalıplarını aramadan çıkar.
+    stop_kelimeler = {
+        "nedir", "ne", "nasıl", "nasil",
+        "nasılca", "nasilca",
+        "neye", "neden", "niçin", "nicin",
+        "için", "icin", "bir", "ve",
+        "mi", "mı", "mu", "mü"
+    }
+
+    kelimeler = [
+        k for k in kelimeler
+        if k not in stop_kelimeler
+    ]
+
+    if not kelimeler:
+        return []
+
+    bilgi = bilgi_bankasi_yukle()
+    bulunan = []
+
+    def normalize(kelime):
+        kelime = kelime.lower()
+        ekler = (
+            "ları", "leri", "lar", "ler",
+            "dır", "dir", "dur", "dür",
+            "tır", "tir", "tur", "tür"
+        )
+
+        for ek in ekler:
+            if len(kelime) > len(ek) + 2 and kelime.endswith(ek):
+                return kelime[:-len(ek)]
+
+        return kelime
+
+    arama_kokleri = {
+        normalize(kelime)
+        for kelime in kelimeler
+    }
+
+    def tara(veri):
+        if isinstance(veri, dict):
+            for deger in veri.values():
+                tara(deger)
+
+        elif isinstance(veri, list):
+            for madde in veri:
+                if not isinstance(madde, str):
+                    continue
+
+                madde_kelimeleri = re.findall(
+                    r"[a-zA-ZçğıöşüÇĞİÖŞÜ]+",
+                    madde.lower()
+                )
+
+                madde_kokleri = {
+                    normalize(kelime)
+                    for kelime in madde_kelimeleri
+                }
+
+                ortak = arama_kokleri & madde_kokleri
+
+                if ortak:
+                    puan = len(ortak)
+
+                    # Birden fazla anlamlı kelime eşleşmesini ödüllendir.
+                    if len(ortak) >= 2:
+                        puan += 2
+
+                    bulunan.append((puan, madde))
+
+    tara(bilgi)
+
+    bulunan.sort(
+        key=lambda x: x[0],
+        reverse=True
+    )
+
+    return [
+        madde
+        for _, madde in bulunan[:3]
+    ]
+
 def hava_kodu_metin(kod):
     kod = int(kod)
 
@@ -898,6 +1001,14 @@ def eagle_karar_motoru(mesaj):
         "kod", "python", "java", "javascript",
         "flask", "android", "gradle", "termux",
         "html", "css", "api", "fonksiyon",
+        "if", "else", "if else",
+        "döngü", "dongu", "for", "while",
+        "try", "except", "try except",
+        "değişken", "degisken",
+        "algoritma", "liste", "listeler",
+        "sözlük", "sozluk", "sözlükler",
+        "return", "import", "class", "nesne",
+        "print", "type", "input", "tuple", "set", "len",
         "syntax", "sözdizimi", "sozdizimi",
         "hata", "exception", "traceback",
         "çalışmıyor", "calismiyor", "derlenmiyor",
@@ -2142,6 +2253,23 @@ def sohbet():
             + hava_verisi.get("error", "")
             + "\n===== HAVA DURUMU SONU ====="
         )
+
+    # 🧠 Eagle teknik bilgi bankası — Gemini’den önce doğrudan cevap
+    bilgi_sonuclari = []
+    if karar.get("intent") == "kod_hata":
+        bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
+
+    if bilgi_sonuclari:
+        cevap = "🦅 EAGLE BİLGİ BANKASI\n\n" + "\n".join(
+            f"• {madde}" for madde in bilgi_sonuclari
+        )
+        return jsonify({
+            "ok": True,
+            "answer": cevap,
+            "eagle_direct": True,
+            "knowledge_base": True,
+            "memory_count": len(hafiza_yukle())
+        })
 
     # 🗣️ Basit sohbetleri Gemini'ye göndermeden Eagle doğrudan cevaplasın
     if karar.get("arac") == "eagle_sohbet":

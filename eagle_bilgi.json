@@ -1,0 +1,53 @@
+{
+  "python": {
+    "temel": [
+      "Python, okunması ve yazılması kolay, genel amaçlı bir programlama dilidir.",
+      "Değişkenler verileri program içinde saklamak için kullanılır.",
+      "if ve else koşullu karar vermek için kullanılır.",
+      "for ve while döngüleri işlemleri tekrar etmek için kullanılır.",
+      "Fonksiyonlar tekrar kullanılabilir kod bloklarıdır.",
+      "Listeler sıralı ve değiştirilebilir veri koleksiyonlarıdır.",
+      "Sözlükler anahtar-değer çiftleriyle veri tutar.",
+      "try ve except hataları yakalamak ve yönetmek için kullanılır.",
+      "print() ekrana veya çıktıya veri yazdırmak için kullanılır.",
+      "Python'da temel veri tipleri arasında str (metin), int (tam sayı), float (ondalıklı sayı) ve bool (doğru/yanlış) bulunur.",
+      "String yani str, metin verilerini temsil eder.",
+      "int tam sayıları, float ondalıklı sayıları temsil eder.",
+      "bool True veya False değerlerinden birini temsil eder.",
+      "type() bir değerin veya değişkenin veri tipini öğrenmek için kullanılır.",
+      "input() kullanıcıdan metin biçiminde veri almak için kullanılır.",
+      "Listeler birden fazla değeri sıralı şekilde saklamak için kullanılır.",
+      "Tuple değiştirilemeyen sıralı veri koleksiyonudur.",
+      "Sözlükler anahtar-değer çiftleriyle veri tutar.",
+      "set tekrar eden değerleri kaldıran ve benzersiz elemanlar tutan bir veri koleksiyonudur.",
+      "len() bir metnin, listenin veya koleksiyonun eleman sayısını verir.",
+      "return bir fonksiyonun sonucunu çağıran koda geri döndürür.",
+      "import başka bir modülü veya kütüphaneyi Python koduna dahil etmek için kullanılır.",
+      "class nesnelerin özelliklerini ve davranışlarını tanımlamak için kullanılan sınıf yapısıdır.",
+      "Bir nesne, bir class temel alınarak oluşturulan örnektir."
+    ],
+    "operatörler": [
+      "Toplama işlemi + operatörüyle yapılır.",
+      "Çıkarma işlemi - operatörüyle yapılır.",
+      "Çarpma işlemi * operatörüyle yapılır.",
+      "Bölme işlemi / operatörüyle yapılır.",
+      "Mod alma işlemi % operatörüyle yapılır.",
+      "Eşitlik karşılaştırması == operatörüyle yapılır.",
+      "Eşit değil karşılaştırması != operatörüyle yapılır.",
+      "Büyüktür > ve küçüktür < karşılaştırma operatörleridir."
+    ],
+    "fonksiyonlar": [
+      "Fonksiyonlar def anahtar kelimesiyle tanımlanır.",
+      "Fonksiyonlar parametre alabilir ve sonuç döndürebilir.",
+      "Fonksiyonlar kod tekrarını azaltır ve programı daha düzenli hale getirir."
+    ]
+  },
+  "programlama_mantigi": {
+    "temel": [
+      "Bir algoritma, bir problemi çözmek için izlenen adımların düzenidir.",
+      "Koşullar programın farklı durumlarda farklı kararlar vermesini sağlar.",
+      "Döngüler aynı veya benzer işlemleri tekrar tekrar yapmayı sağlar.",
+      "Fonksiyonlar büyük problemleri daha küçük ve yönetilebilir parçalara ayırmaya yardımcı olur."
+    ]
+  }
+}
