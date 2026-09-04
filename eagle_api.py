@@ -732,6 +732,15 @@ def spor_arama_sorgusu(mesaj):
         "filenin efeleri"
     ])
 
+    # 🕐 Geçmiş maç / sonuç soruları
+    gecmis_mac = any(k in mesaj_kucuk for k in [
+        "dün", "dünkü", "dünün",
+        "dun", "dunku", "dunun",
+        "geçen maç", "gecen mac",
+        "sonuç", "sonuc", "sonuçları", "sonuclari",
+        "skor", "skorları", "skorlari"
+    ])
+
     # ⚽ Futbol
     futbol_mu = any(k in mesaj_kucuk for k in [
         "futbol", "süper lig", "super lig",
@@ -748,6 +757,9 @@ def spor_arama_sorgusu(mesaj):
     # 🇹🇷 Türkiye
     if any(k in mesaj_kucuk for k in turkiye_kelimeleri):
         if voleybol_mu:
+            if gecmis_mac:
+                dun = (datetime.now() - timedelta(days=1)).strftime("%d.%m.%Y")
+                return f"Türkiye voleybol dünkü maç sonuçları skorları {dun} resmi kaynaklar"
             return "Türkiye bugün voleybol maç programı resmi TVF fikstür"
         if futbol_mu:
             return "Türkiye bugün futbol maç programı Süper Lig resmi fikstür"
@@ -1922,11 +1934,19 @@ def sohbet():
     if karar.get("arac") == "spor_kaynaklari":
         if karar.get("intent") == "spor":
             # 🏐 Spor sorularında önce resmi TVF kaynağı
+            gecmis_mac = any(k in mesaj.lower() for k in [
+                "dün", "dünkü", "dünün",
+                "dun", "dunku", "dunun",
+                "geçen maç", "gecen mac",
+                "sonuç", "sonuc", "sonuçları", "sonuclari",
+                "skor", "skorları", "skorlari"
+            ])
+
             if any(k in mesaj.lower() for k in [
                 "voleybol",
                 "filenin sultanları",
                 "filenin efeleri"
-            ]):
+            ]) and not gecmis_mac:
                 web_verisi = tvf_voleybol_getir()
 
             # 🇬🇧 İngiltere / Premier League için resmi canlı API
