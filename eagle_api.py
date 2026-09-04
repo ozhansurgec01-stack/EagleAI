@@ -836,6 +836,27 @@ def eagle_karar_motoru(mesaj):
         return karar
 
     # 🧠 HAFIZA
+    # 🗣️ Basit sohbetlerde Gemini kullanma
+    basit_sohbet_kelimeleri = [
+        "merhaba", "selam", "selamlar", "günaydın", "gunaydin",
+        "iyi akşamlar", "iyi aksamlar", "iyi geceler",
+        "nasılsın", "nasilsin", "teşekkür ederim", "tesekkur ederim",
+        "sağ ol", "sag ol", "kimsin", "sen kimsin",
+        "senin adın ne", "senin adin ne", "ne yapabiliyorsun",
+        "ne yapabilirsin"
+    ]
+
+    if any(x in k for x in basit_sohbet_kelimeleri):
+        karar.update({
+            "intent": "basit_sohbet",
+            "guven": "yüksek",
+            "neden": "Basit sohbet isteği algılandı.",
+            "arac": "eagle_sohbet",
+            "islem": "dogrudan_cevap",
+            "dogrulama": True
+        })
+        return karar
+
     hafiza_kelimeleri = [
         "hatırla", "hatirla", "unutma",
         "hafızam", "hafizam", "hafıza", "hafiza",
@@ -2029,6 +2050,34 @@ def sohbet():
             + hava_verisi.get("error", "")
             + "\n===== HAVA DURUMU SONU ====="
         )
+
+    # 🗣️ Basit sohbetleri Gemini'ye göndermeden Eagle doğrudan cevaplasın
+    if karar.get("arac") == "eagle_sohbet":
+        k = mesaj.lower()
+
+        if "kimsin" in k or "sen kimsin" in k or "senin adın" in k or "senin adin" in k:
+            cevap = "🦅 Ben EagleAI. Hızlı bilgi, hesaplama, hava durumu, spor ve borç takibi gibi işlerde kendi araçlarımı kullanırım."
+        elif "ne yapabiliyorsun" in k or "ne yapabilirsin" in k:
+            cevap = "🦅 Ben EagleAI. Matematik, hava durumu, spor, borç takibi ve güncel bilgi araştırmalarında yardımcı olabilirim."
+        elif "nasılsın" in k or "nasilsin" in k:
+            cevap = "🦅 İyiyim, teşekkürler! Hazırım. 😄"
+        elif "teşekkür ederim" in k or "tesekkur ederim" in k or "sağ ol" in k or "sag ol" in k:
+            cevap = "Rica ederim! 🦅"
+        elif "günaydın" in k or "gunaydin" in k:
+            cevap = "Günaydın! 🦅 Bugün de hazırız."
+        elif "iyi akşamlar" in k or "iyi aksamlar" in k:
+            cevap = "İyi akşamlar! 🦅"
+        elif "iyi geceler" in k:
+            cevap = "İyi geceler! 🦅"
+        else:
+            cevap = "Merhaba! 🦅 Nasıl yardımcı olabilirim?"
+
+        return jsonify({
+            "ok": True,
+            "answer": cevap,
+            "eagle_direct": True,
+            "memory_count": len(hafiza_yukle())
+        })
 
     # 🦅 Eagle'ın kendi çözebildiği isteklerde Gemini'yi hiç çağırma
     if karar.get("arac") == "borc_modulu" and borc_modulu_sonucu:
