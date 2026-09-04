@@ -1395,7 +1395,7 @@ def super_lig_getir(mesaj=""):
         return []
 
 
-def tvf_voleybol_getir():
+def tvf_voleybol_getir(sadece_bugun=False):
     """TVF resmi fikstüründen Türkiye'nin güncel ve yaklaşan maçlarını çeker."""
     try:
         from datetime import datetime
@@ -1508,6 +1508,11 @@ def tvf_voleybol_getir():
                 flush=True
             )
             return sonuclar[:8]
+
+        # Sadece bugün isteniyorsa gelecek maçları gösterme.
+        if sadece_bugun:
+            print("🏐 TVF: Bugün Türkiye maçı yok", flush=True)
+            return []
 
         # Bugün maç yoksa en yakın gelecek Türkiye maçlarını ver.
         gelecek = [
@@ -1968,7 +1973,10 @@ def sohbet():
                 "filenin sultanları",
                 "filenin efeleri"
             ]) and not gecmis_mac:
-                web_verisi = tvf_voleybol_getir()
+                sadece_bugun = any(k in mesaj.lower() for k in [
+                    "bugün", "bugun"
+                ])
+                web_verisi = tvf_voleybol_getir(sadece_bugun=sadece_bugun)
 
             # 🇬🇧 İngiltere / Premier League için resmi canlı API
             mesaj_spor = mesaj.lower().replace("\u0307", "")
