@@ -2048,9 +2048,17 @@ def sohbet():
         })
 
     if karar.get("intent") == "spor" and web_verisi:
+        spor_satirlari = ["⚽ GÜNCEL SPOR BİLGİSİ"]
+        for sonuc in web_verisi[:8]:
+            baslik = str(sonuc.get("title", "")).strip()
+            ozet = str(sonuc.get("snippet", "")).strip()
+            if baslik:
+                spor_satirlari.append(baslik)
+            if ozet:
+                spor_satirlari.append(ozet)
         return jsonify({
             "ok": True,
-            "answer": web_metni,
+            "answer": "\n".join(spor_satirlari),
             "web_search": True,
             "eagle_direct": True,
             "memory_count": len(hafiza_yukle())
