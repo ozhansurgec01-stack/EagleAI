@@ -1888,12 +1888,6 @@ def hafiza_temizle():
 @app.post("/api/sohbet")
 def sohbet():
 
-    if not GEMINI_API_KEY:
-        return jsonify({
-            "ok": False,
-            "error": "GEMINI_API_KEY bulunamadı."
-        }), 500
-
     data = request.get_json(silent=True) or {}
 
     mesaj = str(
@@ -2036,6 +2030,40 @@ def sohbet():
             + "\n===== HAVA DURUMU SONU ====="
         )
 
+    # 🦅 Eagle'ın kendi çözebildiği isteklerde Gemini'yi hiç çağırma
+    if karar.get("arac") == "borc_modulu" and borc_modulu_sonucu:
+        return jsonify({
+            "ok": True,
+            "answer": borc_modulu_sonucu,
+            "memory_count": len(hafiza_yukle()),
+            "eagle_direct": True
+        })
+
+    if karar.get("arac") == "hava_api" and hava_verisi and hava_verisi.get("ok"):
+        return jsonify({
+            "ok": True,
+            "answer": hava_metni,
+            "memory_count": len(hafiza_yukle()),
+            "eagle_direct": True
+        })
+
+    if karar.get("intent") == "spor" and web_verisi:
+        return jsonify({
+            "ok": True,
+            "answer": web_metni,
+            "web_search": True,
+            "eagle_direct": True,
+            "memory_count": len(hafiza_yukle())
+        })
+
+    if hesaplama_metni and karar.get("intent") == "matematik":
+        return jsonify({
+            "ok": True,
+            "answer": hesaplama_metni,
+            "eagle_direct": True,
+            "memory_count": len(hafiza_yukle())
+        })
+
     sistem = (
         SYSTEM_PROMPT
         + "\n\n===== EAGLE HAFIZA =====\n"
@@ -2141,6 +2169,12 @@ def sohbet():
         "role": "user",
         "parts": user_parts
     })
+
+    if not GEMINI_API_KEY:
+        return jsonify({
+            "ok": False,
+            "error": "GEMINI_API_KEY bulunamadı."
+        }), 500
 
     try:
 
