@@ -9,6 +9,7 @@ import json
 import ast
 import operator
 from pathlib import Path
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -741,6 +742,10 @@ def spor_arama_sorgusu(mesaj):
         "skor", "skorları", "skorlari"
     ])
 
+    if voleybol_mu and gecmis_mac:
+        dun = (datetime.now() - timedelta(days=1)).strftime("%d.%m.%Y")
+        return f"Türkiye voleybol {dun} maç sonuçları"
+
     # ⚽ Futbol
     futbol_mu = any(k in mesaj_kucuk for k in [
         "futbol", "süper lig", "super lig",
@@ -759,7 +764,7 @@ def spor_arama_sorgusu(mesaj):
         if voleybol_mu:
             if gecmis_mac:
                 dun = (datetime.now() - timedelta(days=1)).strftime("%d.%m.%Y")
-                return f"Türkiye voleybol dünkü maç sonuçları skorları {dun} resmi kaynaklar"
+                return f"Türkiye voleybol {dun} maç sonuçları"
             return "Türkiye bugün voleybol maç programı resmi TVF fikstür"
         if futbol_mu:
             return "Türkiye bugün futbol maç programı Süper Lig resmi fikstür"
