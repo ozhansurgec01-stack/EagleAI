@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import os
+import time
 import base64
 import requests
 from urllib.parse import quote, urlparse, parse_qs, unquote
@@ -2145,6 +2146,9 @@ def sohbet():
 
         # Gemini isteği
         # 🌐 Güncel internet araştırması için Google Search
+        gemini_baslangic = time.time()
+        print("⏱️ GEMINI BAŞLADI", flush=True)
+
         response = requests.post(
             GEMINI_URL,
             params={"key": GEMINI_API_KEY},
@@ -2152,6 +2156,11 @@ def sohbet():
                 "contents": contents
             },
             timeout=20
+        )
+
+        print(
+            f"⏱️ GEMINI BİTTİ: {time.time() - gemini_baslangic:.2f} saniye",
+            flush=True
         )
 
         try:
