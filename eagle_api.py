@@ -2504,6 +2504,42 @@ def sohbet():
         flush=True
     )
 
+    # 🇹🇷 SÜPER LİG FİKSTÜRÜ — TFF verisini Gemini'ye göndermeden doğrudan cevapla
+    if karar.get("intent") == "spor" and web_verisi:
+        mesaj_super = mesaj.lower().replace("\u0307", "")
+        super_lig_istegi = any(k in mesaj_super for k in [
+            "süper lig",
+            "super lig"
+        ])
+        fikstur_istegi = any(k in mesaj_super for k in [
+            "bugün", "bugun",
+            "yarın", "yarin",
+            "hangi maçlar", "hangi maclar",
+            "maçlar var", "maclar var",
+            "fikstür", "fikstur"
+        ])
+
+        if super_lig_istegi and fikstur_istegi:
+            satirlar = ["🇹🇷 SÜPER LİG GÜNCEL FİKSTÜR"]
+
+            for mac in web_verisi[:8]:
+                baslik = str(mac.get("title", "")).strip()
+                ozet = str(mac.get("snippet", "")).strip()
+
+                if baslik:
+                    satirlar.append(f"⚽ {baslik}")
+                if ozet:
+                    satirlar.append(ozet)
+
+            return jsonify({
+                "ok": True,
+                "answer": "\n".join(satirlar),
+                "web_search": True,
+                "sports_direct": True,
+                "gemini_fallback": False,
+                "memory_count": len(hafiza_yukle())
+            })
+
     # 🏟️ MAÇ SONUCU — Gemini'ye gitmeden doğrudan doğrulanmış skoru döndür
     if karar.get("intent") == "spor" and web_verisi:
         sonuc_sorusu = any(k in mesaj.lower() for k in [
