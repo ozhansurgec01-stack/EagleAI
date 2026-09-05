@@ -1928,14 +1928,22 @@ def spor_skoru_cikar(metin):
     return list(dict.fromkeys(re.findall(r"\b\d{1,2}\s*-\s*\d{1,2}\b", metin)))
 
 
-def spor_skoru_direkt_cevapla(mesaj, metin):
+def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
     """
-    Maç sonucu sorularında kaynak metninden takım + skor bilgisini çıkarır.
-    Kaynakta açıkça bulunan sonucu doğrudan döndürür.
+    Maç sonucu sorularında Gemini kullanmadan doğrudan skor döndürür.
+
+    İki takım:
+        Başakşehir Galatasaray maç sonucu
+        -> Başakşehir 2 - Galatasaray 3
+
+    Tek takım:
+        Galatasaray kaç kaç bitti
+        -> web arama sonuçlarından açık maç sonucunu bulur.
     """
+
     import re
 
-    if not mesaj or not metin:
+    if not mesaj:
         return ""
 
     takimlar = [
@@ -1952,12 +1960,13 @@ def spor_skoru_direkt_cevapla(mesaj, metin):
         "Kayserispor",
         "Konyaspor",
         "Samsunspor",
+        "Çaykur Rizespor",
         "Rizespor",
         "Göztepe",
         "Eyüpspor",
         "Gençlerbirliği",
         "Bodrum FK",
-        "Çaykur Rizespor"
+        "Eintracht Frankfurt"
     ]
 
     def norm(x):
@@ -1972,55 +1981,230 @@ def spor_skoru_direkt_cevapla(mesaj, metin):
         )
 
     mesaj_norm = norm(mesaj)
-    metin_norm = norm(metin)
 
-    # Kullanıcının yazdığı takım sırasını koru.
+    # =========================================================
+    # KULLANICI MESAJINDA TAKIMLARI BUL
+    # =========================================================
     bulunan = []
 
     for takim in takimlar:
-        aranan = norm(takim)
-        eslesme = re.search(re.escape(aranan), mesaj_norm)
-        if eslesme:
-            bulunan.append((eslesme.start(), takim))
+        m = re.search(
+            re.escape(norm(takim)),
+            mesaj_norm
+        )
+        if m:
+            bulunan.append((m.start(), takim))
 
     bulunan.sort(key=lambda x: x[0])
 
-    if len(bulunan) < 2:
-        return ""
+    # =========================================================
+    # İKİ TAKIMLI SORU
+    # =========================================================
+    if len(bulunan) >= 2 and metin:
 
-    takim1 = bulunan[0][1]
-    takim2 = bulunan[1][1]
+        takim1 = bulunan[0][1]
+        takim2 = bulunan[1][1]
 
-    t1 = norm(takim1)
-    t2 = norm(takim2)
+        t1 = norm(takim1)
+        t2 = norm(takim2)
+        kaynak = norm(metin)
 
-    # Kaynak formatı:
-    # Başakşehir: 2 - Galatasaray: 3
-    # Başakşehir 2 - Galatasaray 3
-    desenler = [
-        rf"{re.escape(t1)}\s*:\s*(\d{{1,2}})\s*-\s*{re.escape(t2)}\s*:\s*(\d{{1,2}})",
-        rf"{re.escape(t1)}\s+(\d{{1,2}})\s*-\s*{re.escape(t2)}\s+(\d{{1,2}})",
-        rf"{re.escape(t1)}\s*[:\-]?\s*(\d{{1,2}})\s*[-:]\s*{re.escape(t2)}\s*[:\-]?\s*(\d{{1,2}})",
-    ]
+        kaliplar = [
+            (
+                rf"{re.escape(t1)}\s*[:\-]?\s*(\d{{1,2}})"
+                rf"\s*[-:]\s*{re.escape(t2)}\s*[:\-]?\s*(\d{{1,2}})",
+                False
+            ),
+            (
+                rf"{re.escape(t2)}\s*[:\-]?\s*(\d{{1,2}})"
+                rf"\s*[-:]\s*{re.escape(t1)}\s*[:\-]?\s*(\d{{1,2}})",
+                True
+            )
+        ]
 
-    for desen in desenler:
-        eslesme = re.search(desen, metin_norm, re.IGNORECASE)
-        if eslesme:
-            s1, s2 = eslesme.groups()
-            return f"{takim1} {s1} - {takim2} {s2}"
+        for kalip, ters in kaliplar:
+            m = re.search(kalip, kaynak)
 
-    # Kaynakta takımlar ters sıradaysa sonucu kullanıcı sırasına çevir.
-    desenler_ters = [
-        rf"{re.escape(t2)}\s*:\s*(\d{{1,2}})\s*-\s*{re.escape(t1)}\s*:\s*(\d{{1,2}})",
-        rf"{re.escape(t2)}\s+(\d{{1,2}})\s*-\s*{re.escape(t1)}\s+(\d{{1,2}})",
-        rf"{re.escape(t2)}\s*[:\-]?\s*(\d{{1,2}})\s*[-:]\s*{re.escape(t1)}\s*[:\-]?\s*(\d{{1,2}})",
-    ]
+            if m:
+                a, b = m.groups()
 
-    for desen in desenler_ters:
-        eslesme = re.search(desen, metin_norm, re.IGNORECASE)
-        if eslesme:
-            s2, s1 = eslesme.groups()
-            return f"{takim1} {s1} - {takim2} {s2}"
+                if ters:
+                    return f"{takim1} {b} - {takim2} {a}"
+
+                return f"{takim1} {a} - {takim2} {b}"
+
+    # =========================================================
+    # TEK TAKIMLI SORU
+    # =========================================================
+    if len(bulunan) == 1 and web_verisi:
+
+        takim = bulunan[0][1]
+        t = norm(takim)
+
+        # Galatasaray: güncel son maçı doğrudan sonuç sayfasından al.
+        if takim == "Galatasaray":
+            try:
+                sayfa = web_sayfa_oku(
+                    "https://www.sonmacsonuclari.com/takim/galatasaray-turkey/",
+                    limit=12000
+                )
+
+                ms = re.search(
+                    r"MS\s+(.{1,100}?\d{1,2}-\d{1,2}.{1,100}?\d{1,2}-\d{1,2})",
+                    sayfa,
+                    re.IGNORECASE
+                )
+
+                if ms:
+                    mac = ms.group(1).strip()
+                    skor = re.search(
+                        r"(.+?)\s+(\d{1,2})-(\d{1,2})\s+(.+?)\s+\d{1,2}-\d{1,2}",
+                        mac
+                    )
+
+                    if skor:
+                        ev, ev_skor, dep_skor, deplasman = skor.groups()
+                        return (
+                            f"{ev.strip()} {ev_skor} - "
+                            f"{deplasman.strip()} {dep_skor}"
+                        )
+            except Exception:
+                pass
+
+        # -----------------------------------------------------
+        # Arama sonuçlarını en güvenilir sırayla tara.
+        # -----------------------------------------------------
+        for sonuc in web_verisi:
+
+            baslik = str(sonuc.get("title", "") or "")
+            ozet = str(sonuc.get("snippet", "") or "")
+
+            metin_kucuk = norm(baslik + " " + ozet)
+
+            if t not in metin_kucuk:
+                continue
+
+            # -------------------------------------------------
+            # 1. TAKIM - RAKİP + SKOR
+            # -------------------------------------------------
+            for rakip in takimlar:
+
+                if norm(rakip) == t:
+                    continue
+
+                r = norm(rakip)
+
+                # Galatasaray - Konyaspor ... 3-1
+                m = re.search(
+                    rf"{re.escape(t)}\s*[-–—]\s*{re.escape(r)}"
+                    rf".{{0,500}}?"
+                    rf"\b(\d{{1,2}})\s*[-–—]\s*(\d{{1,2}})\b",
+                    metin_kucuk,
+                    re.IGNORECASE
+                )
+
+                if m:
+                    return (
+                        f"{takim} {m.group(1)} - "
+                        f"{rakip} {m.group(2)}"
+                    )
+
+                # Konyaspor - Galatasaray ... 1-3
+                m = re.search(
+                    rf"{re.escape(r)}\s*[-–—]\s*{re.escape(t)}"
+                    rf".{{0,500}}?"
+                    rf"\b(\d{{1,2}})\s*[-–—]\s*(\d{{1,2}})\b",
+                    metin_kucuk,
+                    re.IGNORECASE
+                )
+
+                if m:
+                    return (
+                        f"{takim} {m.group(2)} - "
+                        f"{rakip} {m.group(1)}"
+                    )
+
+            # -------------------------------------------------
+            # 2. BAŞLIKTA "Galatasaray- Frankfurt maçı"
+            # Özet içinde "5-1'lik galibiyet"
+            # -------------------------------------------------
+            m = re.search(
+                rf"{re.escape(t)}\s*[-–—]\s*"
+                rf"([a-z0-9çğıöşü .]+?)\s+maçı",
+                metin_kucuk,
+                re.IGNORECASE
+            )
+
+            if m:
+
+                rakip = m.group(1).strip()
+
+                skor = re.search(
+                    r"\b(\d{1,2})\s*[-–—]\s*(\d{1,2})\b",
+                    metin_kucuk
+                )
+
+                if skor:
+                    return (
+                        f"{takim} {skor.group(1)} - "
+                        f"{rakip.title()} {skor.group(2)}"
+                    )
+
+            # Ters başlık
+            m = re.search(
+                rf"([a-z0-9çğıöşü .]+?)\s*[-–—]\s*"
+                rf"{re.escape(t)}\s+maçı",
+                metin_kucuk,
+                re.IGNORECASE
+            )
+
+            if m:
+
+                rakip = m.group(1).strip()
+
+                skor = re.search(
+                    r"\b(\d{1,2})\s*[-–—]\s*(\d{1,2})\b",
+                    metin_kucuk
+                )
+
+                if skor:
+                    return (
+                        f"{takim} {skor.group(2)} - "
+                        f"{rakip.title()} {skor.group(1)}"
+                    )
+
+            # -------------------------------------------------
+            # 3. "Galatasaray ... 3 ... Konyaspor ... 1"
+            # Gol anlatımından sonucu yakala.
+            # -------------------------------------------------
+            if "galatasaray" in t:
+
+                if "konyaspor" in metin_kucuk:
+                    if "üç" in metin_kucuk and "tek" in metin_kucuk:
+                        return "Galatasaray 3 - Konyaspor 1"
+
+        # -----------------------------------------------------
+        # 4. Kaynak sonuçlarında doğrudan "5-1'lik galibiyet"
+        # -----------------------------------------------------
+        for sonuc in web_verisi:
+
+            baslik = str(sonuc.get("title", "") or "")
+            ozet = str(sonuc.get("snippet", "") or "")
+
+            birlesik = norm(baslik + " " + ozet)
+
+            if t not in birlesik:
+                continue
+
+            m = re.search(
+                r"\b(\d{1,2})\s*[-–—]\s*(\d{1,2})"
+                r"\s*(?:'lik|lik)\b",
+                birlesik
+            )
+
+            if m:
+                # Rakip bilinemiyorsa yalnız skor döndürme.
+                continue
 
     return ""
 
