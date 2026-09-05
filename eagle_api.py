@@ -2517,9 +2517,21 @@ def sohbet():
                 })
 
         if response.status_code == 503:
+            if web_verisi:
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🦅 Gemini şu anda yoğun. "
+                        "Ücretsiz internet araştırma sonuçlarını doğrudan gösteriyorum.\n\n"
+                        + web_metni
+                    ),
+                    "web_search": True,
+                    "gemini_fallback": True,
+                    "memory_count": len(hafiza_yukle())
+                })
             return jsonify({
                 "ok": False,
-                "error": "Gemini şu anda yoğun."
+                "error": "Gemini şu anda yoğun ve web sonucu bulunamadı."
             }), 503
 
         return jsonify({
