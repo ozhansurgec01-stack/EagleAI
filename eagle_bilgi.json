@@ -24,7 +24,10 @@
       "return bir fonksiyonun sonucunu çağıran koda geri döndürür.",
       "import başka bir modülü veya kütüphaneyi Python koduna dahil etmek için kullanılır.",
       "class nesnelerin özelliklerini ve davranışlarını tanımlamak için kullanılan sınıf yapısıdır.",
-      "Bir nesne, bir class temel alınarak oluşturulan örnektir."
+      "Bir nesne, bir class temel alınarak oluşturulan örnektir.",
+      "pathlib.Path dosya ve klasör yollarını yönetmek için kullanılır.",
+      "os modülü işletim sistemiyle ilgili işlemlere erişim sağlar.",
+      "re modülü metinlerde düzenli ifadelerle arama ve eşleştirme yapmayı sağlar."
     ],
     "operatörler": [
       "Toplama işlemi + operatörüyle yapılır.",
