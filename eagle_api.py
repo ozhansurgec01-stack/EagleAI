@@ -2238,7 +2238,7 @@ def sohbet():
             spor_metin = " ".join(kaynak_metinleri)
 
             nihai = re.findall(
-                r"(?:karşılaşmayı|maçı|macı)\s+(\d{1,2}\s*-\s*\d{1,2})\s+(?:kazandı|kazandi)",
+                r"(?:karşılaşmayı|maçı|macı)s+(d{1,2}s*-s*d{1,2})s+(?:kazandı|kazandi|mağlup etti|maglup etti|mağlup oldu|maglup oldu|yendi)",
                 spor_metin,
                 re.IGNORECASE
             )
