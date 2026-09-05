@@ -463,27 +463,31 @@ def bilgi_bankasi_yukle():
 def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").lower()
 
-    kelimeler = re.findall(
-        r"[a-zA-ZçğıöşüÇĞİÖŞÜ]+",
-        metin
-    )
-
-    # Soru kalıplarını aramadan çıkar.
-    stop_kelimeler = {
-        "nedir", "ne", "nasıl", "nasil",
-        "nasılca", "nasilca",
-        "neye", "neden", "niçin", "nicin",
-        "için", "icin", "bir", "ve",
-        "mi", "mı", "mu", "mü"
+    konu_eslesmeleri = {
+        "liste": ["liste", "listeler", "listeleme", "append", "remove", "dilimleme", "indeks"],
+        "fonksiyon": ["fonksiyon", "fonksiyonlar", "def", "parametre", "return"],
+        "döngü": ["döngü", "dongu", "for", "while"],
+        "değişken": ["değişken", "degisken", "variable"],
+        "sözlük": ["sözlük", "sozluk", "dictionary", "dict"],
+        "tuple": ["tuple"],
+        "set": ["set"],
+        "veri tipi": ["veri tipi", "veritipi", "str", "int", "float", "bool"],
+        "if else": ["if", "else", "koşul", "kosul"],
+        "try except": ["try", "except", "exception", "hata"],
+        "import": ["import", "modül", "modul", "kütüphane", "kutuphane"],
+        "class": ["class", "sınıf", "sinif", "nesne"],
+        "print": ["print"],
+        "input": ["input"],
+        "type": ["type"],
+        "len": ["len"],
+        "algoritma": ["algoritma"]
     }
 
-    kelimeler = [
-        k for k in kelimeler
-        if k not in stop_kelimeler
-    ]
-
-    if not kelimeler:
-        return []
+    konu = None
+    for ad, kelimeler in konu_eslesmeleri.items():
+        if any(k in metin for k in kelimeler):
+            konu = ad
+            break
 
     bilgi = bilgi_bankasi_yukle()
     bulunan = []
@@ -495,21 +499,19 @@ def bilgi_bankasi_ara(mesaj):
             "dır", "dir", "dur", "dür",
             "tır", "tir", "tur", "tür"
         )
-
         for ek in ekler:
             if len(kelime) > len(ek) + 2 and kelime.endswith(ek):
                 return kelime[:-len(ek)]
-
         return kelime
-
-    arama_kokleri = {
-        normalize(kelime)
-        for kelime in kelimeler
-    }
 
     def tara(veri):
         if isinstance(veri, dict):
-            for deger in veri.values():
+            for anahtar, deger in veri.items():
+                if konu and normalize(str(anahtar)) == normalize(konu):
+                    if isinstance(deger, list):
+                        for madde in deger:
+                            if isinstance(madde, str):
+                                bulunan.append((100, madde))
                 tara(deger)
 
         elif isinstance(veri, list):
@@ -517,38 +519,22 @@ def bilgi_bankasi_ara(mesaj):
                 if not isinstance(madde, str):
                     continue
 
-                madde_kelimeleri = re.findall(
-                    r"[a-zA-ZçğıöşüÇĞİÖŞÜ]+",
-                    madde.lower()
-                )
-
-                madde_kokleri = {
-                    normalize(kelime)
-                    for kelime in madde_kelimeleri
-                }
-
-                ortak = arama_kokleri & madde_kokleri
-
-                if ortak:
-                    puan = len(ortak)
-
-                    # Birden fazla anlamlı kelime eşleşmesini ödüllendir.
-                    if len(ortak) >= 2:
-                        puan += 2
-
-                    bulunan.append((puan, madde))
+                if konu:
+                    hedefler = konu_eslesmeleri[konu]
+                    madde_metin = madde.lower()
+                    if any(k in madde_metin for k in hedefler):
+                        bulunan.append((10, madde))
 
     tara(bilgi)
 
-    bulunan.sort(
-        key=lambda x: x[0],
-        reverse=True
-    )
+    bulunan.sort(key=lambda x: x[0], reverse=True)
 
-    return [
-        madde
-        for _, madde in bulunan[:3]
-    ]
+    sonuc = []
+    for _, madde in bulunan:
+        if madde not in sonuc:
+            sonuc.append(madde)
+
+    return sonuc[:3]
 
 def hava_kodu_metin(kod):
     kod = int(kod)
@@ -843,7 +829,9 @@ def spor_arama_sorgusu(mesaj):
         "dun", "dunku", "dunun",
         "geçen maç", "gecen mac",
         "sonuç", "sonuc", "sonuçları", "sonuclari",
-        "skor", "skorları", "skorlari"
+        "skor", "skorları", "skorlari",
+        "kaç kaç", "kac kac",
+        "kaç kaç bitti", "kac kac bitti"
     ])
 
     if voleybol_mu and gecmis_mac:
@@ -908,8 +896,17 @@ def spor_arama_sorgusu(mesaj):
             return "Fransa bugün futbol maç programı Ligue 1 resmi fikstür"
         return "Fransa bugün spor maç programı Ligue 1 futbol"
 
-    # 🌍 Genel spor
-    return "bugün maç programı"
+    # 🌍 Genel spor — takım/oyuncu adı kullanıcı mesajından korunur
+    sonuc_sorusu = any(k in mesaj_kucuk for k in [
+        "kaç kaç", "kac kac", "kaç kaç bitti", "kac kac bitti",
+        "maç sonucu", "mac sonucu", "sonuç", "sonuc",
+        "skor", "skorları", "skorlari"
+        "kaç kaç", "kac kac",
+        "kaç kaç bitti", "kac kac bitti"
+    ])
+    if sonuc_sorusu:
+        return f"{mesaj.strip()} maç sonucu skor güncel"
+    return f"{mesaj.strip()} maç sonucu fikstür güncel"
 
 
 def eagle_karar_motoru(mesaj):
@@ -1923,6 +1920,14 @@ def web_sayfa_oku(url, limit=7000):
         return ""
 
 
+def spor_skoru_cikar(metin):
+    """Web metninden maç skorlarını çıkarır."""
+    import re
+    if not metin:
+        return []
+    return list(dict.fromkeys(re.findall(r"\b\d{1,2}\s*-\s*\d{1,2}\b", metin)))
+
+
 def web_sonuclari_metni(sonuclar):
     """Web arama sonuçlarını ve gerçek kaynak sayfalarını Gemini'ye aktarır."""
     if not sonuclar:
@@ -2095,6 +2100,8 @@ def sohbet():
                 "geçen maç", "gecen mac",
                 "sonuç", "sonuc", "sonuçları", "sonuclari",
                 "skor", "skorları", "skorlari"
+        "kaç kaç", "kac kac",
+        "kaç kaç bitti", "kac kac bitti"
             ])
 
             voleybol_mu = any(k in mesaj.lower() for k in [
@@ -2206,6 +2213,48 @@ def sohbet():
         else:
             web_verisi = web_arastir(mesaj)
 
+
+
+    # 🏆 Güncel spor skorunu Gemini'yi beklemeden yakala
+    if karar.get("intent") == "spor" and web_verisi:
+        sonuc_sorusu = any(k in mesaj_spor for k in [
+            "kaç kaç", "kac kac", "maç sonucu", "mac sonucu",
+            "skor", "sonuç", "sonuc"
+        ])
+
+        if sonuc_sorusu:
+            kaynak_metinleri = []
+
+            for kaynak in web_verisi[:8]:
+                kaynak_metinleri.append(str(kaynak.get("title", "")))
+                kaynak_metinleri.append(str(kaynak.get("snippet", "")))
+
+                url = kaynak.get("url", "")
+                if url:
+                    kaynak_metinleri.append(
+                        web_sayfa_oku(url, limit=8000)
+                    )
+
+            spor_metin = " ".join(kaynak_metinleri)
+
+            nihai = re.findall(
+                r"(?:karşılaşmayı|maçı|macı)\s+(\d{1,2}\s*-\s*\d{1,2})\s+(?:kazandı|kazandi)",
+                spor_metin,
+                re.IGNORECASE
+            )
+
+            if nihai:
+                return jsonify({
+                    "ok": True,
+                    "answer": "🦅 MAÇ SONUCU\n\n" +
+                              mesaj.strip() +
+                              "\n\n🏆 Nihai skor: " +
+                              nihai[-1].replace(" ", ""),
+                    "web_search": True,
+                    "eagle_direct": True,
+                    "memory_count": len(hafiza_yukle())
+                })
+
     web_metni = web_sonuclari_metni(web_verisi)
 
     # 🧮 Güvenli matematik doğrulaması
@@ -2314,24 +2363,6 @@ def sohbet():
             "answer": hava_metni,
             "memory_count": len(hafiza_yukle()),
             "eagle_direct": True
-        })
-
-    if karar.get("intent") == "spor" and web_verisi:
-        spor_baslik = "🏐 GÜNCEL VOLEYBOL BİLGİSİ" if voleybol_mu else "⚽ GÜNCEL SPOR BİLGİSİ"
-        spor_satirlari = [spor_baslik]
-        for sonuc in web_verisi[:8]:
-            baslik = str(sonuc.get("title", "")).strip()
-            ozet = str(sonuc.get("snippet", "")).strip()
-            if baslik:
-                spor_satirlari.append(baslik)
-            if ozet:
-                spor_satirlari.append(ozet)
-        return jsonify({
-            "ok": True,
-            "answer": "\n".join(spor_satirlari),
-            "web_search": True,
-            "eagle_direct": True,
-            "memory_count": len(hafiza_yukle())
         })
 
     if hesaplama_metni and karar.get("intent") == "matematik":
