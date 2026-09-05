@@ -900,7 +900,7 @@ def spor_arama_sorgusu(mesaj):
     sonuc_sorusu = any(k in mesaj_kucuk for k in [
         "kaç kaç", "kac kac", "kaç kaç bitti", "kac kac bitti",
         "maç sonucu", "mac sonucu", "sonuç", "sonuc",
-        "skor", "skorları", "skorlari"
+        "skor", "skorları", "skorlari",
         "kaç kaç", "kac kac",
         "kaç kaç bitti", "kac kac bitti"
     ])
@@ -2099,7 +2099,7 @@ def sohbet():
                 "dun", "dunku", "dunun",
                 "geçen maç", "gecen mac",
                 "sonuç", "sonuc", "sonuçları", "sonuclari",
-                "skor", "skorları", "skorlari"
+                "skor", "skorları", "skorlari",
         "kaç kaç", "kac kac",
         "kaç kaç bitti", "kac kac bitti"
             ])
@@ -2238,7 +2238,14 @@ def sohbet():
             for kaynak in web_verisi[:8]:
                 baslik = str(kaynak.get("title", ""))
                 snippet = str(kaynak.get("snippet", ""))
-                kaynak_kisa = baslik + " " + snippet
+                url = kaynak.get("url", "")
+                sayfa_icerik = ""
+                if url:
+                    try:
+                        sayfa_icerik = web_sayfa_oku(url, limit=4000)
+                    except Exception:
+                        sayfa_icerik = ""
+                kaynak_kisa = baslik + " " + snippet + " " + sayfa_icerik
 
                 if mesaj_takim and mesaj_takim.lower() not in kaynak_kisa.lower():
                     continue
