@@ -1,3 +1,4 @@
+from eagle_autofix import EagleAutoFixEngine
 from flask import Flask, request, jsonify
 import os
 import time
@@ -13,6 +14,9 @@ from pathlib import Path
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
+
+# 🦅 Eagle otomatik kod düzeltme motoru
+autofix_engine = EagleAutoFixEngine(Path(__file__).resolve().parent)
 
 
 # --- EAGLE BORÇ/TAKSİT ENTEGRASYONU ---
@@ -481,7 +485,11 @@ def bilgi_bankasi_ara(mesaj):
         "type": ["type"],
         "len": ["len"],
         "algoritma": ["algoritma"],
-        "python": ["python", "py", "python nedir", "python öğren", "python ogren"]
+        "python": ["python", "py", "python nedir", "python öğren", "python ogren"],
+        "json": ["json", "json nedir", "json dosyası", "json dosyasi"],
+        "api": ["api", "api nedir", "api ne işe yarar", "api ne ise yarar"],
+        "http": ["http", "http nedir", "404", "200", "429", "500"],
+        "flask": ["flask", "flask nedir", "flask route", "flask api"]
     }
 
     konu = None
@@ -2619,9 +2627,9 @@ def sohbet():
             + "\n===== HAVA DURUMU SONU ====="
         )
 
-    # 🧠 Eagle teknik bilgi bankası — Gemini’den önce doğrudan cevap
+    # 🧠 Eagle teknik bilgi bankası — Gemini’den önce genel doğrudan cevap
     bilgi_sonuclari = []
-    if karar.get("intent") == "kod_hata":
+    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api"):
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
     if bilgi_sonuclari:

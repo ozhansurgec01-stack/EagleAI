@@ -40,6 +40,53 @@
       "Fonksiyonlar def anahtar kelimesiyle tanımlanır.",
       "Fonksiyonlar parametre alabilir ve sonuç döndürebilir.",
       "Fonksiyonlar kod tekrarını azaltır ve programı daha düzenli hale getirir."
+    ],
+    "kosullar": [
+      "elif, if koşulu sağlanmadığında başka bir koşulu kontrol etmek için kullanılır.",
+      "and iki koşulun da doğru olmasını gerektirir.",
+      "or koşullardan en az birinin doğru olmasını yeterli kabul eder.",
+      "not bir koşulun sonucunu tersine çevirir.",
+      "Bir koşul yazarken karşılaştırma operatörleri ==, !=, >, <, >= ve <= kullanılabilir."
+    ],
+    "donguler": [
+      "range() belirli bir sayı aralığında değerler üretmek için kullanılır.",
+      "for döngüsü bir koleksiyonun elemanları üzerinde sırayla işlem yapmak için kullanılır.",
+      "while döngüsü bir koşul doğru olduğu sürece çalışır.",
+      "break döngüyü tamamen sonlandırır.",
+      "continue mevcut turu atlayıp döngünün sonraki turuna geçer."
+    ],
+    "listeler": [
+      "Listenin elemanlarına indeks numarasıyla erişilir ve ilk indeks 0'dır.",
+      "append() listenin sonuna yeni eleman ekler.",
+      "remove() belirtilen değeri listeden kaldırır.",
+      "pop() belirtilen indeksteki elemanı kaldırıp geri döndürür.",
+      "len() listenin kaç eleman içerdiğini verir.",
+      "Liste dilimleme ile listenin belirli bir bölümü alınabilir."
+    ],
+    "sozlukler": [
+      "Sözlüklerde verilere anahtar kullanılarak erişilir.",
+      "dict[key] kullanılarak bir anahtarın değeri alınabilir.",
+      "get() bulunmayan anahtarlarda varsayılan değer kullanmaya yardımcı olur.",
+      "keys() sözlüğün anahtarlarını verir.",
+      "values() sözlüğün değerlerini verir.",
+      "items() anahtar ve değer çiftlerini birlikte verir."
+    ],
+    "hata_ayiklama": [
+      "SyntaxError Python kodunun yazım kurallarına uymadığını gösterir.",
+      "NameError tanımlanmamış bir değişken veya ismin kullanıldığını gösterir.",
+      "TypeError uyumsuz veri tipleriyle işlem yapılmaya çalışıldığını gösterir.",
+      "ValueError doğru türde fakat geçersiz bir değer kullanıldığını gösterir.",
+      "IndexError bir liste veya koleksiyonda bulunmayan bir indekse erişildiğini gösterir.",
+      "KeyError bir sözlükte bulunmayan bir anahtara doğrudan erişildiğini gösterir.",
+      "Hata düzeltmede önce hata mesajı okunmalı, hatanın bulunduğu satır incelenmeli, düzeltme yapılmalı ve kod tekrar test edilmelidir."
+    ],
+    "ornekler": [
+      "Örnek: isim = 'Ali' bir str değişkenidir.",
+      "Örnek: yas = 15 bir int değişkenidir.",
+      "Örnek: sayilar = [1, 2, 3] bir listedir.",
+      "Örnek: if yas >= 18: koşulu yaşın 18 veya daha büyük olup olmadığını kontrol eder.",
+      "Örnek: for sayi in sayilar: listedeki elemanları sırayla işler.",
+      "Örnek: def topla(a, b): return a + b iki sayıyı toplayan bir fonksiyon tanımlar."
     ]
   },
   "programlama_mantigi": {
@@ -48,6 +95,41 @@
       "Koşullar programın farklı durumlarda farklı kararlar vermesini sağlar.",
       "Döngüler aynı veya benzer işlemleri tekrar tekrar yapmayı sağlar.",
       "Fonksiyonlar büyük problemleri daha küçük ve yönetilebilir parçalara ayırmaya yardımcı olur."
+    ]
+  },
+  "json": {
+    "temel": [
+      "JSON, verileri anahtar ve değer yapısıyla saklamak için kullanılan metin tabanlı bir veri biçimidir.",
+      "JSON, farklı programlama dilleri arasında veri alışverişinde yaygın olarak kullanılır.",
+      "JSON nesneleri {} ile, JSON listeleri [] ile gösterilir.",
+      "JSON verileri anahtar ve değer çiftleri şeklinde tutulur.",
+      "JSON bir programlama dili değil, veri biçimidir."
+    ],
+    "python_json": [
+      "Python'da JSON işlemleri için json modülü kullanılabilir.",
+      "json.load() JSON dosyasını Python verisine dönüştürerek okur.",
+      "json.dump() Python verisini JSON dosyasına yazabilir.",
+      "json.loads() JSON metnini Python nesnesine dönüştürür.",
+      "json.dumps() Python nesnesini JSON metnine dönüştürür."
+    ]
+  },
+  "api": {
+    "temel": [
+      "API, farklı yazılımların birbiriyle iletişim kurmasını sağlayan programlama arayüzüdür.",
+      "API üzerinden bir uygulama başka bir servisten veri isteyebilir.",
+      "GET isteği genellikle veri almak için kullanılır.",
+      "POST isteği genellikle veri göndermek veya işlem başlatmak için kullanılır.",
+      "HTTP 200 başarılı isteği belirtir.",
+      "HTTP 404 istenen kaynağın bulunamadığını belirtir.",
+      "HTTP 429 hız sınırına ulaşıldığını belirtir.",
+      "HTTP 500 sunucu tarafında hata olduğunu belirtir."
+    ],
+    "flask": [
+      "Flask, Python ile web uygulamaları ve API servisleri geliştirmek için kullanılan bir web çatısıdır.",
+      "Flask route bir URL yolunu Python fonksiyonuna bağlar.",
+      "Flask endpoint belirli bir URL üzerinden erişilebilen uygulama işlevini ifade eder.",
+      "jsonify() Python verilerini JSON HTTP cevabı olarak döndürmeye yardımcı olur.",
+      "request gelen HTTP isteğinin bilgilerine erişmek için kullanılır."
     ]
   }
 }
