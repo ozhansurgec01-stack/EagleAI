@@ -480,7 +480,8 @@ def bilgi_bankasi_ara(mesaj):
         "input": ["input"],
         "type": ["type"],
         "len": ["len"],
-        "algoritma": ["algoritma"]
+        "algoritma": ["algoritma"],
+        "python": ["python", "py", "python nedir", "python öğren", "python ogren"]
     }
 
     konu = None
@@ -2036,7 +2037,7 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
     # =========================================================
     # TEK TAKIMLI SORU
     # =========================================================
-    if len(bulunan) == 1 and web_verisi:
+    if len(bulunan) == 1:
 
         takim = bulunan[0][1]
         t = norm(takim)
@@ -2541,7 +2542,7 @@ def sohbet():
             })
 
     # 🏟️ MAÇ SONUCU — Gemini'ye gitmeden doğrudan doğrulanmış skoru döndür
-    if karar.get("intent") == "spor" and web_verisi:
+    if karar.get("intent") == "spor":
         sonuc_sorusu = any(k in mesaj.lower() for k in [
             "kaç kaç", "kac kac",
             "kaç kaç bitti", "kac kac bitti",
@@ -2553,7 +2554,8 @@ def sohbet():
         if sonuc_sorusu:
             direkt_skor = spor_skoru_direkt_cevapla(
                 mesaj,
-                web_metni
+                web_metni,
+                web_verisi=web_verisi
             )
 
             if direkt_skor:
