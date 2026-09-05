@@ -1928,6 +1928,102 @@ def spor_skoru_cikar(metin):
     return list(dict.fromkeys(re.findall(r"\b\d{1,2}\s*-\s*\d{1,2}\b", metin)))
 
 
+def spor_skoru_direkt_cevapla(mesaj, metin):
+    """
+    Maç sonucu sorularında kaynak metninden takım + skor bilgisini çıkarır.
+    Kaynakta açıkça bulunan sonucu doğrudan döndürür.
+    """
+    import re
+
+    if not mesaj or not metin:
+        return ""
+
+    takimlar = [
+        "Galatasaray",
+        "Fenerbahçe",
+        "Beşiktaş",
+        "Trabzonspor",
+        "Başakşehir",
+        "Kasımpaşa",
+        "Antalyaspor",
+        "Alanyaspor",
+        "Adana Demirspor",
+        "Gaziantep FK",
+        "Kayserispor",
+        "Konyaspor",
+        "Samsunspor",
+        "Rizespor",
+        "Göztepe",
+        "Eyüpspor",
+        "Gençlerbirliği",
+        "Bodrum FK",
+        "Çaykur Rizespor"
+    ]
+
+    def norm(x):
+        return (
+            str(x or "").lower()
+            .replace("ı", "i")
+            .replace("ğ", "g")
+            .replace("ü", "u")
+            .replace("ş", "s")
+            .replace("ö", "o")
+            .replace("ç", "c")
+        )
+
+    mesaj_norm = norm(mesaj)
+    metin_norm = norm(metin)
+
+    # Kullanıcının yazdığı takım sırasını koru.
+    bulunan = []
+
+    for takim in takimlar:
+        aranan = norm(takim)
+        eslesme = re.search(re.escape(aranan), mesaj_norm)
+        if eslesme:
+            bulunan.append((eslesme.start(), takim))
+
+    bulunan.sort(key=lambda x: x[0])
+
+    if len(bulunan) < 2:
+        return ""
+
+    takim1 = bulunan[0][1]
+    takim2 = bulunan[1][1]
+
+    t1 = norm(takim1)
+    t2 = norm(takim2)
+
+    # Kaynak formatı:
+    # Başakşehir: 2 - Galatasaray: 3
+    # Başakşehir 2 - Galatasaray 3
+    desenler = [
+        rf"{re.escape(t1)}\s*:\s*(\d{{1,2}})\s*-\s*{re.escape(t2)}\s*:\s*(\d{{1,2}})",
+        rf"{re.escape(t1)}\s+(\d{{1,2}})\s*-\s*{re.escape(t2)}\s+(\d{{1,2}})",
+        rf"{re.escape(t1)}\s*[:\-]?\s*(\d{{1,2}})\s*[-:]\s*{re.escape(t2)}\s*[:\-]?\s*(\d{{1,2}})",
+    ]
+
+    for desen in desenler:
+        eslesme = re.search(desen, metin_norm, re.IGNORECASE)
+        if eslesme:
+            s1, s2 = eslesme.groups()
+            return f"{takim1} {s1} - {takim2} {s2}"
+
+    # Kaynakta takımlar ters sıradaysa sonucu kullanıcı sırasına çevir.
+    desenler_ters = [
+        rf"{re.escape(t2)}\s*:\s*(\d{{1,2}})\s*-\s*{re.escape(t1)}\s*:\s*(\d{{1,2}})",
+        rf"{re.escape(t2)}\s+(\d{{1,2}})\s*-\s*{re.escape(t1)}\s+(\d{{1,2}})",
+        rf"{re.escape(t2)}\s*[:\-]?\s*(\d{{1,2}})\s*[-:]\s*{re.escape(t1)}\s*[:\-]?\s*(\d{{1,2}})",
+    ]
+
+    for desen in desenler_ters:
+        eslesme = re.search(desen, metin_norm, re.IGNORECASE)
+        if eslesme:
+            s2, s1 = eslesme.groups()
+            return f"{takim1} {s1} - {takim2} {s2}"
+
+    return ""
+
 def web_sonuclari_metni(sonuclar):
     """Web arama sonuçlarını ve gerçek kaynak sayfalarını Gemini'ye aktarır."""
     if not sonuclar:
@@ -2216,6 +2312,44 @@ def sohbet():
 
 
     web_metni = web_sonuclari_metni(web_verisi)
+
+    print(
+        f"🏟️ SPORTS DEBUG: intent={karar.get('intent')!r} "
+        f"web_verisi={len(web_verisi)} "
+        f"web_metni={len(web_metni)}",
+        flush=True
+    )
+
+    # 🏟️ MAÇ SONUCU — Gemini'ye gitmeden doğrudan doğrulanmış skoru döndür
+    if karar.get("intent") == "spor" and web_verisi:
+        sonuc_sorusu = any(k in mesaj.lower() for k in [
+            "kaç kaç", "kac kac",
+            "kaç kaç bitti", "kac kac bitti",
+            "maç sonucu", "mac sonucu",
+            "sonuç", "sonuc",
+            "skor", "skorları", "skorlari"
+        ])
+
+        if sonuc_sorusu:
+            direkt_skor = spor_skoru_direkt_cevapla(
+                mesaj,
+                web_metni
+            )
+
+            if direkt_skor:
+                print(
+                    f"🏟️ DOĞRUDAN MAÇ SONUCU: {direkt_skor}",
+                    flush=True
+                )
+
+                return jsonify({
+                    "ok": True,
+                    "answer": direkt_skor,
+                    "web_search": True,
+                    "sports_direct": True,
+                    "gemini_fallback": False,
+                    "memory_count": len(hafiza_yukle())
+                })
 
     # 🧮 Güvenli matematik doğrulaması
     hesaplama_metni = ""
