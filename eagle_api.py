@@ -2250,7 +2250,7 @@ def sohbet():
                 if mesaj_takim and mesaj_takim.lower() not in kaynak_kisa.lower():
                     continue
 
-                skor_eslesmeleri = list(re.finditer(r"\b\d{1,2}\s*-\s*\d{1,2}\b", kaynak_kisa))
+                skor_eslesmeleri = [m for m in re.finditer(r"\b\d{1,2}\s*-\s*\d{1,2}\b", kaynak_kisa) if re.search(r"bitti|bitmi|sonucu|sonu[çc]land|sona erdi|\bms\b|tamamland|kazand[ıi]|ma[gğ]lup", kaynak_kisa[max(0,m.start()-60):m.end()+60], flags=re.IGNORECASE)]
                 takim_eslesmeleri = list(re.finditer(re.escape(mesaj_takim), kaynak_kisa, flags=re.IGNORECASE)) if mesaj_takim else []
 
                 if skor_eslesmeleri and takim_eslesmeleri:
