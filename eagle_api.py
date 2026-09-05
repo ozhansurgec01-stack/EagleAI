@@ -2223,33 +2223,55 @@ def sohbet():
         ])
 
         if sonuc_sorusu:
-            kaynak_metinleri = []
+            import re
+
+            # Aranan takım adını mesajdan çıkar ve sadece kaynak başlık/snippet'lerinde ara.
+            skorlar = []
+            mesaj_takim = re.sub(
+                r"\b(maçı|macı|maç|mac|kaç kaç|kac kac|bitti|sonucu|sonuç|skor)\b",
+                " ",
+                mesaj_spor,
+                flags=re.IGNORECASE
+            )
+            mesaj_takim = re.sub(r"\s+", " ", mesaj_takim).strip()
 
             for kaynak in web_verisi[:8]:
-                kaynak_metinleri.append(str(kaynak.get("title", "")))
-                kaynak_metinleri.append(str(kaynak.get("snippet", "")))
+                baslik = str(kaynak.get("title", ""))
+                snippet = str(kaynak.get("snippet", ""))
+                kaynak_kisa = baslik + " " + snippet
 
-                url = kaynak.get("url", "")
-                if url:
-                    kaynak_metinleri.append(
-                        web_sayfa_oku(url, limit=8000)
-                    )
+                if mesaj_takim and mesaj_takim.lower() not in kaynak_kisa.lower():
+                    continue
 
-            spor_metin = " ".join(kaynak_metinleri)
+                skor_eslesmeleri = list(re.finditer(r"\b\d{1,2}\s*-\s*\d{1,2}\b", kaynak_kisa))
+                takim_eslesmeleri = list(re.finditer(re.escape(mesaj_takim), kaynak_kisa, flags=re.IGNORECASE)) if mesaj_takim else []
 
-            nihai = re.findall(
-                r"(?:karşılaşmayı|maçı|macı)s+(d{1,2}s*-s*d{1,2})s+(?:kazandı|kazandi|mağlup etti|maglup etti|mağlup oldu|maglup oldu|yendi)",
-                spor_metin,
-                re.IGNORECASE
-            )
+                if skor_eslesmeleri and takim_eslesmeleri:
+                    en_yakin_skor = None
+                    en_kucuk_mesafe = None
+                    for skor_m in skor_eslesmeleri:
+                        skor_orta = (skor_m.start() + skor_m.end()) / 2
+                        for takim_m in takim_eslesmeleri:
+                            takim_orta = (takim_m.start() + takim_m.end()) / 2
+                            mesafe = abs(skor_orta - takim_orta)
+                            if en_kucuk_mesafe is None or mesafe < en_kucuk_mesafe:
+                                en_kucuk_mesafe = mesafe
+                                en_yakin_skor = skor_m.group().replace(" ", "")
+                    if en_yakin_skor:
+                        skorlar.append(en_yakin_skor)
+                elif skor_eslesmeleri and not mesaj_takim:
+                    for skor_m in skor_eslesmeleri:
+                        skorlar.append(skor_m.group().replace(" ", ""))
 
-            if nihai:
+            skorlar = list(dict.fromkeys(skorlar))
+
+            if skorlar:
                 return jsonify({
                     "ok": True,
                     "answer": "🦅 MAÇ SONUCU\n\n" +
                               mesaj.strip() +
                               "\n\n🏆 Nihai skor: " +
-                              nihai[-1].replace(" ", ""),
+                              skorlar[0],
                     "web_search": True,
                     "eagle_direct": True,
                     "memory_count": len(hafiza_yukle())
