@@ -2362,8 +2362,64 @@ def sohbet():
             break
 
     kalici_hafiza = hafiza_metni()
+    autofix_istegi = False
     karar = eagle_karar_motoru(mesaj)
     print(f"🧠 EAGLE KARAR: {karar}", flush=True)
+
+    # 🛠️ EAGLE AUTOFIX — yalnızca açıkça bir Python dosyası belirtilirse
+    if karar.get("arac") == "kod_analiz":
+        import re
+
+        dosya_eslesmesi = re.search(
+            r"(?<![\w.-])([A-Za-z0-9_./~-]+\.py)(?![\w.-])",
+            mesaj
+        )
+
+        if dosya_eslesmesi:
+            hedef = Path(dosya_eslesmesi.group(1)).expanduser()
+
+            if not hedef.is_absolute():
+                hedef = Path(__file__).resolve().parent / hedef
+
+            hedef = hedef.resolve()
+            guvenli, guvenlik_nedeni = autofix_engine.is_safe_target(hedef)
+
+            if guvenli:
+                print(f"🛠️ AUTOFIX BAŞLADI: {hedef}", flush=True)
+                autofix_sonucu = autofix_engine.repair_loop(hedef)
+
+                if autofix_sonucu.get("success"):
+                    print(
+                        f"✅ AUTOFIX BAŞARILI: {hedef} "
+                        f"({autofix_sonucu.get('attempts')} deneme)",
+                        flush=True
+                    )
+                else:
+                    print(
+                        f"⚠️ AUTOFIX UYGULANAMADI: "
+                        f"{autofix_sonucu.get('reason')}",
+                        flush=True
+                    )
+
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🛠️ EAGLE AUTOFIX\\n\\n"
+                        f"Dosya: {hedef.name}\\n"
+                        f"Sonuç: {'Başarılı' if autofix_sonucu.get('success') else 'Düzeltilemedi'}\\n"
+                        f"Deneme: {autofix_sonucu.get('attempts', 0)}\\n"
+                        f"Neden: {autofix_sonucu.get('reason', '')}"
+                    ),
+                    "eagle_direct": True,
+                    "autofix": True,
+                    "autofix_result": autofix_sonucu,
+                    "memory_count": len(hafiza_yukle())
+                })
+
+            print(
+                f"🛡️ AUTOFIX ENGELLENDİ: {guvenlik_nedeni}",
+                flush=True
+            )
 
     # 🧠 Karar motorunun seçtiği aracı çalıştır
     borc_modulu_sonucu = ""
@@ -2629,7 +2685,7 @@ def sohbet():
 
     # 🧠 Eagle teknik bilgi bankası — Gemini’den önce genel doğrudan cevap
     bilgi_sonuclari = []
-    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api"):
+    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api") and not autofix_istegi:
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
     if bilgi_sonuclari:
