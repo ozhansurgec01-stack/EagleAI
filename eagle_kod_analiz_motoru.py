@@ -471,6 +471,167 @@ class EagleKodAnalizMotoru:
         return maksimum
 
 
+    # ---------------------------------------------------------
+    # 🧠 MANTIK ANALİZİ
+    # ---------------------------------------------------------
+    def mantik_analizi(self, kaynak_kodu: str, bulgular=None):
+        """
+        Statik bulguları bağlama göre değerlendirir.
+        Kodun mantığını değiştirmez ve dosyaya yazmaz.
+        """
+
+        if bulgular is None:
+            bulgular = self.analiz_et(kaynak_kodu)
+
+        try:
+            tree = ast.parse(kaynak_kodu)
+        except SyntaxError:
+            return []
+
+        tanimli = self._tanimli_isimler(tree)
+        sonuc = []
+
+        for bulgu in bulgular:
+            tur = bulgu.get("tur")
+            mesaj = bulgu.get("mesaj", "")
+            satir = bulgu.get("satir")
+
+            karar = {
+                "tur": tur,
+                "satir": satir,
+                "guven": "düşük",
+                "karar": "SADECE_RAPORLA",
+                "neden": mesaj,
+                "duzeltme_adayi": None,
+            }
+
+            # UndefinedName:
+            # Benzer isim varsa bunun yazım hatası olma ihtimalini hesapla.
+            if tur == "UndefinedName":
+                import re
+                eslesme = re.search(r"'([^']+)'", mesaj)
+
+                if eslesme:
+                    hatali = eslesme.group(1)
+
+                    adaylar = []
+                    for isim in tanimli:
+                        if not isinstance(isim, str):
+                            continue
+                        if not isim.isidentifier():
+                            continue
+                        if isim == hatali:
+                            continue
+
+                        # Basit edit mesafesi
+                        a = hatali.lower()
+                        b = isim.lower()
+
+                        dp = list(range(len(b) + 1))
+                        for i, ca in enumerate(a, 1):
+                            yeni = [i]
+                            for j, cb in enumerate(b, 1):
+                                yeni.append(min(
+                                    yeni[-1] + 1,
+                                    dp[j] + 1,
+                                    dp[j - 1] + (ca != cb)
+                                ))
+                            dp = yeni
+
+                        mesafe = dp[-1]
+
+                        if mesafe <= 2:
+                            adaylar.append((mesafe, isim))
+
+                    adaylar.sort()
+
+                    if len(adaylar) == 1:
+                        mesafe, aday = adaylar[0]
+
+                        karar["guven"] = "yüksek"
+                        karar["karar"] = "DUZELTME_ADAYI"
+                        karar["duzeltme_adayi"] = {
+                            "eski": hatali,
+                            "yeni": aday,
+                        }
+                        karar["neden"] = (
+                            f"'{hatali}' tanımsız; aynı kapsamda "
+                            f"'{aday}' isimli çok benzer bir değişken bulunuyor. "
+                            "Yazım hatası olma ihtimali yüksek."
+                        )
+
+            elif tur == "BareExcept":
+                karar["guven"] = "yüksek"
+                karar["karar"] = "DUZELTME_ADAYI"
+                karar["duzeltme_adayi"] = {
+                    "eski": "except:",
+                    "yeni": "except Exception:",
+                }
+                karar["neden"] = (
+                    "Bare except tüm istisnaları yakalıyor; "
+                    "Exception ile sınırlandırmak daha güvenli."
+                )
+
+            elif tur == "BooleanComparison":
+                karar["guven"] = "yüksek"
+                karar["karar"] = "DUZELTME_ADAYI"
+                karar["neden"] = (
+                    "Boolean değer doğrudan koşul olarak kullanılabilir; "
+                    "karşılaştırma gereksiz."
+                )
+
+            elif tur == "ZeroDivision":
+                karar["guven"] = "yüksek"
+                karar["karar"] = "DUZELTME_GEREKLI"
+                karar["neden"] = (
+                    "Bölen sabit olarak sıfır. Kod bu haliyle "
+                    "ZeroDivisionError oluşturur."
+                )
+
+            elif tur == "UnreachableCode":
+                karar["guven"] = "yüksek"
+                karar["karar"] = "DUZELTME_GEREKLI"
+                karar["neden"] = (
+                    "Return veya raise sonrasında normal akışta "
+                    "bu satıra ulaşılamıyor."
+                )
+
+            elif tur == "PossibleIndexError":
+                karar["guven"] = "orta"
+                karar["karar"] = "INCELE"
+                karar["neden"] = (
+                    "Sabit indeks kullanılıyor ancak listenin "
+                    "uzunluğu statik olarak garanti edilemiyor."
+                )
+
+            elif tur == "PossibleKeyError":
+                karar["guven"] = "orta"
+                karar["karar"] = "INCELE"
+                karar["neden"] = (
+                    "Sözlük anahtarının mevcut olduğu garanti edilemiyor."
+                )
+
+            elif tur == "UnnecessaryElse":
+                karar["guven"] = "orta"
+                karar["karar"] = "INCELE"
+                karar["neden"] = (
+                    "if bloğu terminal bir işlemle bitiyor; "
+                    "else kaldırılabilir ancak akış doğrulanmalı."
+                )
+
+            elif tur in {
+                "BuiltinShadowing",
+                "BuiltinParameterShadowing",
+                "DeepNesting",
+            }:
+                karar["guven"] = "düşük"
+                karar["karar"] = "SADECE_RAPORLA"
+
+            sonuc.append(karar)
+
+        return sonuc
+
+
 def dosya_analiz_et(dosya):
     dosya = Path(dosya)
 

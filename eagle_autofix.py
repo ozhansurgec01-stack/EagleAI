@@ -256,7 +256,7 @@ class EagleAutoFixEngine:
             }
 
     def repair_loop(self, target_file: Path) -> dict:
-        """Hata -> analiz -> güvenli düzeltme -> doğrulama döngüsü."""
+        """Statik analiz + mantık + güvenli düzeltme + doğrulama döngüsü."""
         target_file = Path(target_file)
 
         safe, safety_reason = self.is_safe_target(target_file)
@@ -274,6 +274,7 @@ class EagleAutoFixEngine:
                 "attempts": 0
             }
 
+        # İşlem başlangıcında tek güvenlik yedeği.
         backup_path = self.create_backup(target_file)
         attempts = 0
         history = []
@@ -282,40 +283,239 @@ class EagleAutoFixEngine:
             while attempts < self.max_attempts:
                 attempts += 1
 
-                ok, output = self.run_file(target_file)
+                # -------------------------------------------------
+                # 1 — STATİK ANALİZ
+                # -------------------------------------------------
+                analiz = self.analyze_code(target_file)
 
-                if ok:
+                if not analiz.get("ok"):
+                    self.rollback(backup_path, target_file)
                     return {
-                        "success": True,
-                        "reason": "Dosya düzeltme sonrası başarıyla çalıştı.",
+                        "success": False,
+                        "reason": analiz.get(
+                            "reason",
+                            "Statik analiz başarısız."
+                        ),
+                        "attempts": attempts,
+                        "history": history,
+                        "backup": str(backup_path)
+                    }
+
+                findings = analiz.get("findings", [])
+
+                # -------------------------------------------------
+                # 2 — MANTIK ANALİZİ
+                # -------------------------------------------------
+                source = target_file.read_text(
+                    encoding="utf-8"
+                )
+
+                mantik = self.analiz_motoru.mantik_analizi(
+                    source,
+                    findings
+                )
+
+                history.append({
+                    "attempt": attempts,
+                    "static_findings": findings,
+                    "logic_analysis": mantik
+                })
+
+                # -------------------------------------------------
+                # 3 — YÜKSEK GÜVENLİ DÜZELTME ADAYI
+                # -------------------------------------------------
+                aday = None
+
+                for karar in mantik:
+                    if (
+                        karar.get("guven") == "yüksek"
+                        and karar.get("karar") == "DUZELTME_ADAYI"
+                        and karar.get("duzeltme_adayi")
+                    ):
+                        aday = karar
+                        break
+
+                if aday:
+                    duzeltme = aday["duzeltme_adayi"]
+
+                    eski = duzeltme.get("eski")
+                    yeni_ad = duzeltme.get("yeni")
+
+                    if eski and yeni_ad:
+                        import re
+
+                        content = target_file.read_text(
+                            encoding="utf-8"
+                        )
+
+                        # Sadece güvenli identifier değişikliklerine izin ver.
+                        if (
+                            isinstance(eski, str)
+                            and isinstance(yeni_ad, str)
+                            and eski.isidentifier()
+                            and yeni_ad.isidentifier()
+                            and eski != yeni_ad
+                        ):
+                            pattern = rf"\b{re.escape(eski)}\b"
+                            occurrences = len(
+                                re.findall(pattern, content)
+                            )
+
+                            # Yazım hatası düzeltmesinde tek kullanım şartı.
+                            if occurrences == 1:
+                                new_content = re.sub(
+                                    pattern,
+                                    yeni_ad,
+                                    content
+                                )
+
+                                if new_content != content:
+                                    target_file.write_text(
+                                        new_content,
+                                        encoding="utf-8"
+                                    )
+
+                                    history[-1]["logic_fix"] = {
+                                        "fixed": True,
+                                        "old": eski,
+                                        "new": yeni_ad,
+                                        "reason": aday.get(
+                                            "neden",
+                                            ""
+                                        )
+                                    }
+
+                                    # Syntax doğrulaması.
+                                    syntax_ok, syntax_msg = (
+                                        self.check_syntax(target_file)
+                                    )
+
+                                    if not syntax_ok:
+                                        self.rollback(
+                                            backup_path,
+                                            target_file
+                                        )
+                                        return {
+                                            "success": False,
+                                            "reason": (
+                                                "Mantıksal düzeltme sonrası "
+                                                "syntax kontrolü başarısız."
+                                            ),
+                                            "syntax_error": syntax_msg,
+                                            "attempts": attempts,
+                                            "history": history,
+                                            "backup": str(backup_path)
+                                        }
+
+                                    # Gerçek dosya testi.
+                                    run_ok, run_output = (
+                                        self.run_file(target_file)
+                                    )
+
+                                    history[-1]["verification"] = {
+                                        "syntax_ok": syntax_ok,
+                                        "run_ok": run_ok,
+                                        "output": run_output
+                                    }
+
+                                    if run_ok:
+                                        return {
+                                            "success": True,
+                                            "reason": (
+                                                "Mantıksal düzeltme uygulandı "
+                                                "ve syntax + çalışma testi "
+                                                "başarıyla geçti."
+                                            ),
+                                            "attempts": attempts,
+                                            "history": history,
+                                            "backup": str(backup_path)
+                                        }
+
+                                    # Çalışmadıysa mevcut traceback
+                                    # analiz zincirine devam et.
+                                    output = run_output
+                                else:
+                                    output = ""
+                            else:
+                                output = ""
+                        else:
+                            output = ""
+                    else:
+                        output = ""
+                else:
+                    # Mantıksal otomatik düzeltme yoksa mevcut
+                    # runtime analizine geç.
+                    output_ok, output = self.run_file(target_file)
+
+                    if output_ok:
+                        return {
+                            "success": True,
+                            "reason": (
+                                "Kod statik analiz ve çalışma "
+                                "kontrolünden geçti."
+                            ),
+                            "attempts": attempts,
+                            "history": history,
+                            "backup": str(backup_path)
+                        }
+
+                # -------------------------------------------------
+                # 4 — RUNTIME HATASI
+                # -------------------------------------------------
+                if not output:
+                    self.rollback(
+                        backup_path,
+                        target_file
+                    )
+                    return {
+                        "success": False,
+                        "reason": (
+                            "Mantıksal düzeltme adayı doğrulanamadı "
+                            "ve devam edilecek runtime hatası yok."
+                        ),
                         "attempts": attempts,
                         "history": history,
                         "backup": str(backup_path)
                     }
 
                 error_info = self.analyze_error(output)
-                history.append({
-                    "attempt": attempts,
-                    "error": error_info
-                })
+
+                history[-1]["runtime_error"] = error_info
 
                 if error_info.get("confidence") != "yüksek":
-                    self.rollback(backup_path, target_file)
+                    self.rollback(
+                        backup_path,
+                        target_file
+                    )
                     return {
                         "success": False,
-                        "reason": "Hata için yeterli güvenli kanıt bulunamadı.",
+                        "reason": (
+                            "Hata için yeterli güvenli kanıt bulunamadı."
+                        ),
                         "attempts": attempts,
                         "history": history,
                         "backup": str(backup_path)
                     }
 
-                fix = self.apply_known_fix(target_file, error_info)
+                # -------------------------------------------------
+                # 5 — MEVCUT GÜVENLİ RUNTIME DÜZELTMELERİ
+                # -------------------------------------------------
+                fix = self.apply_known_fix(
+                    target_file,
+                    error_info
+                )
 
                 if not fix.get("fixed"):
-                    self.rollback(backup_path, target_file)
+                    self.rollback(
+                        backup_path,
+                        target_file
+                    )
                     return {
                         "success": False,
-                        "reason": fix.get("reason", "Güvenli düzeltme uygulanamadı."),
+                        "reason": fix.get(
+                            "reason",
+                            "Güvenli düzeltme uygulanamadı."
+                        ),
                         "attempts": attempts,
                         "history": history,
                         "backup": str(backup_path)
@@ -323,37 +523,57 @@ class EagleAutoFixEngine:
 
                 history[-1]["fix"] = fix
 
-                syntax_ok, syntax_msg = self.check_syntax(target_file)
+                syntax_ok, syntax_msg = self.check_syntax(
+                    target_file
+                )
+
                 if not syntax_ok:
-                    self.rollback(backup_path, target_file)
+                    self.rollback(
+                        backup_path,
+                        target_file
+                    )
                     return {
                         "success": False,
-                        "reason": "Düzeltme sonrası syntax kontrolü başarısız.",
+                        "reason": (
+                            "Düzeltme sonrası syntax kontrolü başarısız."
+                        ),
                         "syntax_error": syntax_msg,
                         "attempts": attempts,
                         "history": history,
                         "backup": str(backup_path)
                     }
 
-            self.rollback(backup_path, target_file)
+            self.rollback(
+                backup_path,
+                target_file
+            )
 
             return {
                 "success": False,
-                "reason": "Maksimum otomatik düzeltme denemesine ulaşıldı.",
+                "reason": (
+                    "Maksimum otomatik düzeltme denemesine ulaşıldı."
+                ),
                 "attempts": attempts,
                 "history": history,
                 "backup": str(backup_path)
             }
 
         except Exception as e:
-            self.rollback(backup_path, target_file)
+            self.rollback(
+                backup_path,
+                target_file
+            )
+
             return {
                 "success": False,
-                "reason": f"AutoFix döngüsünde beklenmeyen hata: {e}",
+                "reason": (
+                    f"AutoFix döngüsünde beklenmeyen hata: {e}"
+                ),
                 "attempts": attempts,
                 "history": history,
                 "backup": str(backup_path)
             }
+
 
     def apply_known_fix(self, target_file: Path, error_info: dict) -> dict:
         """Kanıtlanabilir güvenli düzeltmeleri uygular."""

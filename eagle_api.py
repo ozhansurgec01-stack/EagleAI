@@ -2438,6 +2438,172 @@ def sohbet():
     karar = eagle_karar_motoru(mesaj)
     print(f"🧠 EAGLE KARAR: {karar}", flush=True)
 
+    def eagle_yapistirilmis_kod_mu(metin):
+        """Mesajın doğrudan Python kodu içerip içermediğini belirler."""
+        satirlar = metin.strip().splitlines()
+
+        if len(satirlar) < 2:
+            return False
+
+        kod_isaretleri = [
+            "def ", "class ", "import ", "from ",
+            "return ", "if ", "elif ", "else:",
+            "for ", "while ", "try:", "except",
+            "with ", "print(", " = ", "==",
+            "raise ", "yield ", "async def "
+        ]
+
+        skor = 0
+
+        for satir in satirlar:
+            temiz = satir.strip()
+
+            if not temiz:
+                continue
+
+            if temiz.startswith("#"):
+                skor += 1
+                continue
+
+            if any(isaret in temiz for isaret in kod_isaretleri):
+                skor += 1
+
+        return skor >= 2
+
+
+    # 🧠 EAGLE YAPIŞTIRILMIŞ KOD ANALİZİ + AUTOFIX
+    # Doğrudan Python kodu yapıştırıldığında:
+    # analiz → mantık → güvenli düzeltme → syntax → test
+    if eagle_yapistirilmis_kod_mu(mesaj):
+        try:
+            import tempfile
+
+            kaynak_kod = mesaj.strip()
+
+            # Markdown kod çitlerini temizle.
+            if kaynak_kod.startswith("```") and kaynak_kod.endswith("```"):
+                satirlar = kaynak_kod.splitlines()
+
+                if satirlar and satirlar[0].strip().startswith("```"):
+                    satirlar = satirlar[1:]
+
+                if satirlar and satirlar[-1].strip() == "```":
+                    satirlar = satirlar[:-1]
+
+                kaynak_kod = "\n".join(satirlar).strip()
+
+            # Ön analiz: syntax + mantık
+            analiz_motoru = autofix_engine.analiz_motoru
+            bulgular = analiz_motoru.analiz_et(kaynak_kod)
+            mantik = analiz_motoru.mantik_analizi(
+                kaynak_kod,
+                bulgular
+            )
+
+            yuksek = [
+                x for x in mantik
+                if (
+                    x.get("guven") == "yüksek"
+                    and x.get("karar") in {
+                        "DUZELTME_ADAYI",
+                        "DUZELTME_GEREKLI"
+                    }
+                )
+            ]
+
+            # Geçici Python dosyası oluştur.
+            gecici_klasor = Path(
+                tempfile.mkdtemp(prefix=".eagle_code_", dir=str(Path(__file__).resolve().parent))
+            )
+
+            gecici_dosya = gecici_klasor / "pasted_code.py"
+            gecici_dosya.write_text(
+                kaynak_kod,
+                encoding="utf-8"
+            )
+
+            try:
+                # Mevcut güvenli AutoFix döngüsü.
+                autofix_sonucu = autofix_engine.repair_loop(
+                    gecici_dosya
+                )
+
+                cevap = [
+                    "🦅 EAGLE KOD ANALİZİ + AUTOFIX",
+                    "",
+                    f"Bulgu: {len(bulgular)}",
+                    f"Deneme: {autofix_sonucu.get('attempts', 0)}",
+                    "",
+                ]
+
+                if autofix_sonucu.get("success"):
+                    cevap.extend([
+                        "✅ DÜZELTME KABUL EDİLDİ",
+                        "",
+                        f"Neden: {autofix_sonucu.get('reason', '')}",
+                    ])
+                else:
+                    cevap.extend([
+                        "⚠️ DÜZELTME KABUL EDİLMEDİ",
+                        "",
+                        f"Neden: {autofix_sonucu.get('reason', '')}",
+                    ])
+
+                if yuksek:
+                    cevap.extend([
+                        "",
+                        "🧠 Yüksek güvenli analiz:"
+                    ])
+
+                    for bulgu in yuksek:
+                        aday = bulgu.get("duzeltme_adayi")
+
+                        satir = bulgu.get("satir", "?")
+                        tur = bulgu.get("tur", "Bilinmeyen")
+                        neden = bulgu.get("neden", "")
+
+                        cevap.append(
+                            f"• Satır {satir}: {tur} — {neden}"
+                        )
+
+                        if aday:
+                            cevap.append(
+                                f"  ↳ {aday.get('eski')} → "
+                                f"{aday.get('yeni')}"
+                            )
+
+                return jsonify({
+                    "ok": True,
+                    "answer": "\n".join(cevap),
+                    "eagle_direct": True,
+                    "code_analysis": True,
+                    "autofix": True,
+                    "autofix_result": autofix_sonucu,
+                    "findings": bulgular,
+                    "logic_analysis": mantik,
+                    "memory_count": len(hafiza_yukle())
+                })
+
+            finally:
+                # Geçici dosyayı ve klasörü temizle.
+                try:
+                    if gecici_dosya.exists():
+                        gecici_dosya.unlink()
+
+                    if gecici_klasor.exists():
+                        gecici_klasor.rmdir()
+                except Exception as temizlik_hatasi:
+                    print(
+                        f"⚠️ Geçici dosya temizleme uyarısı: {temizlik_hatasi}",
+                        flush=True
+                    )
+
+        except Exception as exc:
+            print(
+                f"⚠️ Yapıştırılmış kod AutoFix hatası: {exc}",
+                flush=True
+            )
+
     # 🛠️ EAGLE AUTOFIX — yalnızca açıkça bir Python dosyası belirtilirse
     if karar.get("arac") == "kod_analiz":
 
