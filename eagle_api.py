@@ -468,11 +468,11 @@ def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").lower()
 
     konu_eslesmeleri = {
-        "liste": ["liste", "listeler", "listeleme", "append", "remove", "dilimleme", "indeks"],
-        "fonksiyon": ["fonksiyon", "fonksiyonlar", "def", "parametre", "return"],
+        "liste": ["liste", "listeler", "listeleme", "append", "remove", "extend", "insert", "pop", "clear", "reverse", "dilimleme", "indeks"],
+        "fonksiyon": ["fonksiyon", "fonksiyonlar", "def", "parametre", "return", "find", "count", "isdigit", "isalpha", "isalnum", "capitalize", "title", "f-string"],
         "döngü": ["döngü", "dongu", "for", "while"],
         "değişken": ["değişken", "degisken", "variable"],
-        "sözlük": ["sözlük", "sozluk", "dictionary", "dict"],
+        "sözlük": ["sözlük", "sozluk", "dictionary", "dict", "keys", "values", "items", "get", "update"],
         "tuple": ["tuple"],
         "set": ["set"],
         "veri tipi": ["veri tipi", "veritipi", "str", "int", "float", "bool"],
@@ -485,7 +485,7 @@ def bilgi_bankasi_ara(mesaj):
         "type": ["type"],
         "len": ["len"],
         "algoritma": ["algoritma"],
-        "python": ["python", "py", "python nedir", "python öğren", "python ogren"],
+        "python": ["python", "py", "python nedir", "python öğren", "python ogren", "os", "os.getcwd", "os.listdir", "os.mkdir", "os.makedirs", "os.remove", "os.path.exists", "path.exists", "path.mkdir", "path.name", "path.suffix"],
         "json": ["json", "json nedir", "json dosyası", "json dosyasi"],
         "api": ["api", "api nedir", "api ne işe yarar", "api ne ise yarar"],
         "http": ["http", "http nedir", "404", "200", "429", "500"],
@@ -500,6 +500,29 @@ def bilgi_bankasi_ara(mesaj):
 
     bilgi = bilgi_bankasi_yukle()
     bulunan = []
+
+    # 🎯 Özel Python terimleri için doğrudan eşleşme
+    # Genel konu eşleşmesinden önce çalışır; yanlış/ilgisiz sonuçları önler.
+    ozel_terimler = (
+        "os.getcwd()", "os.listdir()", "os.mkdir()", "os.makedirs()",
+        "os.remove()", "os.path.exists()", "path.exists()", "path.mkdir()",
+        "path.name", "path.suffix", "f-string", "find()", "count()",
+        "isdigit()", "isalpha()", "isalnum()", "capitalize()", "title()",
+        "append()", "extend()", "insert()", "remove()", "pop()", "clear()",
+        "reverse()", "keys()", "values()", "items()", "get()", "update()"
+    )
+
+    mesaj_alt = metin.replace(" ", "").lower()
+
+    for terim in ozel_terimler:
+        if terim in mesaj_alt:
+            for kategori, maddeler in bilgi.get("python", {}).items():
+                for madde in maddeler:
+                    if terim in madde.lower().replace(" ", ""):
+                        bulunan.append((200, madde))
+
+            if bulunan:
+                return [madde for _, madde in bulunan[:3]]
 
     def normalize(kelime):
         kelime = kelime.lower()
@@ -2368,7 +2391,6 @@ def sohbet():
 
     # 🛠️ EAGLE AUTOFIX — yalnızca açıkça bir Python dosyası belirtilirse
     if karar.get("arac") == "kod_analiz":
-        import re
 
         dosya_eslesmesi = re.search(
             r"(?<![\w.-])([A-Za-z0-9_./~-]+\.py)(?![\w.-])",

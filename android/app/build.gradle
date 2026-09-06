@@ -8,9 +8,14 @@ android {
 
     defaultConfig {
         applicationId 'com.eagleai.borclar'
-        minSdk 23
+        minSdk 24
         targetSdk 34
         versionCode 1
         versionName '1.0'
     }
+}
+
+
+dependencies {
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.26.0'
 }

@@ -3,6 +3,7 @@ package com.eagleai.borclar;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.text.style.BackgroundColorSpan;
 import android.text.style.TypefaceSpan;
 import android.text.Spanned;
@@ -77,7 +78,6 @@ public class MainActivity extends Activity {
             Executors.newSingleThreadExecutor();
 
     private long sonMesajZamani = 0;
-    private static final long MESAJ_BEKLEME_MS = 4000;
 
     private TextToSpeech konusmaMotoru;
     private boolean sesAcik = true;
@@ -361,6 +361,7 @@ public class MainActivity extends Activity {
     }
 
     private void mesajGonder() {
+        android.util.Log.d("EAGLE_MIC", "mesajGonder() çağrıldı");
 
         final String mesaj =
                 mesajKutusu.getText().toString().trim();
@@ -369,16 +370,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        long simdi = System.currentTimeMillis();
-        if (simdi - sonMesajZamani < MESAJ_BEKLEME_MS) {
-            Toast.makeText(
-                    this,
-                    "Çok hızlı gönderiyorsun, biraz bekle 🦅",
-                    Toast.LENGTH_SHORT
-            ).show();
-            return;
-        }
-        sonMesajZamani = simdi;
+        sonMesajZamani = System.currentTimeMillis();
 
         mesajAlani.addView(mesajOlustur("Sen: " + mesaj));
         gecmiseKaydet("Sen: " + mesaj);
@@ -488,8 +480,9 @@ public class MainActivity extends Activity {
 
         } catch (Exception e) {
 
-            return "❌ Hafıza bağlantı hatası: " +
-                    e.getClass().getSimpleName();
+              return "Bağlantı hatası: " +
+                      e.getClass().getSimpleName();
+
 
         } finally {
 
@@ -1428,10 +1421,12 @@ public class MainActivity extends Activity {
 
         try {
 
+              android.util.Log.d("EAGLE_NET", "API bağlantısı başlıyor: " + API_URL);
             URL url = new URL(API_URL);
 
             baglanti =
                     (HttpURLConnection) url.openConnection();
+              android.util.Log.d("EAGLE_NET", "HttpURLConnection oluşturuldu");
 
             baglanti.setRequestMethod("POST");
             baglanti.setConnectTimeout(10000);
@@ -1489,12 +1484,14 @@ public class MainActivity extends Activity {
 
             OutputStream output =
                     baglanti.getOutputStream();
+              android.util.Log.d("EAGLE_NET", "OutputStream alındı");
 
             output.write(veri);
             output.flush();
             output.close();
 
             int kod = baglanti.getResponseCode();
+              android.util.Log.d("EAGLE_NET", "HTTP cevap kodu alındı: " + kod);
 
             BufferedReader reader;
 
@@ -1568,6 +1565,13 @@ public class MainActivity extends Activity {
                     );
 
         } catch (Exception e) {
+
+            android.util.Log.e(
+                    "EAGLE_NET",
+                    "AĞ HATASI: " + e.getClass().getSimpleName() +
+                    " | " + String.valueOf(e.getMessage()),
+                    e
+            );
 
             return "Bağlantı hatası: " +
                     e.getClass().getSimpleName();
@@ -1917,9 +1921,171 @@ private void sohbetYukle(String id) {
         return styled;
     }
 
+    private boolean sporCevabiMi(String metin) {
+        String k = metin.toLowerCase(java.util.Locale.ROOT);
+
+        boolean sporKelimesi =
+                k.contains("futbol") ||
+                k.contains("voleybol") ||
+                k.contains("basketbol") ||
+                k.contains("tenis") ||
+                k.contains("maç") ||
+                k.contains("mac") ||
+                k.contains("lig") ||
+                k.contains("şampiyona") ||
+                k.contains("sampiyona") ||
+                k.contains("turnuva") ||
+                k.contains("yarı final") ||
+                k.contains("yari final") ||
+                k.contains("çeyrek final") ||
+                k.contains("ceyrek final") ||
+                k.contains("final") ||
+                k.contains("set") ||
+                k.contains("skor") ||
+                k.contains("galibiyet") ||
+                k.contains("kazandı") ||
+                k.contains("kazandi") ||
+                k.contains("yendi") ||
+                k.contains("berabere");
+
+        boolean skorVar =
+                java.util.regex.Pattern.compile(
+                        "\\b\\d{1,3}\\s*[-–]\\s*\\d{1,3}\\b"
+                ).matcher(k).find();
+
+        boolean eslesmeVar =
+                java.util.regex.Pattern.compile(
+                        "(?m)^\\s*(?:\\*\\s*)?\\*\\*[^*\\n]+?\\s+[-–]\\s+[^*\\n]+?\\*\\*"
+                ).matcher(metin).find();
+
+        return sporKelimesi || skorVar || eslesmeVar;
+    }
+
+    private CharSequence sporMetniRenklendir(String metin) {
+        SpannableStringBuilder styled = new SpannableStringBuilder(metin);
+
+        // Maç / set skorları: 3-1, 2–1, 25-22 vb.
+        Pattern skorPattern = Pattern.compile(
+                "\\b\\d{1,3}\\s*[-–]\\s*\\d{1,3}\\b"
+        );
+        Matcher skorMatcher = skorPattern.matcher(metin);
+
+        while (skorMatcher.find()) {
+            styled.setSpan(
+                    new ForegroundColorSpan(Color.rgb(190, 30, 45)),
+                    skorMatcher.start(),
+                    skorMatcher.end(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+            styled.setSpan(
+                    new StyleSpan(Typeface.BOLD),
+                    skorMatcher.start(),
+                    skorMatcher.end(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+        }
+
+        // Tarih ve saat ifadeleri
+        Pattern tarihPattern = Pattern.compile(
+                "\\b(?:[0-3]?\\d[./-][0-1]?\\d(?:[./-]\\d{2,4})?|[0-3]?\\d\\s+(?:Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık|Ocak|Subat|Mart|Nisan|Mayis|Haziran|Temmuz|Agustos|Eylul|Ekim|Kasim|Aralik)|(?:bugün|bugun|yarın|yarin|dün|dun)|\\b\\d{1,2}:\\d{2}\\b)"
+        );
+        Matcher tarihMatcher = tarihPattern.matcher(metin);
+
+        while (tarihMatcher.find()) {
+            styled.setSpan(
+                    new ForegroundColorSpan(Color.rgb(0, 120, 215)),
+                    tarihMatcher.start(),
+                    tarihMatcher.end(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+            styled.setSpan(
+                    new StyleSpan(Typeface.BOLD),
+                    tarihMatcher.start(),
+                    tarihMatcher.end(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+        }
+
+        // Spor sonucunu anlatan güçlü ifadeler
+        Pattern sonucPattern = Pattern.compile(
+                "(?i)\\b(?:kazandı|kazandi|yendi|galip|galibiyet|maç sonucu|mac sonucu|sonuç|sonuc|skor|yarı final|yari final|çeyrek final|ceyrek final|final)\\b"
+        );
+        Matcher sonucMatcher = sonucPattern.matcher(metin);
+
+        while (sonucMatcher.find()) {
+            styled.setSpan(
+                    new ForegroundColorSpan(Color.rgb(0, 150, 90)),
+                    sonucMatcher.start(),
+                    sonucMatcher.end(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+            styled.setSpan(
+                    new StyleSpan(Typeface.BOLD),
+                    sonucMatcher.start(),
+                    sonucMatcher.end(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            );
+        }
+
+        // Spor müsabakaları: takım veya oyuncu eşleşmelerini "Taraf A - Taraf B" biçiminde ayır
+        Pattern sporPattern = Pattern.compile(
+                "(?m)^(?:\\s*[\\*•-]\\s*)?\\*\\*([^*\\n]+?)\\s+[-–]\\s+([^*\\n]+?)\\*\\*(?=\\s*(?:\\(|-|$))"
+        );
+        Matcher sporMatcher = sporPattern.matcher(metin);
+
+        while (sporMatcher.find()) {
+            String spor1 = sporMatcher.group(1).trim();
+            String spor2 = sporMatcher.group(2).trim();
+
+            // Çok kısa/genel ifadeleri takım adı olarak boyama
+            if (spor1.length() >= 3 && spor2.length() >= 3) {
+                int spor1Baslangic = sporMatcher.start(1);
+                int spor1Bitis = sporMatcher.end(1);
+                int spor2Baslangic = sporMatcher.start(2);
+                int spor2Bitis = sporMatcher.end(2);
+
+                styled.setSpan(
+                        new ForegroundColorSpan(Color.rgb(0, 90, 180)),
+                        spor1Baslangic,
+                        spor1Bitis,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                );
+                styled.setSpan(
+                        new StyleSpan(Typeface.BOLD),
+                        spor1Baslangic,
+                        spor1Bitis,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                );
+
+                styled.setSpan(
+                        new ForegroundColorSpan(Color.rgb(180, 30, 45)),
+                        spor2Baslangic,
+                        spor2Bitis,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                );
+                styled.setSpan(
+                        new StyleSpan(Typeface.BOLD),
+                        spor2Baslangic,
+                        spor2Bitis,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                );
+            }
+        }
+
+        return styled;
+    }
+
     private TextView normalMetinOlustur(String metin) {
         TextView tv = new TextView(this);
-        tv.setText(metin.trim());
+
+        String temizMetin = metin.trim();
+
+        if (sporCevabiMi(temizMetin)) {
+            tv.setText(sporMetniRenklendir(temizMetin));
+        } else {
+            tv.setText(temizMetin);
+        }
+
         tv.setTextSize(16);
         tv.setTextColor(Color.rgb(25, 25, 25));
         tv.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
@@ -2203,6 +2369,10 @@ private void sohbetYukle(String id) {
 
         icerikleriGuvenliEkle(kutu, metin);
 
+        LinearLayout altSatir = new LinearLayout(this);
+        altSatir.setOrientation(LinearLayout.HORIZONTAL);
+        altSatir.setGravity(Gravity.CENTER_VERTICAL);
+
         TextView saat = new TextView(this);
         saat.setText(
                 new SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
@@ -2210,9 +2380,36 @@ private void sohbetYukle(String id) {
         );
         saat.setTextSize(11);
         saat.setTextColor(Color.GRAY);
-        saat.setGravity(Gravity.END);
+        LinearLayout.LayoutParams saatLp = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+        );
+        saat.setLayoutParams(saatLp);
 
-        kutu.addView(saat);
+        TextView kopyalaBtn = new TextView(this);
+        kopyalaBtn.setText("📋");
+        kopyalaBtn.setTextSize(18);
+        kopyalaBtn.setGravity(Gravity.CENTER);
+        kopyalaBtn.setPadding(12, 4, 4, 4);
+        kopyalaBtn.setContentDescription("Mesajı kopyala");
+        kopyalaBtn.setOnClickListener(v -> {
+            ClipboardManager clipboard =
+                    (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            String kopyalanacak = metin;
+            if (kopyalanacak.startsWith("Sen: ")) {
+                kopyalanacak = kopyalanacak.substring(5).trim();
+            } else if (kopyalanacak.startsWith("🦅")) {
+                kopyalanacak = kopyalanacak.replaceFirst("^🦅\\s*", "").trim();
+            }
+            ClipData clip = ClipData.newPlainText("Eagle Mesaj", kopyalanacak);
+            clipboard.setPrimaryClip(clip);
+            Toast.makeText(this, "📋 Mesaj kopyalandı", Toast.LENGTH_SHORT).show();
+        });
+
+        altSatir.addView(saat);
+        altSatir.addView(kopyalaBtn);
+        kutu.addView(altSatir);
 
         LinearLayout.LayoutParams lp =
                 new LinearLayout.LayoutParams(
@@ -2445,9 +2642,9 @@ private void sohbetYukle(String id) {
         String temizMetin = metin.replaceAll("```[a-zA-Z]*\\n[\\s\\S]*?```", " ");
         temizMetin = temizMetin.replaceAll("[\\*#_>`]", "");
 
-        // Emoji ve sembolleri seslendirmeden çıkar.
+        // Emoji ve emoji sembollerini TTS'den çıkar.
         temizMetin = temizMetin.replaceAll(
-                "[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[\\u2600-\\u27BF]|[\\uFE00-\\uFE0F]",
+                "[\\x{1F000}-\\x{1FAFF}\\x{2600}-\\x{27BF}\\x{2300}-\\x{23FF}\\x{2B00}-\\x{2BFF}\\x{FE0F}\\x{200D}]",
                 " "
         );
 
@@ -2546,6 +2743,7 @@ private void sohbetYukle(String id) {
                 );
                 if (sonuclar != null && !sonuclar.isEmpty()) {
                     String metin = sonuclar.get(0);
+            android.util.Log.d("EAGLE_MIC", "Mikrofon sonucu: " + metin);
                     String mevcut = mesajKutusu.getText().toString();
                     if (mevcut.isEmpty()) {
                         mesajKutusu.setText(metin);
