@@ -27,7 +27,15 @@
       "Bir nesne, bir class temel alınarak oluşturulan örnektir.",
       "pathlib.Path dosya ve klasör yollarını yönetmek için kullanılır.",
       "os modülü işletim sistemiyle ilgili işlemlere erişim sağlar.",
-      "re modülü metinlerde düzenli ifadelerle arama ve eşleştirme yapmayı sağlar."
+      "re modülü metinlerde düzenli ifadelerle arama ve eşleştirme yapmayı sağlar.",
+      "tuple değiştirilemeyen sıralı bir veri koleksiyonudur.",
+      "set tekrarlanan değerleri otomatik olarak tekilleştiren bir koleksiyondur.",
+      "dictionary anahtar-değer çiftleriyle veri saklar.",
+      "class Python'da nesnelerin yapısını ve davranışlarını tanımlamak için kullanılır.",
+      "__init__ bir nesne oluşturulduğunda başlangıç değerlerini ayarlamak için kullanılan özel metottur.",
+      "self sınıf içindeki mevcut nesneye erişmek için kullanılır.",
+      "import başka bir Python modülünü veya paketini programa dahil etmek için kullanılır.",
+      "from ... import belirli bir modül veya paketin içinden seçilen öğeyi doğrudan içe aktarmak için kullanılır."
     ],
     "operatörler": [
       "Toplama işlemi + operatörüyle yapılır.",
@@ -42,21 +50,28 @@
     "fonksiyonlar": [
       "Fonksiyonlar def anahtar kelimesiyle tanımlanır.",
       "Fonksiyonlar parametre alabilir ve sonuç döndürebilir.",
-      "Fonksiyonlar kod tekrarını azaltır ve programı daha düzenli hale getirir."
+      "Fonksiyonlar kod tekrarını azaltır ve programı daha düzenli hale getirir.",
+      "return bir fonksiyonun sonucunu çağıran bölüme geri gönderir."
     ],
     "kosullar": [
       "elif, if koşulu sağlanmadığında başka bir koşulu kontrol etmek için kullanılır.",
       "and iki koşulun da doğru olmasını gerektirir.",
       "or koşullardan en az birinin doğru olmasını yeterli kabul eder.",
       "not bir koşulun sonucunu tersine çevirir.",
-      "Bir koşul yazarken karşılaştırma operatörleri ==, !=, >, <, >= ve <= kullanılabilir."
+      "Bir koşul yazarken karşılaştırma operatörleri ==, !=, >, <, >= ve <= kullanılabilir.",
+      "if koşul doğru olduğunda belirli kodların çalışmasını sağlar.",
+      "elif birden fazla koşulu sırayla kontrol etmek için kullanılır.",
+      "else önceki koşulların hiçbiri doğru olmadığında çalışır."
     ],
     "donguler": [
       "range() belirli bir sayı aralığında değerler üretmek için kullanılır.",
       "for döngüsü bir koleksiyonun elemanları üzerinde sırayla işlem yapmak için kullanılır.",
       "while döngüsü bir koşul doğru olduğu sürece çalışır.",
       "break döngüyü tamamen sonlandırır.",
-      "continue mevcut turu atlayıp döngünün sonraki turuna geçer."
+      "continue mevcut turu atlayıp döngünün sonraki turuna geçer.",
+      "for döngüsü bir koleksiyonun elemanları üzerinde tekrar yapmak için kullanılır.",
+      "while döngüsü verilen koşul doğru olduğu sürece çalışır.",
+      "continue mevcut döngü turunu atlayıp sonraki tura geçer."
     ],
     "listeler": [
       "Listenin elemanlarına indeks numarasıyla erişilir ve ilk indeks 0'dır.",
@@ -64,7 +79,14 @@
       "remove() belirtilen değeri listeden kaldırır.",
       "pop() belirtilen indeksteki elemanı kaldırıp geri döndürür.",
       "len() listenin kaç eleman içerdiğini verir.",
-      "Liste dilimleme ile listenin belirli bir bölümü alınabilir."
+      "Liste dilimleme ile listenin belirli bir bölümü alınabilir.",
+      "Python listesi birden fazla değeri sıralı şekilde tutmak için kullanılır.",
+      "Liste elemanlarına indeks numarasıyla erişilir ve indeksler 0'dan başlar.",
+      "append() listeye sona yeni bir eleman ekler.",
+      "insert() listenin belirtilen konumuna eleman ekler.",
+      "remove() listeden belirtilen değeri siler.",
+      "pop() listedeki bir elemanı indeksine göre çıkarır ve çıkarılan değeri döndürür.",
+      "len() bir listenin, metnin veya başka bir koleksiyonun eleman sayısını verir."
     ],
     "sozlukler": [
       "Sözlüklerde verilere anahtar kullanılarak erişilir.",
@@ -72,7 +94,12 @@
       "get() bulunmayan anahtarlarda varsayılan değer kullanmaya yardımcı olur.",
       "keys() sözlüğün anahtarlarını verir.",
       "values() sözlüğün değerlerini verir.",
-      "items() anahtar ve değer çiftlerini birlikte verir."
+      "items() anahtar ve değer çiftlerini birlikte verir.",
+      "Dictionary değerlerine anahtar kullanılarak erişilir.",
+      "keys() dictionary içindeki anahtarları verir.",
+      "values() dictionary içindeki değerleri verir.",
+      "items() dictionary içindeki anahtar-değer çiftlerini verir.",
+      "get() dictionary'de anahtar bulunmadığında varsayılan bir değer döndürmek için kullanılabilir."
     ],
     "hata_ayiklama": [
       "SyntaxError Python kodunun yazım kurallarına uymadığını gösterir.",
@@ -81,7 +108,9 @@
       "ValueError doğru türde fakat geçersiz bir değer kullanıldığını gösterir.",
       "IndexError bir liste veya koleksiyonda bulunmayan bir indekse erişildiğini gösterir.",
       "KeyError bir sözlükte bulunmayan bir anahtara doğrudan erişildiğini gösterir.",
-      "Hata düzeltmede önce hata mesajı okunmalı, hatanın bulunduğu satır incelenmeli, düzeltme yapılmalı ve kod tekrar test edilmelidir."
+      "Hata düzeltmede önce hata mesajı okunmalı, hatanın bulunduğu satır incelenmeli, düzeltme yapılmalı ve kod tekrar test edilmelidir.",
+      "try/except Python'da oluşabilecek hataları kontrollü şekilde yakalamak için kullanılır.",
+      "finally bloğu hata oluşsa da oluşmasa da çalıştırılmak istenen kodlar için kullanılır."
     ],
     "ornekler": [
       "Örnek: isim = 'Ali' bir str değişkenidir.",
