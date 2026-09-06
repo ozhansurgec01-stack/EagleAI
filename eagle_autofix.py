@@ -5,6 +5,8 @@ import shutil
 from pathlib import Path
 import time
 
+from eagle_kod_analiz_motoru import EagleKodAnalizMotoru
+
 class EagleAutoFixEngine:
     def __init__(self, project_root=".", max_attempts=3):
         self.project_root = Path(project_root).resolve()
@@ -15,6 +17,7 @@ class EagleAutoFixEngine:
         # AutoFix yalnızca proje içindeki Python dosyalarında çalışabilir.
         self.allowed_extensions = {".py"}
         self.blocked_parts = {".git", ".eagle_backups", "__pycache__"}
+        self.analiz_motoru = EagleKodAnalizMotoru()
 
     def is_safe_target(self, file_path: Path) -> tuple[bool, str]:
         """AutoFix hedefinin güvenli ve proje içinde olduğunu doğrular."""
@@ -223,6 +226,35 @@ class EagleAutoFixEngine:
         except Exception as e:
             return False, str(e)
 
+    def analyze_code(self, target_file: Path) -> dict:
+        """Kodun statik analizini yapar; dosyayı değiştirmez."""
+        target_file = Path(target_file)
+
+        safe, reason = self.is_safe_target(target_file)
+        if not safe:
+            return {
+                "ok": False,
+                "reason": reason,
+                "findings": []
+            }
+
+        try:
+            source = target_file.read_text(encoding="utf-8")
+            findings = self.analiz_motoru.analiz_et(source)
+
+            return {
+                "ok": True,
+                "reason": "Statik kod analizi tamamlandı.",
+                "findings": findings,
+                "count": len(findings)
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": f"Statik analiz hatası: {exc}",
+                "findings": []
+            }
+
     def repair_loop(self, target_file: Path) -> dict:
         """Hata -> analiz -> güvenli düzeltme -> doğrulama döngüsü."""
         target_file = Path(target_file)
@@ -324,44 +356,133 @@ class EagleAutoFixEngine:
             }
 
     def apply_known_fix(self, target_file: Path, error_info: dict) -> dict:
-        """Python traceback'inden kanıtlanabilir NameError düzeltmesini uygular."""
+        """Kanıtlanabilir güvenli düzeltmeleri uygular."""
+
         import re
 
         error_type = str(error_info.get("type", ""))
-        if error_type != "NameError":
-            return {"fixed": False, "reason": "Güvenli bilinen düzeltme kuralı yok."}
 
-        message = str(error_info.get("message", ""))
-        undefined_name = self.extract_undefined_name(message)
-        if not undefined_name:
-            return {"fixed": False, "reason": "Tanımsız isim çıkarılamadı."}
+        # Runtime NameError: yalnızca Python'un güvenilir önerisi varsa.
+        if error_type == "NameError":
+            message = str(error_info.get("message", ""))
+            undefined_name = self.extract_undefined_name(message)
 
-        match = re.search(r"Did you mean: [\'\"]([^\'\"]+)[\'\"]", message)
-        if not match:
-            return {"fixed": False, "reason": "Python tarafından güvenilir 'Did you mean' önerisi verilmedi."}
+            if not undefined_name:
+                return {
+                    "fixed": False,
+                    "reason": "Tanımsız isim çıkarılamadı."
+                }
 
-        replacement = match.group(1)
-        if not replacement.isidentifier() or replacement == undefined_name:
-            return {"fixed": False, "reason": "Önerilen isim güvenli değil."}
+            match = re.search(
+                r"Did you mean: ['\"]([^'\"]+)['\"]",
+                message
+            )
 
-        content = target_file.read_text(encoding="utf-8")
-        occurrences = len(re.findall(rf"\b{re.escape(undefined_name)}\b", content))
-        if occurrences != 1:
-            return {"fixed": False, "reason": f"Tanımsız isim dosyada tam 1 kez bulunmalı; bulunan: {occurrences}."}
+            if not match:
+                return {
+                    "fixed": False,
+                    "reason": "Python tarafından güvenilir 'Did you mean' önerisi verilmedi."
+                }
 
-        if not re.search(rf"\b{re.escape(replacement)}\s*=", content):
-            return {"fixed": False, "reason": "Önerilen isim dosyada tanımlı görünmüyor."}
+            replacement = match.group(1)
 
-        backup_path = self.create_backup(target_file)
-        new_content = re.sub(rf"\b{re.escape(undefined_name)}\b", replacement, content)
-        target_file.write_text(new_content, encoding="utf-8")
+            if (
+                not replacement.isidentifier()
+                or replacement == undefined_name
+            ):
+                return {
+                    "fixed": False,
+                    "reason": "Önerilen isim güvenli değil."
+                }
+
+            content = target_file.read_text(encoding="utf-8")
+
+            occurrences = len(
+                re.findall(
+                    rf"\b{re.escape(undefined_name)}\b",
+                    content
+                )
+            )
+
+            if occurrences != 1:
+                return {
+                    "fixed": False,
+                    "reason": (
+                        "Tanımsız isim dosyada tam 1 kez bulunmalı; "
+                        f"bulunan: {occurrences}."
+                    )
+                }
+
+            if not re.search(
+                rf"\b{re.escape(replacement)}\s*=",
+                content
+            ):
+                return {
+                    "fixed": False,
+                    "reason": "Önerilen isim dosyada tanımlı görünmüyor."
+                }
+
+            backup_path = self.create_backup(target_file)
+
+            new_content = re.sub(
+                rf"\b{re.escape(undefined_name)}\b",
+                replacement,
+                content
+            )
+
+            target_file.write_text(
+                new_content,
+                encoding="utf-8"
+            )
+
+            return {
+                "fixed": True,
+                "old_name": undefined_name,
+                "replacement": replacement,
+                "backup": str(backup_path)
+            }
+
+        # Statik analiz: BareExcept güvenli dönüşüm.
+        if error_type == "BareExcept":
+            content = target_file.read_text(encoding="utf-8")
+
+            if not re.search(r"(?m)^\s*except\s*:\s*$", content):
+                return {
+                    "fixed": False,
+                    "reason": "Güvenli bare except bulunamadı."
+                }
+
+            backup_path = self.create_backup(target_file)
+
+            new_content = re.sub(
+                r"(?m)^(\s*)except\s*:\s*$",
+                r"\1except Exception:",
+                content
+            )
+
+            if new_content == content:
+                return {
+                    "fixed": False,
+                    "reason": "Düzeltme uygulanamadı."
+                }
+
+            target_file.write_text(
+                new_content,
+                encoding="utf-8"
+            )
+
+            return {
+                "fixed": True,
+                "rule": "BareExcept",
+                "replacement": "except Exception:",
+                "backup": str(backup_path)
+            }
 
         return {
-            "fixed": True,
-            "old_name": undefined_name,
-            "replacement": replacement,
-            "backup": str(backup_path)
+            "fixed": False,
+            "reason": "Güvenli bilinen düzeltme kuralı yok."
         }
+
 
     def apply_fix_and_test(self, target_file: Path):
         """Güvenli yedekleme, syntax, test ve rollback döngüsü."""
