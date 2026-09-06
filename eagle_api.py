@@ -2544,7 +2544,9 @@ def sohbet():
                                 "",
                                 "📝 DÜZELTİLMİŞ KOD",
                                 "",
-                                duzeltilmis_kod
+                                "```python",
+                                duzeltilmis_kod,
+                                "```"
                             ])
                     cevap.extend([
                         "✅ DÜZELTME KABUL EDİLDİ",
