@@ -338,6 +338,45 @@ class EagleAutoFixEngine:
                 if aday:
                     duzeltme = aday["duzeltme_adayi"]
 
+                    # ZeroDivisionGuard → mevcut güvenli AutoFix motoru
+                    if isinstance(duzeltme, dict) and duzeltme.get("tur") == "ZeroDivisionGuard":
+                        fix = self.apply_known_fix(
+                            target_file,
+                            {"type": "ZeroDivision"}
+                        )
+
+                        if fix.get("fixed"):
+                            history[-1]["logic_fix"] = fix
+
+                            syntax_ok, syntax_msg = self.check_syntax(target_file)
+
+                            if syntax_ok:
+                                run_ok, run_output = self.run_file(target_file)
+
+                                history[-1]["verification"] = {
+                                    "syntax_ok": syntax_ok,
+                                    "run_ok": run_ok,
+                                    "output": run_output
+                                }
+
+                                if run_ok:
+                                    return {
+                                        "success": True,
+                                        "reason": "ZeroDivision düzeltmesi uygulandı ve test başarılı.",
+                                        "attempts": attempts,
+                                        "history": history,
+                                        "backup": str(backup_path)
+                                    }
+
+                            self.rollback(backup_path, target_file)
+                            return {
+                                "success": False,
+                                "reason": "ZeroDivision düzeltmesi doğrulanamadı.",
+                                "attempts": attempts,
+                                "history": history,
+                                "backup": str(backup_path)
+                            }
+
                     eski = duzeltme.get("eski")
                     yeni_ad = duzeltme.get("yeni")
 
@@ -581,6 +620,102 @@ class EagleAutoFixEngine:
         import re
 
         error_type = str(error_info.get("type", ""))
+
+        # Statik analiz: ZeroDivision için güvenli koşullu ifade.
+        if error_type == "ZeroDivision":
+            import ast
+            import re
+
+            content = target_file.read_text(encoding="utf-8")
+
+            try:
+                tree = ast.parse(content)
+            except SyntaxError:
+                return {
+                    "fixed": False,
+                    "reason": "ZeroDivision düzeltmesi öncesi syntax geçersiz."
+                }
+
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.BinOp):
+                    continue
+
+                if not isinstance(
+                    node.op,
+                    (ast.Div, ast.FloorDiv, ast.Mod)
+                ):
+                    continue
+
+                if not isinstance(node.right, ast.Name):
+                    continue
+
+                payda = node.right.id
+
+                # Paydanın gerçekten 0'a atandığını doğrula.
+                sifir_atama = re.search(
+                    rf"(?m)^\s*{re.escape(payda)}\s*=\s*0\s*$",
+                    content
+                )
+
+                if not sifir_atama:
+                    continue
+
+                satirlar = content.splitlines()
+                satir_no = node.lineno - 1
+
+                if not (0 <= satir_no < len(satirlar)):
+                    continue
+
+                satir = satirlar[satir_no]
+
+                # Sadece basit değişken = ifade biçimini değiştir.
+                match = re.match(
+                    r"^(\s*)([A-Za-z_]\w*\s*=\s*)(.+?)\s*$",
+                    satir
+                )
+
+                if not match:
+                    continue
+
+                girinti = match.group(1)
+                atama = match.group(2)
+                ifade = match.group(3)
+
+                if f"{payda} != 0" in ifade:
+                    return {
+                        "fixed": False,
+                        "reason": "ZeroDivision koruması zaten mevcut."
+                    }
+
+                yeni_ifade = (
+                    f"({ifade}) if {payda} != 0 else 0"
+                )
+
+                satirlar[satir_no] = (
+                    girinti + atama + yeni_ifade
+                )
+
+                new_content = "\n".join(satirlar)
+
+                if content.endswith("\n"):
+                    new_content += "\n"
+
+                target_file.write_text(
+                    new_content,
+                    encoding="utf-8"
+                )
+
+                return {
+                    "fixed": True,
+                    "rule": "ZeroDivisionGuard",
+                    "variable": payda,
+                    "replacement": yeni_ifade
+                }
+
+            return {
+                "fixed": False,
+                "reason": "Güvenli ZeroDivision düzeltme noktası bulunamadı."
+            }
 
         # Runtime NameError: yalnızca Python'un güvenilir önerisi varsa.
         if error_type == "NameError":

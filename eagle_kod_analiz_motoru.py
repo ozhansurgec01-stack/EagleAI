@@ -43,8 +43,44 @@ class EagleKodAnalizMotoru:
         tanimli_isimler = self._tanimli_isimler(tree)
 
         self._gez(tree, tanimli_isimler)
+        self._kontrol_sifir_degiskenleri(tree)
 
         return self.bulgular
+
+    def _kontrol_sifir_degiskenleri(self, tree):
+        """0 atanmış değişkenlerin bölme/mod işleminde kullanılmasını bulur."""
+        sifir_isimler = set()
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                if (
+                    isinstance(node.value, ast.Constant)
+                    and node.value.value == 0
+                ):
+                    for hedef in node.targets:
+                        if isinstance(hedef, ast.Name):
+                            sifir_isimler.add(hedef.id)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.BinOp):
+                continue
+
+            if not isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)):
+                continue
+
+            if (
+                isinstance(node.right, ast.Name)
+                and node.right.id in sifir_isimler
+            ):
+                self._ekle(
+                    "ZeroDivision",
+                    "🔴 KESİN",
+                    node.lineno,
+                    f"'{node.right.id}' değişkeni 0 değerinde; "
+                    "bölme işleminde sıfıra bölme riski var.",
+                    True,
+                    "Bölen için sıfır kontrolü eklenmeli."
+                )
 
     def _ekle(
         self,
@@ -582,12 +618,14 @@ class EagleKodAnalizMotoru:
 
             elif tur == "ZeroDivision":
                 karar["guven"] = "yüksek"
-                karar["karar"] = "DUZELTME_GEREKLI"
+                karar["karar"] = "DUZELTME_ADAYI"
+                karar["duzeltme_adayi"] = {
+                    "tur": "ZeroDivisionGuard"
+                }
                 karar["neden"] = (
-                    "Bölen sabit olarak sıfır. Kod bu haliyle "
-                    "ZeroDivisionError oluşturur."
+                    "Bölen değişken değeri 0. "
+                    "Bölme işlemine sıfır kontrolü eklenmeli."
                 )
-
             elif tur == "UnreachableCode":
                 karar["guven"] = "yüksek"
                 karar["karar"] = "DUZELTME_GEREKLI"
