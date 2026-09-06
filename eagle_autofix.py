@@ -378,6 +378,53 @@ class EagleAutoFixEngine:
                                 "backup": str(backup_path)
                             }
 
+                    # OffByOneRangeFix: bilinen güvenli düzeltmeyi uygula.
+                    if duzeltme.get("tur") == "OffByOneRangeFix":
+                        fix = self.apply_known_fix(
+                            target_file,
+                            {"type": "OffByOneRange"}
+                        )
+
+                        if fix.get("fixed"):
+                            syntax_ok, syntax_msg = self.check_syntax(target_file)
+                            if not syntax_ok:
+                                self.rollback(backup_path, target_file)
+                                return {
+                                    "success": False,
+                                    "reason": "OffByOne düzeltmesi sonrası syntax kontrolü başarısız.",
+                                    "syntax_error": syntax_msg,
+                                    "attempts": attempts,
+                                    "history": history,
+                                    "backup": str(backup_path),
+                                }
+
+                            run_ok, run_output = self.run_file(target_file)
+                            history[-1]["logic_fix"] = fix
+                            history[-1]["verification"] = {
+                                "syntax_ok": syntax_ok,
+                                "run_ok": run_ok,
+                                "output": run_output,
+                            }
+
+                            if run_ok:
+                                return {
+                                    "success": True,
+                                    "reason": "OffByOne düzeltmesi uygulandı ve syntax + çalışma testi başarıyla geçti.",
+                                    "attempts": attempts,
+                                    "history": history,
+                                    "backup": str(backup_path),
+                                    "fixed_code": target_file.read_text(encoding="utf-8").strip(),
+                                }
+
+                        self.rollback(backup_path, target_file)
+                        return {
+                            "success": False,
+                            "reason": fix.get("reason", "OffByOne düzeltmesi uygulanamadı."),
+                            "attempts": attempts,
+                            "history": history,
+                            "backup": str(backup_path),
+                        }
+
                     eski = duzeltme.get("eski")
                     yeni_ad = duzeltme.get("yeni")
 
@@ -669,32 +716,57 @@ class EagleAutoFixEngine:
 
                 satir = satirlar[satir_no]
 
-                # Sadece basit değişken = ifade biçimini değiştir.
+                # Basit atama veya return ifadesini güvenli biçimde değiştir.
                 match = re.match(
                     r"^(\s*)([A-Za-z_]\w*\s*=\s*)(.+?)\s*$",
                     satir
                 )
 
-                if not match:
-                    continue
+                if match:
+                    girinti = match.group(1)
+                    atama = match.group(2)
+                    ifade = match.group(3)
 
-                girinti = match.group(1)
-                atama = match.group(2)
-                ifade = match.group(3)
+                    if f"{payda} != 0" in ifade:
+                        return {
+                            "fixed": False,
+                            "reason": "ZeroDivision koruması zaten mevcut."
+                        }
 
-                if f"{payda} != 0" in ifade:
-                    return {
-                        "fixed": False,
-                        "reason": "ZeroDivision koruması zaten mevcut."
-                    }
+                    yeni_ifade = (
+                        f"({ifade}) if {payda} != 0 else 0"
+                    )
 
-                yeni_ifade = (
-                    f"({ifade}) if {payda} != 0 else 0"
-                )
+                    satirlar[satir_no] = (
+                        girinti + atama + yeni_ifade
+                    )
 
-                satirlar[satir_no] = (
-                    girinti + atama + yeni_ifade
-                )
+                else:
+                    return_match = re.match(
+                        r"^(\s*)return\s+(.+?)\s*$",
+                        satir
+                    )
+
+                    if not return_match:
+                        continue
+
+                    girinti = return_match.group(1)
+                    ifade = return_match.group(2)
+
+                    if f"{payda} != 0" in ifade:
+                        return {
+                            "fixed": False,
+                            "reason": "ZeroDivision koruması zaten mevcut."
+                        }
+
+                    yeni_ifade = (
+                        f"({ifade}) if {payda} != 0 else 0"
+                    )
+
+                    satirlar[satir_no] = (
+                        f"{girinti}return {yeni_ifade}"
+                    )
+
 
                 new_content = "\n".join(satirlar)
 
@@ -716,6 +788,42 @@ class EagleAutoFixEngine:
             return {
                 "fixed": False,
                 "reason": "Güvenli ZeroDivision düzeltme noktası bulunamadı."
+            }
+
+        # Statik analiz: OffByOneRange için güvenli düzeltme.
+        if error_type == "OffByOneRange":
+            content = target_file.read_text(encoding="utf-8")
+
+            import re
+
+            pattern = re.compile(
+                r"range\(\s*len\(\s*([A-Za-z_]\w*)\s*\)\s*-\s*1\s*\)"
+            )
+            matches = list(pattern.finditer(content))
+
+            if len(matches) != 1:
+                return {
+                    "fixed": False,
+                    "reason": "Güvenli OffByOne düzeltmesi için tam olarak bir eşleşme bulunmalı."
+                }
+
+            match = matches[0]
+            liste = match.group(1)
+            eski = match.group(0)
+            yeni = f"range(len({liste}))"
+
+            new_content = (
+                content[:match.start()]
+                + yeni
+                + content[match.end():]
+            )
+
+            target_file.write_text(new_content, encoding="utf-8")
+
+            return {
+                "fixed": True,
+                "rule": "OffByOneRangeFix",
+                "replacement": f"{eski} -> {yeni}"
             }
 
         # Runtime NameError: yalnızca Python'un güvenilir önerisi varsa.

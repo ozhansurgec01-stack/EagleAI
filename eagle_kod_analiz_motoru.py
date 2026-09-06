@@ -801,6 +801,7 @@ class EagleKodAnalizMotoru:
                 )
 
             elif tur == "OffByOneRange":
+                karar["duzeltme_adayi"] = {"tur": "OffByOneRangeFix"}
                 karar["guven"] = "yüksek"
                 karar["karar"] = "DUZELTME_ADAYI"
                 karar["neden"] = "range(len(x) - 1) yaygın bir off-by-one hatasıdır."
