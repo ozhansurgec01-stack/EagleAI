@@ -326,14 +326,53 @@ class EagleAutoFixEngine:
                 # -------------------------------------------------
                 aday = None
 
-                for karar in mantik:
+                # Güvenli düzeltmeler için öncelik sırası.
+                # Önce doğrudan uygulanabilen güvenli mantık düzeltmeleri.
+                oncelik = {
+                    "OffByOneRangeFix": 1,
+                    "ZeroDivisionGuard": 2,
+                }
+
+                adaylar = [
+                    karar for karar in mantik
                     if (
                         karar.get("guven") == "yüksek"
                         and karar.get("karar") == "DUZELTME_ADAYI"
                         and karar.get("duzeltme_adayi")
-                    ):
-                        aday = karar
-                        break
+                    )
+                ]
+
+                adaylar.sort(
+                    key=lambda karar: oncelik.get(
+                        karar.get("duzeltme_adayi", {}).get("tur")
+                        if isinstance(karar.get("duzeltme_adayi"), dict)
+                        else "",
+                        99
+                    )
+                )
+
+                # Daha önce uygulanmış güvenli düzeltmeleri tekrar seçme.
+                uygulanmis_turler = set()
+                for gecmis in history:
+                    fix_gecmis = gecmis.get("logic_fix")
+                    if isinstance(fix_gecmis, dict):
+                        tur_gecmis = fix_gecmis.get("tur") or fix_gecmis.get("rule")
+                        if tur_gecmis:
+                            uygulanmis_turler.add(tur_gecmis)
+
+                adaylar = [
+                    karar for karar in adaylar
+                    if (
+                        not isinstance(karar.get("duzeltme_adayi"), dict)
+                        or (
+                            karar["duzeltme_adayi"].get("tur")
+                            not in uygulanmis_turler
+                        )
+                    )
+                ]
+
+                if adaylar:
+                    aday = adaylar[0]
 
                 if aday:
                     duzeltme = aday["duzeltme_adayi"]
@@ -369,14 +408,9 @@ class EagleAutoFixEngine:
                                         "fixed_code": target_file.read_text(encoding="utf-8").strip(),
                                     }
 
-                            self.rollback(backup_path, target_file)
-                            return {
-                                "success": False,
-                                "reason": "ZeroDivision düzeltmesi doğrulanamadı.",
-                                "attempts": attempts,
-                                "history": history,
-                                "backup": str(backup_path)
-                            }
+                                # Runtime başka bir hata veriyorsa mevcut düzeltmeyi koru.
+                                # Döngünün başına dönüp kodu yeniden analiz et.
+                                continue
 
                     # OffByOneRangeFix: bilinen güvenli düzeltmeyi uygula.
                     if duzeltme.get("tur") == "OffByOneRangeFix":
@@ -416,14 +450,9 @@ class EagleAutoFixEngine:
                                     "fixed_code": target_file.read_text(encoding="utf-8").strip(),
                                 }
 
-                        self.rollback(backup_path, target_file)
-                        return {
-                            "success": False,
-                            "reason": fix.get("reason", "OffByOne düzeltmesi uygulanamadı."),
-                            "attempts": attempts,
-                            "history": history,
-                            "backup": str(backup_path),
-                        }
+                        # OffByOne düzeltmesi çalışma testinde başarısız oldu.
+                        # Döngünün başına dönüp kodu yeniden analiz et.
+                        continue
 
                     eski = duzeltme.get("eski")
                     yeni_ad = duzeltme.get("yeni")

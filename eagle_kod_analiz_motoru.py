@@ -101,6 +101,11 @@ class EagleKodAnalizMotoru:
         })
 
     def _tanimli_isimler(self, tree):
+        """Dosya seviyesindeki isimleri toplar.
+
+        Fonksiyon ve sınıf gövdelerindeki yerel isimler global kapsama
+        taşınmaz. Böylece scope dışındaki kullanımlar doğru yakalanabilir.
+        """
         isimler = set()
 
         # Built-in isimler ve yerleşik Python hata sınıfları
@@ -116,51 +121,126 @@ class EagleKodAnalizMotoru:
             "FileNotFoundError", "OSError"
         })
 
-        for node in ast.walk(tree):
-            # Fonksiyon / sınıf isimleri
+        def topla(node):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 isimler.add(node.name)
+                return
 
-                # Fonksiyon parametreleri
-                for arg in node.args.args:
-                    isimler.add(arg.arg)
-                for arg in node.args.kwonlyargs:
-                    isimler.add(arg.arg)
-                if node.args.vararg:
-                    isimler.add(node.args.vararg.arg)
-                if node.args.kwarg:
-                    isimler.add(node.args.kwarg.arg)
-
-            # Importlar
-            elif isinstance(node, ast.Import):
+            if isinstance(node, ast.Import):
                 for alias in node.names:
                     isimler.add(alias.asname or alias.name.split(".")[0])
+                return
 
-            elif isinstance(node, ast.ImportFrom):
+            if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     if alias.name != "*":
                         isimler.add(alias.asname or alias.name)
+                return
 
-            # Atamalar
-            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
                 isimler.add(node.id)
 
-            # with ... as
             elif isinstance(node, ast.withitem):
                 if isinstance(node.optional_vars, ast.Name):
                     isimler.add(node.optional_vars.id)
 
-            # except ... as
             elif isinstance(node, ast.ExceptHandler):
                 if node.name:
                     isimler.add(node.name)
+
+            for child in ast.iter_child_nodes(node):
+                topla(child)
+
+        # Modül gövdesini tara; fonksiyon/sınıf gövdelerine girme.
+        for node in tree.body:
+            topla(node)
+
+        return isimler
+
+    def _kapsam_isimleri(self, node, ust_kapsam=None):
+        """Bir fonksiyon/sınıf kapsamındaki görünür isimleri toplar."""
+        isimler = set(ust_kapsam or set())
+
+        # Fonksiyon parametreleri
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            args = node.args
+
+            for arg in args.posonlyargs:
+                isimler.add(arg.arg)
+
+            for arg in args.args:
+                isimler.add(arg.arg)
+
+            for arg in args.kwonlyargs:
+                isimler.add(arg.arg)
+
+            if args.vararg:
+                isimler.add(args.vararg.arg)
+
+            if args.kwarg:
+                isimler.add(args.kwarg.arg)
+
+        # Bu kapsam içinde tanımlanan isimler.
+        for child in ast.walk(node):
+            if child is node:
+                continue
+
+            # İç içe fonksiyon/sınıf gövdelerinin yerel isimlerini
+            # dış kapsamın parçası yapma.
+            if (
+                isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+                and child is not node
+            ):
+                if child is node:
+                    continue
+                isimler.add(child.name)
+                continue
+
+            if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store):
+                isimler.add(child.id)
+
+            elif isinstance(child, ast.Import):
+                for alias in child.names:
+                    isimler.add(alias.asname or alias.name.split(".")[0])
+
+            elif isinstance(child, ast.ImportFrom):
+                for alias in child.names:
+                    if alias.name != "*":
+                        isimler.add(alias.asname or alias.name)
+
+            elif isinstance(child, ast.withitem):
+                if isinstance(child.optional_vars, ast.Name):
+                    isimler.add(child.optional_vars.id)
+
+            elif isinstance(child, ast.ExceptHandler):
+                if child.name:
+                    isimler.add(child.name)
 
         return isimler
 
     def _gez(self, node, tanimli_isimler):
         for child in ast.iter_child_nodes(node):
-            self._kontrol(child, tanimli_isimler)
-            self._gez(child, tanimli_isimler)
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Fonksiyon adı dış kapsamda, parametreler ve yerel
+                # atamalar ise yalnızca fonksiyon kapsamındadır.
+                self._kontrol(child, tanimli_isimler)
+                yerel_kapsam = self._kapsam_isimleri(
+                    child,
+                    tanimli_isimler
+                )
+                self._gez(child, yerel_kapsam)
+
+            elif isinstance(child, ast.ClassDef):
+                self._kontrol(child, tanimli_isimler)
+                sinif_kapsami = self._kapsam_isimleri(
+                    child,
+                    tanimli_isimler
+                )
+                self._gez(child, sinif_kapsami)
+
+            else:
+                self._kontrol(child, tanimli_isimler)
+                self._gez(child, tanimli_isimler)
 
     def _kontrol(self, node, tanimli_isimler):
 
@@ -668,6 +748,51 @@ class EagleKodAnalizMotoru:
             return []
 
         tanimli = self._tanimli_isimler(tree)
+
+        # UndefinedName kararında hatanın bulunduğu satırın
+        # gerçek kapsamındaki isimleri kullan.
+        kapsamlar = []
+
+        def kapsam_topla(node, ust_kapsam):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                mevcut = self._kapsam_isimleri(node, ust_kapsam)
+                kapsamlar.append((
+                    getattr(node, "lineno", 1),
+                    getattr(node, "end_lineno", getattr(node, "lineno", 1)),
+                    mevcut
+                ))
+                ust_kapsam = mevcut
+
+            elif isinstance(node, ast.ClassDef):
+                mevcut = self._kapsam_isimleri(node, ust_kapsam)
+                kapsamlar.append((
+                    getattr(node, "lineno", 1),
+                    getattr(node, "end_lineno", getattr(node, "lineno", 1)),
+                    mevcut
+                ))
+                ust_kapsam = mevcut
+
+            for child in ast.iter_child_nodes(node):
+                kapsam_topla(child, ust_kapsam)
+
+        kapsam_topla(tree, tanimli)
+
+        def satir_kapsami(satir):
+            aday_kapsamlar = [
+                (baslangic, bitis, isimler)
+                for baslangic, bitis, isimler in kapsamlar
+                if baslangic <= satir <= bitis
+            ]
+
+            if not aday_kapsamlar:
+                return tanimli
+
+            # En dar iç kapsamı seç.
+            aday_kapsamlar.sort(
+                key=lambda x: (x[1] - x[0], x[0])
+            )
+            return aday_kapsamlar[0][2]
+
         sonuc = []
 
         for bulgu in bulgular:
@@ -694,7 +819,9 @@ class EagleKodAnalizMotoru:
                     hatali = eslesme.group(1)
 
                     adaylar = []
-                    for isim in tanimli:
+                    aday_havuzu = satir_kapsami(satir)
+
+                    for isim in aday_havuzu:
                         if not isinstance(isim, str):
                             continue
                         if not isim.isidentifier():
