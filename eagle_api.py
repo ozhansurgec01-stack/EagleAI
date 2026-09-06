@@ -842,6 +842,8 @@ def spor_arama_sorgusu(mesaj):
     ]
 
     # 🏐 Voleybol
+
+
     voleybol_mu = any(k in mesaj_kucuk for k in [
         "voleybol",
         "filenin sultanları", "filenin sultanlari",
@@ -1086,7 +1088,17 @@ def eagle_karar_motoru(mesaj):
     # 🏟️ SPOR
     spor_kelimeleri = [
         "maç", "mac", "maçlar", "maclar",
-        "skor", "fikstür", "fikstur",
+        "kaç kaç", "kac kac",
+        "kaç kaç bitti", "kac kac bitti",
+        "maç sonucu", "mac sonucu",
+        "son maç", "son mac",
+        "son maçını", "son macini",
+        "son maçında", "son macinda",
+        "son oynadığı maç", "son oynadigi mac",
+        "son karşılaşma", "son karsilasma",
+        "sonuç", "sonuc",
+        "skor", "skorları", "skorlari",
+        "fikstür", "fikstur",
         "puan durumu", "voleybol", "futbol",
         "basketbol", "tenis", "vnl",
         "süper lig", "super lig",
@@ -2053,6 +2065,32 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
         t2 = norm(takim2)
         kaynak = norm(metin)
 
+        # Web kaynaklarında Başakşehir bazen "Başakşehir FK" olarak geçer.
+        t1_re = r"basaksehir(?:\s+fk)?" if takim1 == "Başakşehir" else re.escape(t1)
+        t2_re = r"basaksehir(?:\s+fk)?" if takim2 == "Başakşehir" else re.escape(t2)
+
+        # Web kaynaklarında takım adı + skor doğrudan geçebilir.
+        takim1_re = re.escape(t1) + r"(?:\s+fk)?"
+        takim2_re = re.escape(t2) + r"(?:\s+fk)?"
+
+        m = re.search(
+            rf"{takim1_re}\s+(\d{{1,2}})\s*[-:]\s*(\d{{1,2}})\s+{takim2_re}",
+            kaynak
+        )
+
+        if m:
+            a, b = m.groups()
+            return f"{takim1} {a} - {takim2} {b}"
+
+        m = re.search(
+            rf"{takim2_re}\s+(\d{{1,2}})\s*[-:]\s*(\d{{1,2}})\s+{takim1_re}",
+            kaynak
+        )
+
+        if m:
+            a, b = m.groups()
+            return f"{takim1} {b} - {takim2} {a}"
+
         kaliplar = [
             (
                 rf"{re.escape(t1)}\s*[:\-]?\s*(\d{{1,2}})"
@@ -2591,6 +2629,9 @@ def sohbet():
         else:
             web_verisi = web_arastir(mesaj)
 
+    elif karar.get("arac") == "web_arastirma":
+        web_verisi = web_arastir(mesaj)
+
 
 
     web_metni = web_sonuclari_metni(web_verisi)
@@ -2639,39 +2680,25 @@ def sohbet():
 
     # 🏟️ MAÇ SONUCU — doğrulanmış skoru doğrudan döndür
     if karar.get("intent") == "spor":
-        sonuc_sorusu = any(k in mesaj.lower() for k in [
-            "kaç kaç", "kac kac",
-            "kaç kaç bitti", "kac kac bitti",
-            "maç sonucu", "mac sonucu",
-            "son maç", "son mac",
-            "son maçını", "son macini",
-            "son maçında", "son macinda",
-            "son oynadığı maç", "son oynadigi mac",
-            "son karşılaşma", "son karsilasma",
-            "sonuç", "sonuc",
-            "skor", "skorları", "skorlari"
-        ])
+        direkt_skor = spor_skoru_direkt_cevapla(
+            mesaj,
+            web_metni,
+            web_verisi=web_verisi
+        )
 
-        if sonuc_sorusu:
-            direkt_skor = spor_skoru_direkt_cevapla(
-                mesaj,
-                web_metni,
-                web_verisi=web_verisi
+        if direkt_skor:
+            print(
+                f"🏟️ DOĞRUDAN MAÇ SONUCU: {direkt_skor}",
+                flush=True
             )
 
-            if direkt_skor:
-                print(
-                    f"🏟️ DOĞRUDAN MAÇ SONUCU: {direkt_skor}",
-                    flush=True
-                )
-
-                return jsonify({
-                    "ok": True,
-                    "answer": "🏟️ EAGLE SPOR\n\n" + direkt_skor,
-                    "web_search": True,
-                    "sports_direct": True,
-                    "memory_count": len(hafiza_yukle())
-                })
+            return jsonify({
+                "ok": True,
+                "answer": "🏟️ EAGLE SPOR\n\n" + direkt_skor,
+                "web_search": True,
+                "sports_direct": True,
+                "memory_count": len(hafiza_yukle())
+            })
 
     # 🧮 Güvenli matematik doğrulaması
     hesaplama_metni = ""
@@ -2698,26 +2725,30 @@ def sohbet():
     hava_metni = ""
 
     if hava_verisi and hava_verisi.get("ok"):
+        sehir = hava_verisi.get("city", "Bilinmeyen şehir")
+        current = hava_verisi.get("current", {}) or {}
+        tahmin = hava_verisi.get("forecast", []) or []
+        bugun = tahmin[0] if tahmin else {}
+
         hava_metni = (
-            "\n\n===== CANLI HAVA DURUMU (GERÇEK VERİ) =====\n"
-            "AŞAĞIDAKİ VERİ GERÇEK VE GÜNCELDİR. Hava durumu sorusuna cevap "
-            "verirken SADECE bu veriyi kullan. Başka bir şehir, ülke veya "
-            "sıcaklık UYDURMA. Bu veride 'city' alanında belirtilen şehri "
-            "kullan, farklı bir yer adı söyleme.\n"
-            + json.dumps(
-                hava_verisi,
-                ensure_ascii=False,
-                indent=2
-            )
-            + "\n===== HAVA DURUMU SONU ====="
+            f"📍 {sehir}\n"
+            f"🌡️ {current.get('temperature', '—')}°C\n"
+            f"🤒 Hissedilen: {current.get('feels_like', '—')}°C\n"
+            f"💧 Nem: %{current.get('humidity', '—')}\n"
+            f"💨 Rüzgar: {current.get('wind', '—')} km/s\n"
+            f"☁️ {current.get('description', '—')}"
         )
 
+        if bugun:
+            hava_metni += (
+                "\n\n"
+                "📅 Bugün\n"
+                f"{bugun.get('min', '—')}°C — {bugun.get('max', '—')}°C\n"
+                f"🌧️ Yağış ihtimali: %{bugun.get('rain_probability', '—')}"
+            )
+
     elif hava_verisi and not hava_verisi.get("ok"):
-        hava_metni = (
-            "\n\n===== HAVA DURUMU BİLGİSİ =====\n"
-            + hava_verisi.get("error", "")
-            + "\n===== HAVA DURUMU SONU ====="
-        )
+        hava_metni = f"⚠️ {hava_verisi.get('error', 'Hava verisi alınamadı.')}"
 
     # 🧠 Eagle teknik bilgi bankası — doğrudan cevap
     bilgi_sonuclari = []
