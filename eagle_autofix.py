@@ -365,7 +365,8 @@ class EagleAutoFixEngine:
                                         "reason": "ZeroDivision düzeltmesi uygulandı ve test başarılı.",
                                         "attempts": attempts,
                                         "history": history,
-                                        "backup": str(backup_path)
+                                        "backup": str(backup_path),
+                                        "fixed_code": target_file.read_text(encoding="utf-8").strip(),
                                     }
 
                             self.rollback(backup_path, target_file)

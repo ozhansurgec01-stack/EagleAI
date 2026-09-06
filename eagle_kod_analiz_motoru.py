@@ -463,6 +463,149 @@ class EagleKodAnalizMotoru:
                     False
                 )
 
+        # ---------------------------------------------------------
+        # 16 — range(len(x) - 1) off-by-one
+        # ---------------------------------------------------------
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id == "range" and len(node.args) == 1:
+                arg = node.args[0]
+                if (
+                    isinstance(arg, ast.BinOp)
+                    and isinstance(arg.op, ast.Sub)
+                    and isinstance(arg.right, ast.Constant)
+                    and arg.right.value == 1
+                    and isinstance(arg.left, ast.Call)
+                    and isinstance(arg.left.func, ast.Name)
+                    and arg.left.func.id == "len"
+                ):
+                    self._ekle(
+                        "OffByOneRange",
+                        "🟡 ÖNERİ",
+                        node.lineno,
+                        "range(len(x) - 1) son elemanı döngü dışında bırakır.",
+                        True,
+                        "range(len(x)) olarak düzeltilmeli (eğer amaç tüm elemanları gezmekse)."
+                    )
+
+        # ---------------------------------------------------------
+        # 17 — Döngü sırasında üzerinde döngü kurulan listeyi değiştirme
+        # ---------------------------------------------------------
+        if isinstance(node, ast.For) and isinstance(node.iter, ast.Name):
+            donulen_liste = node.iter.id
+            for ic_node in ast.walk(ast.Module(body=node.body, type_ignores=[])):
+                if isinstance(ic_node, ast.Call) and isinstance(ic_node.func, ast.Attribute):
+                    if (
+                        isinstance(ic_node.func.value, ast.Name)
+                        and ic_node.func.value.id == donulen_liste
+                        and ic_node.func.attr in ("remove", "append", "pop", "insert", "clear")
+                    ):
+                        self._ekle(
+                            "MutationDuringIteration",
+                            "🟠 RİSK",
+                            ic_node.lineno,
+                            f"'{donulen_liste}' üzerinde döngü kurulmuşken "
+                            f"aynı liste değiştiriliyor (.{ic_node.func.attr}()).",
+                            False,
+                            f"'{donulen_liste}[:]' kopyası üzerinde döngü kurulmalı "
+                            f"veya yeni bir liste oluşturulmalı."
+                        )
+
+        # ---------------------------------------------------------
+        # 18 — maks/min = 0 ile başlatma riski
+        # ---------------------------------------------------------
+        if isinstance(node, ast.Assign):
+            if (
+                isinstance(node.value, ast.Constant)
+                and node.value.value == 0
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+            ):
+                isim = node.targets[0].id.lower()
+                if isim in ("maks", "max", "maksimum", "en_buyuk"):
+                    self._ekle(
+                        "MaxInitZero",
+                        "🟡 ÖNERİ",
+                        node.lineno,
+                        f"'{node.targets[0].id}' değişkeni 0 ile başlatılmış; "
+                        f"tüm değerler negatifse yanlış sonuç verebilir.",
+                        True,
+                        "float('-inf') ile başlatılmalı veya ilk eleman kullanılmalı."
+                    )
+                elif isim in ("min", "minimum", "en_kucuk"):
+                    self._ekle(
+                        "MinInitZero",
+                        "🟡 ÖNERİ",
+                        node.lineno,
+                        f"'{node.targets[0].id}' değişkeni 0 ile başlatılmış; "
+                        f"tüm değerler pozitifse yanlış sonuç verebilir.",
+                        True,
+                        "float('inf') ile başlatılmalı veya ilk eleman kullanılmalı."
+                    )
+
+        # ---------------------------------------------------------
+        # 19 — Float değerin == ile karşılaştırılması
+        # ---------------------------------------------------------
+        if isinstance(node, ast.Compare):
+            for op, comparator in zip(node.ops, node.comparators):
+                if (
+                    isinstance(op, (ast.Eq, ast.NotEq))
+                    and isinstance(comparator, ast.Constant)
+                    and isinstance(comparator.value, float)
+                ):
+                    self._ekle(
+                        "FloatEquality",
+                        "🟡 ÖNERİ",
+                        node.lineno,
+                        "Float değer doğrudan eşitlik ile karşılaştırılıyor; "
+                        "yuvarlama hatası nedeniyle beklenmedik sonuç verebilir.",
+                        False,
+                        "abs(a - b) < 1e-9 gibi bir tolerans kontrolü önerilir."
+                    )
+
+        # ---------------------------------------------------------
+        # 20 — Döngüde birikim değişkeninin '=' ile silinmesi
+        # ---------------------------------------------------------
+        if isinstance(node, ast.For):
+            for ic_node in ast.walk(ast.Module(body=node.body, type_ignores=[])):
+                if isinstance(ic_node, ast.Assign):
+                    if (
+                        len(ic_node.targets) == 1
+                        and isinstance(ic_node.targets[0], ast.Name)
+                        and isinstance(ic_node.value, ast.Name)
+                    ):
+                        hedef = ic_node.targets[0].id.lower()
+                        if hedef in ("toplam", "sonuc", "sum", "total"):
+                            self._ekle(
+                                "AccumulatorOverwrite",
+                                "🟠 RİSK",
+                                ic_node.lineno,
+                                f"Döngüde '{ic_node.targets[0].id} = ...' kullanılmış; "
+                                f"her turda önceki birikim siliniyor.",
+                                True,
+                                f"'{ic_node.targets[0].id} += ...' kullanılmalı."
+                            )
+
+        # ---------------------------------------------------------
+        # 21 — Rekürsif fonksiyonda temel durum (if) eksikliği
+        # ---------------------------------------------------------
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            kendi_cagrisi = any(
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name)
+                and n.func.id == node.name
+                for n in ast.walk(node)
+            )
+            if kendi_cagrisi and not any(isinstance(n, ast.If) for n in ast.walk(node)):
+                self._ekle(
+                    "RecursionWithoutBaseCase",
+                    "🔴 KESİN",
+                    node.lineno,
+                    f"'{node.name}' fonksiyonu kendini çağırıyor ama hiçbir "
+                    f"'if' koşulu (temel durum) yok; sonsuz rekürsyon riski.",
+                    False,
+                    "Rekürsyonu durduracak bir temel durum eklenmeli."
+                )
+
     def _kontrol_ulasılmaz(self, body):
         terminal = False
 
@@ -656,6 +799,30 @@ class EagleKodAnalizMotoru:
                     "if bloğu terminal bir işlemle bitiyor; "
                     "else kaldırılabilir ancak akış doğrulanmalı."
                 )
+
+            elif tur == "OffByOneRange":
+                karar["guven"] = "yüksek"
+                karar["karar"] = "DUZELTME_ADAYI"
+                karar["neden"] = "range(len(x) - 1) yaygın bir off-by-one hatasıdır."
+
+            elif tur == "MaxInitZero":
+                karar["guven"] = "orta"
+                karar["karar"] = "INCELE"
+                karar["neden"] = "Negatif değerler varsa yanlış sonuç riski var."
+
+            elif tur == "MinInitZero":
+                karar["guven"] = "orta"
+                karar["karar"] = "INCELE"
+                karar["neden"] = "Pozitif değerler varsa yanlış sonuç riski var."
+
+            elif tur == "AccumulatorOverwrite":
+                karar["guven"] = "yüksek"
+                karar["karar"] = "DUZELTME_ADAYI"
+                karar["neden"] = "Döngüde birikim değişkeni her turda sıfırlanıyor."
+
+            elif tur in {"MutationDuringIteration", "FloatEquality", "RecursionWithoutBaseCase"}:
+                karar["guven"] = "düşük"
+                karar["karar"] = "SADECE_RAPORLA"
 
             elif tur in {
                 "BuiltinShadowing",

@@ -2537,6 +2537,15 @@ def sohbet():
                 ]
 
                 if autofix_sonucu.get("success"):
+                    if gecici_dosya.exists():
+                        duzeltilmis_kod = gecici_dosya.read_text(encoding="utf-8").strip()
+                        if duzeltilmis_kod and duzeltilmis_kod != kaynak_kod:
+                            cevap.extend([
+                                "",
+                                "📝 DÜZELTİLMİŞ KOD",
+                                "",
+                                duzeltilmis_kod
+                            ])
                     cevap.extend([
                         "✅ DÜZELTME KABUL EDİLDİ",
                         "",
@@ -2566,10 +2575,9 @@ def sohbet():
                             f"• Satır {satir}: {tur} — {neden}"
                         )
 
-                        if aday:
+                        if aday.get('eski') is not None and aday.get('yeni') is not None:
                             cevap.append(
-                                f"  ↳ {aday.get('eski')} → "
-                                f"{aday.get('yeni')}"
+                                f"  ↳ {aday.get('eski')} → {aday.get('yeni')}"
                             )
 
                 return jsonify({
