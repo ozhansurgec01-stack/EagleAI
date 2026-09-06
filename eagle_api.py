@@ -152,13 +152,6 @@ def api_odeme_yap():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-MODEL = "gemini-3.5-flash"
-
-GEMINI_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{MODEL}:generateContent?key={GEMINI_API_KEY}"
-)
 
 MEMORY_FILE = Path("eagle_ai_memory.json")
 
@@ -931,7 +924,11 @@ def spor_arama_sorgusu(mesaj):
     # 🌍 Genel spor — takım/oyuncu adı kullanıcı mesajından korunur
     sonuc_sorusu = any(k in mesaj_kucuk for k in [
         "kaç kaç", "kac kac", "kaç kaç bitti", "kac kac bitti",
-        "maç sonucu", "mac sonucu", "sonuç", "sonuc",
+        "maç sonucu", "mac sonucu",
+"son maçını", "son macini",
+"son maçında", "son macinda",
+"son oynadığı maç", "son oynadigi mac",
+"son karşılaşma", "son karsilasma", "sonuç", "sonuc",
         "skor", "skorları", "skorlari",
         "kaç kaç", "kac kac",
         "kaç kaç bitti", "kac kac bitti"
@@ -953,7 +950,7 @@ def eagle_karar_motoru(mesaj):
         "intent": "sohbet",
         "guven": "orta",
         "neden": "Özel bir araç gerektiren açık bir istek algılanmadı.",
-        "arac": "gemini",
+        "arac": "web_arastirma",
         "islem": "cevapla",
         "dogrulama": False
     }
@@ -968,7 +965,7 @@ def eagle_karar_motoru(mesaj):
         return karar
 
     # 🧠 HAFIZA
-    # 🗣️ Basit sohbetlerde Gemini kullanma
+    # 🗣️ Basit sohbetleri doğrudan Eagle cevaplasın
     basit_sohbet_kelimeleri = [
         "merhaba", "selam", "selamlar", "günaydın", "gunaydin",
         "iyi akşamlar", "iyi aksamlar", "iyi geceler",
@@ -1043,6 +1040,21 @@ def eagle_karar_motoru(mesaj):
         "çalışmıyor", "calismiyor", "derlenmiyor",
         "compile", "build failed"
     ]
+
+    # 🛠️ AutoFix isteği — açıkça autofix/otomatik düzeltme denmişse kod analizine yönlendir
+    autofix_kelimeleri = [
+        "autofix", "auto fix", "otomatik düzelt", "otomatik düzeltme",
+        "kodu düzelt", "kodu düzelt", "hatasını düzelt"
+    ]
+
+    if any(x in k for x in autofix_kelimeleri):
+        karar.update({
+            "intent": "kod_hata",
+            "guven": "yüksek",
+            "neden": "AutoFix isteği algılandı.",
+            "arac": "kod_analiz"
+        })
+        return karar
 
     if any(x in k for x in kod_kelimeleri):
         karar.update({
@@ -1894,7 +1906,7 @@ def web_arastir(sorgu, limit=6):
         return []
 
 def web_sayfa_oku(url, limit=7000):
-    """Web sayfasını indirir ve Gemini için temiz metne dönüştürür."""
+    """Web sayfasını indirir ve temiz metne dönüştürür."""
     try:
         url = web_kaynak_url(url)
         if not url or not url.startswith(("http://", "https://")):
@@ -1962,7 +1974,7 @@ def spor_skoru_cikar(metin):
 
 def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
     """
-    Maç sonucu sorularında Gemini kullanmadan doğrudan skor döndürür.
+    Maç sonucu sorularında doğrulanmış skoru doğrudan döndürür.
 
     İki takım:
         Başakşehir Galatasaray maç sonucu
@@ -2241,7 +2253,7 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
     return ""
 
 def web_sonuclari_metni(sonuclar):
-    """Web arama sonuçlarını ve gerçek kaynak sayfalarını Gemini'ye aktarır."""
+    """Web arama sonuçlarını ve gerçek kaynak sayfalarını hazırlar."""
     if not sonuclar:
         return ""
 
@@ -2313,7 +2325,6 @@ def durum():
     return jsonify({
         "ok": True,
         "assistant": "Eagle-AI",
-        "gemini": bool(GEMINI_API_KEY),
         "memory_count": len(hafiza_yukle())
     })
 
@@ -2502,7 +2513,7 @@ def sohbet():
                     web_verisi = tvf_voleybol_getir()
 
                 # 🏐 BUGÜN/YARIN VOLEYBOL: TVF SONUCU DOĞRUDAN CEVAPLA.
-                # Genel web araması, sayfa okuma ve Gemini zincirine girme.
+                # Genel web araması ve sayfa okuma.
                 if bugun_istegi or yarin_istegi:
                     gun_adi = "bugün" if bugun_istegi else "yarın"
 
@@ -2591,7 +2602,7 @@ def sohbet():
         flush=True
     )
 
-    # 🇹🇷 SÜPER LİG FİKSTÜRÜ — TFF verisini Gemini'ye göndermeden doğrudan cevapla
+    # 🇹🇷 SÜPER LİG FİKSTÜRÜ — TFF verisini doğrudan cevapla
     if karar.get("intent") == "spor" and web_verisi:
         mesaj_super = mesaj.lower().replace("\u0307", "")
         super_lig_istegi = any(k in mesaj_super for k in [
@@ -2623,16 +2634,20 @@ def sohbet():
                 "answer": "\n".join(satirlar),
                 "web_search": True,
                 "sports_direct": True,
-                "gemini_fallback": False,
                 "memory_count": len(hafiza_yukle())
             })
 
-    # 🏟️ MAÇ SONUCU — Gemini'ye gitmeden doğrudan doğrulanmış skoru döndür
+    # 🏟️ MAÇ SONUCU — doğrulanmış skoru doğrudan döndür
     if karar.get("intent") == "spor":
         sonuc_sorusu = any(k in mesaj.lower() for k in [
             "kaç kaç", "kac kac",
             "kaç kaç bitti", "kac kac bitti",
             "maç sonucu", "mac sonucu",
+            "son maç", "son mac",
+            "son maçını", "son macini",
+            "son maçında", "son macinda",
+            "son oynadığı maç", "son oynadigi mac",
+            "son karşılaşma", "son karsilasma",
             "sonuç", "sonuc",
             "skor", "skorları", "skorlari"
         ])
@@ -2652,10 +2667,9 @@ def sohbet():
 
                 return jsonify({
                     "ok": True,
-                    "answer": direkt_skor,
+                    "answer": "🏟️ EAGLE SPOR\n\n" + direkt_skor,
                     "web_search": True,
                     "sports_direct": True,
-                    "gemini_fallback": False,
                     "memory_count": len(hafiza_yukle())
                 })
 
@@ -2705,7 +2719,7 @@ def sohbet():
             + "\n===== HAVA DURUMU SONU ====="
         )
 
-    # 🧠 Eagle teknik bilgi bankası — Gemini’den önce genel doğrudan cevap
+    # 🧠 Eagle teknik bilgi bankası — doğrudan cevap
     bilgi_sonuclari = []
     if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api") and not autofix_istegi:
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
@@ -2722,7 +2736,7 @@ def sohbet():
             "memory_count": len(hafiza_yukle())
         })
 
-    # 🗣️ Basit sohbetleri Gemini'ye göndermeden Eagle doğrudan cevaplasın
+    # 🗣️ Basit sohbetleri Eagle doğrudan cevaplasın
     if karar.get("arac") == "eagle_sohbet":
         k = mesaj.lower()
 
@@ -2750,7 +2764,7 @@ def sohbet():
             "memory_count": len(hafiza_yukle())
         })
 
-    # 🦅 Eagle'ın kendi çözebildiği isteklerde Gemini'yi hiç çağırma
+    # 🦅 Eagle'ın kendi çözebildiği istekleri doğrudan cevapla
     if karar.get("arac") == "borc_modulu" and borc_modulu_sonucu:
         return jsonify({
             "ok": True,
@@ -2762,7 +2776,7 @@ def sohbet():
     if karar.get("arac") == "hava_api" and hava_verisi and hava_verisi.get("ok"):
         return jsonify({
             "ok": True,
-            "answer": hava_metni,
+            "answer": "🌤️ EAGLE HAVA\n\n" + hava_metni,
             "memory_count": len(hafiza_yukle()),
             "eagle_direct": True
         })
@@ -2775,234 +2789,46 @@ def sohbet():
             "memory_count": len(hafiza_yukle())
         })
 
-    sistem = (
-        SYSTEM_PROMPT
-        + "\n\n===== EAGLE HAFIZA =====\n"
-        + kalici_hafiza
-        + "\n===== HAFIZA SONU ====="
-        + hava_metni
-        + web_metni
-          + hesaplama_metni
-        + mantiksal_metni
-        + (
-            "\n\n===== GERÇEK BORÇ MODÜLÜ SONUCU =====\n"
-            "Aşağıdaki bilgi EagleAI borç modülünden alınmıştır. "
-            "Borçlarla ilgili cevap verirken bu veriyi esas al, "
-            "rakamları değiştirme veya uydurma.\n"
-            + borc_modulu_sonucu
-            + "\n===== BORÇ MODÜLÜ SONU ====="
-            if borc_modulu_sonucu
-            else ""
-        )
-    )
+    # 🌐 Eagle web sonuçlarını doğrudan cevapla
+    if web_verisi:
+        satirlar = ["🌐 EAGLE WEB", ""]
 
-    contents = [
-        {
-            "role": "user",
-            "parts": [
-                {
-                    "text": sistem
-                }
-            ]
-        },
-        {
-            "role": "model",
-            "parts": [
-                {
-                    "text":
-                    "Anladım. Eagle-AI olarak "
-                    "hafızamdaki bilgileri de kullanarak "
-                    "Türkçe yardımcı olacağım."
-                }
-            ]
-        }
-    ]
+        for sonuc in web_verisi[:8]:
+            if not isinstance(sonuc, dict):
+                continue
 
-    if isinstance(gecmis, list):
+            baslik = str(sonuc.get("title", "")).strip()
+            ozet = str(sonuc.get("snippet", "")).strip()
+            url = web_kaynak_url(str(sonuc.get("url", "")).strip())
 
-        for item in gecmis[-20:]:
+            if baslik:
+                satirlar.append(f"• {baslik}")
+            if ozet:
+                satirlar.append(ozet)
+            if url:
+                satirlar.append(f"🔗 {url}")
 
-            if (
-                isinstance(item, dict)
-                and item.get("role") in ("user", "model")
-                and isinstance(item.get("text"), str)
-            ):
+            satirlar.append("")
 
-                contents.append({
-                    "role": item["role"],
-                    "parts": [
-                        {
-                            "text": item["text"]
-                        }
-                    ]
-                })
+        return jsonify({
+            "ok": True,
+            "answer": "\n".join(satirlar).strip(),
+            "web_search": True,
+            "eagle_direct": True,
+            "memory_count": len(hafiza_yukle())
+        })
 
-    # 📎 Android'den gelen dosya
-    file_base64 = data.get("file_base64")
-    file_mime = str(
-        data.get("file_mime", "")
-    ).strip().lower()
-
-    user_parts = [
-        {
-            "text": mesaj
-        }
-    ]
-
-    # Şimdilik yalnızca görselleri Gemini'ye gönder
-    if file_base64 and file_mime.startswith("image/"):
-        try:
-            # Base64 verisinin gerçekten çözülebildiğini kontrol et
-            base64.b64decode(
-                file_base64,
-                validate=True
-            )
-
-            user_parts.append({
-                "inline_data": {
-                    "mime_type": file_mime,
-                    "data": file_base64
-                }
-            })
-
-            print(
-                f"📎 Görsel alındı: {file_mime}",
-                flush=True
-            )
-
-        except Exception as e:
-            print(
-                f"⚠️ Görsel Base64 okunamadı: {e}",
-                flush=True
-            )
-
-    contents.append({
-        "role": "user",
-        "parts": user_parts
+    # 🦅 Hiçbir özel araç veya web sonucu yoksa Eagle doğrudan cevap verir
+    return jsonify({
+        "ok": True,
+        "answer": (
+            "🦅 Bu isteği kendi araçlarımla işleyemedim. "
+            "Sorunu biraz daha açık yazarsan tekrar deneyebilirim."
+        ),
+        "eagle_direct": True,
+        "web_search": False,
+        "memory_count": len(hafiza_yukle())
     })
-
-    if not GEMINI_API_KEY:
-        return jsonify({
-            "ok": False,
-            "error": "GEMINI_API_KEY bulunamadı."
-        }), 500
-
-    try:
-
-        # Gemini isteği
-        # 🌐 Güncel internet araştırması için Google Search
-        gemini_baslangic = time.time()
-        print("⏱️ GEMINI BAŞLADI", flush=True)
-
-        response = requests.post(
-            GEMINI_URL,
-            params={"key": GEMINI_API_KEY},
-            json={
-                "contents": contents
-            },
-            timeout=20
-        )
-
-        print(
-            f"⏱️ GEMINI BİTTİ: {time.time() - gemini_baslangic:.2f} saniye",
-            flush=True
-        )
-
-        try:
-            sonuc = response.json()
-        except Exception:
-            sonuc = {}
-
-        if response.status_code == 429:
-            print(
-                "🌐 Gemini kotası dolu — ücretsiz web sonuçları fallback olarak kullanılıyor.",
-                flush=True
-            )
-
-            if web_verisi:
-                return jsonify({
-                    "ok": True,
-                    "answer": (
-                        "🦅 Gemini'nin günlük kullanım limiti dolu. "
-                        "Ücretsiz internet araştırma sonuçlarını doğrudan gösteriyorum.\n\n"
-                        + web_metni
-                    ),
-                    "web_search": True,
-                    "gemini_fallback": True,
-                    "memory_count": len(hafiza_yukle())
-                })
-
-            return jsonify({
-                "ok": False,
-                "error": "Gemini kullanım limiti dolu ve web sonucu bulunamadı."
-            }), 429
-
-        if response.status_code == 200 and sonuc.get("candidates"):
-            try:
-                aday = sonuc["candidates"][0]
-                icerik = aday.get("content", {})
-                parcalar = icerik.get("parts", [])
-                cevap = ""
-
-                for parca in parcalar:
-                    if isinstance(parca, dict) and parca.get("text"):
-                        cevap += parca["text"]
-
-            except (KeyError, IndexError, TypeError, AttributeError):
-                cevap = ""
-
-            if cevap.strip():
-                return jsonify({
-                    "ok": True,
-                    "answer": cevap,
-                    "memory_count": len(hafiza_yukle())
-                })
-
-        if response.status_code == 503:
-            if web_verisi:
-                return jsonify({
-                    "ok": True,
-                    "answer": (
-                        "🦅 Gemini şu anda yoğun. "
-                        "Ücretsiz internet araştırma sonuçlarını doğrudan gösteriyorum.\n\n"
-                        + web_metni
-                    ),
-                    "web_search": True,
-                    "gemini_fallback": True,
-                    "memory_count": len(hafiza_yukle())
-                })
-            return jsonify({
-                "ok": False,
-                "error": "Gemini şu anda yoğun ve web sonucu bulunamadı."
-            }), 503
-
-        return jsonify({
-            "ok": False,
-            "error": "Gemini API hatası.",
-            "details": sonuc
-        }), 500
-
-    except requests.exceptions.RequestException as e:
-        hata_mesaji = "Gemini bağlantısı zaman aşımına uğradı veya ağ hatası oluştu: " + str(e)
-        print("⚠️ " + hata_mesaji, flush=True)
-        try:
-            with open("eagle_api.log", "a", encoding="utf-8") as log_f:
-                import datetime
-                zaman = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                log_f.write("[" + zaman + "] TIMEOUT/NETWORK ERROR: " + hata_mesaji + "\n")
-        except Exception:
-            pass
-        return jsonify({
-            "ok": False,
-            "error": "Gemini bağlantısı zaman aşımına uğradı."
-        }), 504
-
-    except Exception as e:
-
-        return jsonify({
-            "ok": False,
-            "error": str(e)
-        }), 500
 
 
 if __name__ == "__main__":
