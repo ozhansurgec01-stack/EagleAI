@@ -968,7 +968,7 @@ def spor_arama_sorgusu(mesaj):
     return f"{mesaj.strip()} maç sonucu fikstür güncel"
 
 
-def eagle_karar_motoru(mesaj):
+def eagle_karar_motoru(mesaj, gecmis=None):
     """
     EagleAI karar motoru v1.
     Sadece karar verir; herhangi bir işlem yapmaz ve dosya değiştirmez.
@@ -1033,15 +1033,60 @@ def eagle_karar_motoru(mesaj):
         })
         return karar
 
+    # 🧾 FATURA
+    # Elektrik, su, internet, telefon ve D-Smart gibi
+    # kayıtlı faturalar yerel borç/fatura modülünden işlenir.
+    fatura_isaretleri = [
+        "elektrik", "su", "internet", "i̇nternet", "telefon",
+        "d-smart", "dsmart", "d smart"
+    ]
+
+    if k.strip() in fatura_isaretleri or any(
+        x in k for x in [
+            "elektrik faturası", "elektrik faturasi",
+            "su faturası", "su faturasi",
+            "internet faturası", "internet faturasi",
+            "telefon faturası", "telefon faturasi",
+            "d-smart faturası", "d-smart faturasi",
+            "dsmart faturası", "dsmart faturasi",
+            "d smart faturası", "d smart faturasi"
+        ]
+    ):
+        karar.update({
+            "intent": "borc",
+            "guven": "yüksek",
+            "neden": "Fatura konusu algılandı ve yerel fatura kaydına yönlendirildi.",
+            "arac": "borc_modulu",
+            "islem": "veri_getir",
+            "dogrulama": True,
+            "fatura": True
+        })
+        return karar
+
     # 💳 BORÇ
     borc_kelimeleri = [
         "borç", "borc", "borcum",
-        "taksit", "ödeme", "odeme",
+        "taksit", "taksidi", "taksidini",
+        "ödeme", "odeme", "ödedim", "odedim",
+        "yatırdım", "yatirdim",
         "kredi kartı", "kredi karti",
         "kredi borcu", "borç raporu", "borc raporu"
     ]
 
-    if any(x in k for x in borc_kelimeleri):
+    borc_dogal_dil = any(x in k for x in [
+        "taksidi bitmiş", "taksidi bitmis",
+        "taksidini ödedim", "taksidini odedim",
+        "son taksidi de ödedim", "son taksidi de odedim",
+        "borcu bitti", "borcu bitmiş", "borcu bitmis",
+        "artık borç değil", "artik borc degil",
+        "ödemesi bitti", "odemesi bitti",
+        "sil artık", "sil artik",
+        "artık gerek yok", "artik gerek yok",
+        "gerek kalmadı", "gerek kalmadi",
+        "temizle", "kaldır artık", "kaldir artik"
+    ])
+
+    if borc_dogal_dil or any(x in k for x in borc_kelimeleri):
         karar.update({
             "intent": "borc",
             "guven": "yüksek",
@@ -1175,6 +1220,63 @@ def eagle_karar_motoru(mesaj):
             "arac": "web_arastirma"
         })
         return karar
+
+    # 🧠 GENEL KONU DEVAMI
+    # Açık bir niyet bulunamadığında son kullanıcı mesajlarından
+    # devam eden konuşma konusu anlaşılmaya çalışılır.
+    if gecmis:
+        son_kullanici = None
+
+        for item in reversed(gecmis):
+            if not isinstance(item, dict):
+                continue
+            if item.get("role") != "user":
+                continue
+
+            son_kullanici = str(
+                item.get("text", item.get("content", ""))
+            ).strip().lower()
+
+            if son_kullanici:
+                break
+
+        devam_ifadeleri = [
+            "buna gerek yok",
+            "buna artık gerek yok",
+            "artik buna gerek yok",
+            "bunu sil",
+            "bunu kaldır",
+            "bunu kaldir",
+            "bunu temizle",
+            "şunu sil",
+            "şunu kaldır",
+            "şunu kaldir",
+            "artık lazım değil",
+            "artik lazim degil",
+            "gerek kalmadı",
+            "gerek kalmadi",
+            "sil gitsin",
+            "kapat bunu"
+        ]
+
+        # Önceki konuşmada borç konusu varsa, yeni mesajdaki
+        # borç adını da history bağlamında değerlendirme.
+        borc_isaretleri = [
+            "borç", "borc", "taksit", "taksidi",
+            "ödeme", "odeme", "kredi"
+        ]
+
+        if son_kullanici and any(x in son_kullanici for x in borc_isaretleri):
+            karar.update({
+                "intent": "borc",
+                "guven": "yüksek",
+                "neden": "Önceki konuşma borç bağlamındaydı; yeni mesaj aynı yerel konuya bağlandı.",
+                "arac": "borc_modulu",
+                "islem": "veri_getir",
+                "dogrulama": True,
+                "history_devam": True
+            })
+            return karar
 
     return karar
 
@@ -2318,6 +2420,99 @@ def hafiza_temizle():
     })
 
 
+# 🧠 EAGLE KONUŞMA BAĞLAMI — geçici Smart Debt testi
+SOHBET_BAGLAM_DOSYASI = Path(__file__).with_name("eagle_sohbet_baglam.json")
+
+def sohbet_baglam_yukle():
+    try:
+        if not SOHBET_BAGLAM_DOSYASI.exists():
+            return {}
+        return json.loads(SOHBET_BAGLAM_DOSYASI.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+def sohbet_baglam_kaydet(veri):
+    SOHBET_BAGLAM_DOSYASI.write_text(
+        json.dumps(veri, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
+def eagle_baglam_yonlendir(mesaj, karar, sohbet_baglam, borc_modulu, gecmis=None):
+    """
+    🧠 EagleAI konuşma bağlamı yönlendiricisi.
+    Belirsiz devam mesajlarını aktif yerel konuya bağlar.
+    Açıkça yeni bir konu varsa mevcut kararı bozmaz.
+    """
+    aktif_borc_id = sohbet_baglam.get("aktif_borc_id")
+
+    # 🧠 Global bağlam boş olsa bile son konuşmadan aktif borcu bul
+    if aktif_borc_id is None and gecmis:
+        try:
+            history_borc = borc_modulu.akilli_borc_historyden_bul(gecmis)
+            if history_borc:
+                aktif_borc_id = history_borc.get("id")
+        except Exception:
+            pass
+
+    if aktif_borc_id is None:
+        return karar
+
+    # Açıkça başka bir yerel/güncel konuya geçilmişse bağlamı ezme.
+    yeni_konu_araclari = {
+        "hava_api",
+        "spor_kaynaklari",
+        "kod_analiz",
+        "hafiza",
+    }
+
+    if karar.get("arac") in yeni_konu_araclari:
+        return karar
+
+    m = str(mesaj or "").strip().lower()
+
+    # Aktif borca doğal devam / işlem ifadeleri.
+    devam_ifadeleri = [
+        "buna gerek yok",
+        "buna artık gerek yok",
+        "artık buna gerek yok",
+        "artik buna gerek yok",
+        "bunu sil",
+        "bunu kaldır",
+        "bunu kaldir",
+        "bunu temizle",
+        "şunu sil",
+        "şunu kaldır",
+        "şunu temizle",
+        "sil gitsin",
+        "kaldır gitsin",
+        "kaldir gitsin",
+        "temizle gitsin",
+        "artık lazım değil",
+        "artik lazim degil",
+        "artık ihtiyacım yok",
+        "artik ihtiyacim yok",
+        "gerek kalmadı",
+        "gerek kalmadi",
+        "işimiz bitti",
+        "isimiz bitti",
+        "tamamdır kapat",
+        "tamamdir kapat",
+        "kapat bunu",
+    ]
+
+    if any(ifade in m for ifade in devam_ifadeleri):
+        karar.update({
+            "intent": "borc",
+            "guven": "yüksek",
+            "neden": "Önceki konuşmadaki aktif borç kaydına devam eden doğal dil isteği algılandı.",
+            "arac": "borc_modulu",
+            "islem": "veri_getir",
+            "dogrulama": True,
+            "baglamdan": True,
+        })
+
+    return karar
+
 @app.post("/api/sohbet")
 def sohbet():
 
@@ -2328,6 +2523,8 @@ def sohbet():
     ).strip()
 
     gecmis = data.get("history", [])
+    sohbet_baglam = sohbet_baglam_yukle()
+    aktif_borc_id = sohbet_baglam.get("aktif_borc_id")
 
     if not mesaj:
         return jsonify({
@@ -2347,7 +2544,17 @@ def sohbet():
 
     kalici_hafiza = hafiza_metni()
     autofix_istegi = False
-    karar = eagle_karar_motoru(mesaj)
+    karar = eagle_karar_motoru(mesaj, gecmis)
+
+    # 🧠 Önceki konuşmanın aktif konusu belirsiz mesajı açıklıyorsa kullan.
+    karar = eagle_baglam_yonlendir(
+        mesaj,
+        karar,
+        sohbet_baglam,
+        borc_modulu,
+        gecmis
+    )
+
     print(f"🧠 EAGLE KARAR: {karar}", flush=True)
 
     def eagle_yapistirilmis_kod_mu(metin):
@@ -2584,8 +2791,32 @@ def sohbet():
     borc_modulu_sonucu = ""
     if karar.get("arac") == "borc_modulu":
         try:
-            borc_modulu_sonucu = borc_modulu.borc_mesaji_isle(mesaj)
-            print("🧾 BORÇ MODÜLÜ ÇALIŞTI", flush=True)
+            akilli_sonuc = None
+            yeni_aktif_borc_id = aktif_borc_id
+
+            if hasattr(borc_modulu, "akilli_borc_isle"):
+                akilli_sonuc, yeni_aktif_borc_id = borc_modulu.akilli_borc_isle(
+                    mesaj,
+                    aktif_borc_id,
+                    gecmis
+                )
+
+            if akilli_sonuc:
+                borc_modulu_sonucu = akilli_sonuc
+                sohbet_baglam["aktif_borc_id"] = yeni_aktif_borc_id
+
+                if yeni_aktif_borc_id is None:
+                    sohbet_baglam.pop("aktif_borc_id", None)
+
+                sohbet_baglam_kaydet(sohbet_baglam)
+                print(
+                    f"🧠 SMART DEBT AKTİF: {yeni_aktif_borc_id}",
+                    flush=True
+                )
+            else:
+                borc_modulu_sonucu = borc_modulu.borc_mesaji_isle(mesaj)
+                print("🧾 BORÇ MODÜLÜ ÇALIŞTI", flush=True)
+
         except Exception as e:
             borc_modulu_sonucu = f"Borç modülü çalıştırılırken hata oluştu: {e}"
             print(f"❌ BORÇ MODÜLÜ HATASI: {e}", flush=True)

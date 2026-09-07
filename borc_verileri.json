@@ -2,14 +2,48 @@
   "borclar": [
     {
       "id": "1",
-      "ad": "Klima",
-      "kategori": "Kredi kartı",
-      "toplam_borc": 34008.0,
-      "odenen_tutar": 34008.0,
+      "ad": "Elektrik",
+      "kategori": "Fatura",
+      "toplam_borc": 0.0,
+      "odenen_tutar": 0.0,
       "kalan_borc": 0.0,
-      "taksit_sayisi": 12,
-      "aylik_taksit": 2834.0,
-      "kalan_taksit": 1
+      "taksit_sayisi": 1
+    },
+    {
+      "id": "2",
+      "ad": "Su",
+      "kategori": "Fatura",
+      "toplam_borc": 0.0,
+      "odenen_tutar": 0.0,
+      "kalan_borc": 0.0,
+      "taksit_sayisi": 1
+    },
+    {
+      "id": "3",
+      "ad": "İnternet",
+      "kategori": "Fatura",
+      "toplam_borc": 0.0,
+      "odenen_tutar": 0.0,
+      "kalan_borc": 0.0,
+      "taksit_sayisi": 1
+    },
+    {
+      "id": "4",
+      "ad": "Telefon",
+      "kategori": "Fatura",
+      "toplam_borc": 0.0,
+      "odenen_tutar": 0.0,
+      "kalan_borc": 0.0,
+      "taksit_sayisi": 1
+    },
+    {
+      "id": "5",
+      "ad": "D-Smart",
+      "kategori": "Fatura",
+      "toplam_borc": 0.0,
+      "odenen_tutar": 0.0,
+      "kalan_borc": 0.0,
+      "taksit_sayisi": 1
     }
   ]
 }

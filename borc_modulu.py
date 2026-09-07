@@ -315,3 +315,149 @@ def borc_mesaji_isle(mesaj):
             return f"🧮 **Taksit Hesaplama:**\n• Toplam Tutar: {tutar:,.2f} TL\n• Taksit Sayısı: {taksit}\n• **Aylık Ödeme:** **{aylik:,.2f} TL**"
 
     return None
+
+def akilli_borc_niyeti(mesaj):
+    m = str(mesaj or "").lower()
+    m = (
+        m.replace("ı", "i")
+         .replace("İ", "i")
+         .replace("ş", "s")
+         .replace("Ş", "s")
+         .replace("ğ", "g")
+         .replace("Ğ", "g")
+         .replace("ü", "u")
+         .replace("Ü", "u")
+         .replace("ö", "o")
+         .replace("Ö", "o")
+         .replace("ç", "c")
+         .replace("Ç", "c")
+    )
+
+    # 🗑️ Doğal dilde silme / artık ihtiyaç olmaması
+    sil_ifadeleri = [
+        "sil",
+        "kaldir",
+        "temizle",
+        "gereksiz",
+        "gerek yok",
+        "gerek kalmadi",
+        "lazim degil",
+        "ihtiyacim yok",
+        "artik istemiyorum",
+        "artik kullanmiyorum",
+        "kapatalim",
+        "kapat bunu",
+    ]
+
+    # Silme niyeti için bağlamlı ifadeler.
+    if any(x in m for x in sil_ifadeleri):
+        return "sil"
+
+    # 🧾 Borcun/taksidin bittiğini bildirme
+    durum_ifadeleri = [
+        "taksidi bitmis",
+        "taksidini odedim",
+        "son taksidi de odedim",
+        "borcu bitti",
+        "borcu bitmis",
+        "artik borc degil",
+        "odemesi bitti",
+        "borc kapandi",
+        "borc kapanmis",
+    ]
+
+    if any(x in m for x in durum_ifadeleri):
+        return "durum"
+
+    return None
+
+
+def akilli_borc_historyden_bul(history):
+    """Konuşma geçmişindeki son kullanıcı mesajından aktif borcu bulur."""
+    borclar = borclari_yukle()
+
+    for item in reversed(history or []):
+        if not isinstance(item, dict):
+            continue
+        if item.get("role") != "user":
+            continue
+
+        metin = str(
+            item.get("text", item.get("content", ""))
+        ).lower()
+
+        for b in borclar:
+            ad = str(b.get("ad", "")).strip().lower()
+            if ad and ad in metin:
+                return b
+
+    return None
+
+
+def akilli_borc_bul(mesaj, aktif_borc_id=None, history=None):
+    borclar = borclari_yukle()
+    m = str(mesaj).lower()
+
+    for b in borclar:
+        ad = str(b.get("ad", "")).strip().lower()
+        if ad and ad in m:
+            return b
+
+    if aktif_borc_id is not None:
+        for b in borclar:
+            if str(b.get("id")) == str(aktif_borc_id):
+                return b
+
+    return akilli_borc_historyden_bul(history)
+
+
+    return None
+
+
+def akilli_borc_isle(mesaj, aktif_borc_id=None, history=None):
+    niyet = akilli_borc_niyeti(mesaj)
+
+    # 🧠 Mesajda doğrudan bir borç adı varsa,
+    # açık işlem söylenmese bile mevcut durumu getir.
+    borc = akilli_borc_bul(mesaj, None, None)
+
+    if not niyet and borc:
+        niyet = "durum"
+
+    if not niyet:
+        return None, aktif_borc_id
+
+    # Borç mesajda yoksa aktif/history bağlamını kullan.
+    if borc is None:
+        borc = akilli_borc_bul(mesaj, aktif_borc_id, history)
+
+    if borc is None:
+        borc = akilli_borc_bul(mesaj, aktif_borc_id, history)
+
+    if not borc:
+        return "Bu işlem için hangi borcu kastettiğini anlayamadım.", aktif_borc_id
+
+    if niyet == "durum":
+        aktif_borc_id = borc.get("id")
+        kalan = float(borc.get("kalan_borc", 0) or 0)
+
+        if str(borc.get("kategori", "")).strip().lower() == "fatura":
+            if kalan <= 0:
+                return f"{borc.get('ad')} faturası için kayıtlı tutar: 0 TL.", aktif_borc_id
+            return f"{borc.get('ad')} faturası için kayıtlı tutar: {kalan:,.0f} TL.", aktif_borc_id
+
+        if kalan <= 0:
+            return f"Evet, {borc.get('ad')} taksidi bitmiş. Kalan borç: 0 TL.", aktif_borc_id
+
+        return f"{borc.get('ad')} için borç henüz bitmemiş. Kalan borç: {kalan:,.0f} TL.", aktif_borc_id
+
+    if niyet == "sil":
+        silinen = borc.get("ad")
+        basarili, _ = borc_sil(borc.get("id"))
+
+        if basarili:
+            return f"Tamam. {silinen} borcunu artık gerekmiyor diye kayıtlardan sildim.", None
+
+        return "Borç silinirken bir sorun oluştu.", aktif_borc_id
+
+    return None, aktif_borc_id
