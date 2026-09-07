@@ -454,6 +454,62 @@ class EagleAutoFixEngine:
                         # Döngünün başına dönüp kodu yeniden analiz et.
                         continue
 
+
+                    if isinstance(duzeltme, dict) and duzeltme.get("tur") in (
+                        "MissingColonFix", "ReservedKeywordFix", "UnclosedParenFix"
+                    ):
+                        tur_map = {
+                            "MissingColonFix": "MissingColon",
+                            "ReservedKeywordFix": "ReservedKeywordName",
+                            "UnclosedParenFix": "UnclosedParen",
+                        }
+                        fix_info = {
+                            "type": tur_map[duzeltme["tur"]],
+                            "satir": aday.get("satir"),
+                        }
+                        if duzeltme["tur"] == "ReservedKeywordFix":
+                            fix_info["eski_isim"] = duzeltme.get("eski_isim")
+
+                        fix = self.apply_known_fix(target_file, fix_info)
+
+                        if fix.get("fixed"):
+                            history[-1]["logic_fix"] = fix
+                            syntax_ok, syntax_msg = self.check_syntax(target_file)
+
+                            if not syntax_ok:
+                                # Dosyada başka bir syntax hatası kalmış olabilir;
+                                # elde edilen kısmi düzeltmeyi geri almadan
+                                # döngünün başına dön ve bir sonraki hatayı ara.
+                                history[-1]["verification"] = {
+                                    "syntax_ok": False,
+                                    "syntax_error": syntax_msg,
+                                }
+                                continue
+
+                            run_ok, run_output = self.run_file(target_file)
+                            history[-1]["verification"] = {
+                                "syntax_ok": syntax_ok,
+                                "run_ok": run_ok,
+                                "output": run_output,
+                            }
+
+                            if run_ok:
+                                return {
+                                    "success": True,
+                                    "reason": (
+                                        f"{duzeltme['tur']} uygulandı ve "
+                                        "syntax + çalışma testi başarıyla geçti."
+                                    ),
+                                    "attempts": attempts,
+                                    "history": history,
+                                    "backup": str(backup_path),
+                                    "fixed_code": target_file.read_text(
+                                        encoding="utf-8"
+                                    ).strip(),
+                                }
+
+                        continue
+
                     eski = duzeltme.get("eski")
                     yeni_ad = duzeltme.get("yeni")
 
@@ -697,6 +753,124 @@ class EagleAutoFixEngine:
         import re
 
         error_type = str(error_info.get("type", ""))
+
+        if error_type == "MissingColon":
+            content = target_file.read_text(encoding="utf-8")
+            satirlar = content.splitlines()
+            satir_no = error_info.get("satir")
+            if not satir_no or not (1 <= satir_no <= len(satirlar)):
+                return {
+                    "fixed": False,
+                    "reason": "MissingColon: satır numarası geçersiz."
+                }
+            idx = satir_no - 1
+            satir = satirlar[idx]
+            if satir.rstrip().endswith(":"):
+                return {
+                    "fixed": False,
+                    "reason": "MissingColon: satır zaten ':' ile bitiyor."
+                }
+            satirlar[idx] = satir.rstrip() + ":"
+            target_file.write_text(
+                "\n".join(satirlar) + "\n", encoding="utf-8"
+            )
+            return {
+                "fixed": True,
+                "tur": "MissingColonFix",
+                "aciklama": f"{satir_no}. satır sonuna ':' eklendi.",
+            }
+
+        if error_type == "ReservedKeywordName":
+            import re
+            import keyword as _kw
+
+            eski_isim = error_info.get("eski_isim")
+            satir_no = error_info.get("satir")
+
+            if not eski_isim or not _kw.iskeyword(eski_isim):
+                return {
+                    "fixed": False,
+                    "reason": "ReservedKeywordName: geçersiz isim."
+                }
+            if not satir_no:
+                return {
+                    "fixed": False,
+                    "reason": "ReservedKeywordName: satır numarası eksik."
+                }
+
+            content = target_file.read_text(encoding="utf-8")
+            satirlar = content.splitlines()
+            idx = satir_no - 1
+
+            if not (0 <= idx < len(satirlar)):
+                return {
+                    "fixed": False,
+                    "reason": "ReservedKeywordName: satır numarası geçersiz."
+                }
+
+            for_satiri = satirlar[idx]
+            girinti = len(for_satiri) - len(for_satiri.lstrip())
+
+            blok_son = idx
+            for j in range(idx + 1, len(satirlar)):
+                satir_j = satirlar[j]
+                if satir_j.strip() == "":
+                    blok_son = j
+                    continue
+                girinti_j = len(satir_j) - len(satir_j.lstrip())
+                if girinti_j > girinti:
+                    blok_son = j
+                else:
+                    break
+
+            tum_metin = "\n".join(satirlar)
+            yeni_isim = f"{eski_isim}_deger"
+            while re.search(rf"\b{re.escape(yeni_isim)}\b", tum_metin):
+                yeni_isim += "_"
+
+            for k in range(idx, blok_son + 1):
+                satirlar[k] = re.sub(
+                    rf"\b{re.escape(eski_isim)}\b", yeni_isim, satirlar[k]
+                )
+
+            target_file.write_text(
+                "\n".join(satirlar) + "\n", encoding="utf-8"
+            )
+            return {
+                "fixed": True,
+                "tur": "ReservedKeywordFix",
+                "aciklama": (
+                    f"{satir_no}. satırdaki döngü kapsamında "
+                    f"'{eski_isim}' -> '{yeni_isim}' olarak değiştirildi."
+                ),
+            }
+
+        if error_type == "UnclosedParen":
+            content = target_file.read_text(encoding="utf-8")
+            satirlar = content.splitlines()
+            satir_no = error_info.get("satir")
+            if not satir_no or not (1 <= satir_no <= len(satirlar)):
+                return {
+                    "fixed": False,
+                    "reason": "UnclosedParen: satır numarası geçersiz."
+                }
+            idx = satir_no - 1
+            satir = satirlar[idx]
+            acik = satir.count("(") - satir.count(")")
+            if acik <= 0:
+                return {
+                    "fixed": False,
+                    "reason": "UnclosedParen: satırda eksik parantez bulunamadı."
+                }
+            satirlar[idx] = satir + (")" * acik)
+            target_file.write_text(
+                "\n".join(satirlar) + "\n", encoding="utf-8"
+            )
+            return {
+                "fixed": True,
+                "tur": "UnclosedParenFix",
+                "aciklama": f"{satir_no}. satıra {acik} eksik ')' eklendi.",
+            }
 
         # Statik analiz: ZeroDivision için güvenli koşullu ifade.
         if error_type == "ZeroDivision":

@@ -28,13 +28,57 @@ class EagleKodAnalizMotoru:
         try:
             tree = ast.parse(kaynak_kodu)
         except SyntaxError as e:
-            self._ekle(
-                "SyntaxError",
-                "🔴 KESİN",
-                e.lineno,
-                f"Syntax hatası: {e.msg}",
-                False
+            import re as _re
+            import keyword as _kw
+
+            mesaj = e.msg or ""
+            satir_metni = e.text or ""
+
+            reserved_eslesme = _re.search(
+                r"for\s+([A-Za-z_]\w*)\s+in\b", satir_metni
             )
+
+            if "expected ':'" in mesaj:
+                self._ekle(
+                    "MissingColon",
+                    "🔴 KESİN",
+                    e.lineno,
+                    "Satır sonunda ':' eksik.",
+                    True,
+                    {"tur": "MissingColonFix"}
+                )
+            elif reserved_eslesme and _kw.iskeyword(reserved_eslesme.group(1)):
+                self._ekle(
+                    "ReservedKeywordName",
+                    "🔴 KESİN",
+                    e.lineno,
+                    (
+                        f"'{reserved_eslesme.group(1)}' ayrılmış kelimesi "
+                        "değişken adı olarak kullanılmış."
+                    ),
+                    True,
+                    {
+                        "tur": "ReservedKeywordFix",
+                        "eski_isim": reserved_eslesme.group(1),
+                    }
+                )
+            elif "was never closed" in mesaj or "unexpected EOF" in mesaj:
+                self._ekle(
+                    "UnclosedParen",
+                    "🔴 KESİN",
+                    e.lineno,
+                    "Parantez kapatılmamış.",
+                    True,
+                    {"tur": "UnclosedParenFix"}
+                )
+            else:
+                self._ekle(
+                    "SyntaxError",
+                    "🔴 KESİN",
+                    e.lineno,
+                    f"Syntax hatası: {e.msg}",
+                    False
+                )
             return self.bulgular
 
         self.tree = tree
@@ -741,6 +785,25 @@ class EagleKodAnalizMotoru:
 
         if bulgular is None:
             bulgular = self.analiz_et(kaynak_kodu)
+
+        sozdizimi_turleri = {
+            "MissingColon", "ReservedKeywordName", "UnclosedParen"
+        }
+        if any(b.get("tur") in sozdizimi_turleri for b in bulgular):
+            sonuclar = []
+            for bulgu in bulgular:
+                tur = bulgu.get("tur")
+                if tur not in sozdizimi_turleri:
+                    continue
+                sonuclar.append({
+                    "tur": tur,
+                    "satir": bulgu.get("satir"),
+                    "guven": "yüksek",
+                    "karar": "DUZELTME_ADAYI",
+                    "neden": bulgu.get("mesaj", ""),
+                    "duzeltme_adayi": bulgu.get("duzeltme"),
+                })
+            return sonuclar
 
         try:
             tree = ast.parse(kaynak_kodu)
