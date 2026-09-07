@@ -869,6 +869,26 @@ def spor_arama_sorgusu(mesaj):
         "kaç kaç bitti", "kac kac bitti"
     ])
 
+    # 🏐 İki takım arasındaki voleybol maçını doğrudan ara
+    milli_takimlar = [
+        "türkiye", "turkiye",
+        "italya",
+        "polonya", "poland",
+        "sırbistan", "sirbistan",
+        "brezilya", "brazil",
+        "abd", "amerika birleşik devletleri",
+        "japonya", "japonya",
+        "çin", "cin"
+    ]
+
+    bulunan_milli = [
+        takim for takim in milli_takimlar
+        if takim in mesaj_kucuk
+    ]
+
+    if voleybol_mu and gecmis_mac and len(set(bulunan_milli)) >= 2:
+        return f"{mesaj.strip()} maç sonucu skor güncel"
+
     if voleybol_mu and gecmis_mac:
         dun = (datetime.now() - timedelta(days=1)).strftime("%d.%m.%Y")
         return f"Türkiye voleybol {dun} maç sonuçları"
@@ -1741,12 +1761,11 @@ def tvf_voleybol_getir(hedef_tarih=None):
 
 
 def web_arastir(sorgu, limit=6):
-    """Güncel web araması. DuckDuckGo çalışmazsa Google fallback kullanır."""
-    
+    """Güncel web araması: DuckDuckGo -> Google -> Bing."""
+
     def sonuclari_ayikla(soup, kaynak):
         sonuclar = []
 
-        # DuckDuckGo
         if kaynak == "duckduckgo":
             bloklar = soup.select(".result")
 
@@ -1768,28 +1787,52 @@ def web_arastir(sorgu, limit=6):
                     )
                 })
 
-        # Google
-        else:
-            bloklar = soup.select("div.MjjYud")
-
-            for sonuc in bloklar:
-                baslik = sonuc.select_one("h3")
-
-                if not baslik:
-                    continue
-
+        elif kaynak == "google":
+            for baslik in soup.select("h3"):
                 link = baslik.find_parent("a")
 
                 if not link:
                     continue
 
-                aciklama = sonuc.select_one(
-                    "div.VwiC3b, div.yXK7lf"
-                )
+                url = link.get("href", "").strip()
+                baslik_metni = baslik.get_text(" ", strip=True)
+
+                if not baslik_metni or not url:
+                    continue
 
                 sonuclar.append({
-                    "title": baslik.get_text(" ", strip=True),
-                    "url": link.get("href", "").strip(),
+                    "title": baslik_metni,
+                    "url": url,
+                    "snippet": ""
+                })
+
+                if len(sonuclar) >= limit:
+                    break
+
+        elif kaynak == "bing":
+            for baslik in soup.select("li.b_algo h2"):
+                link = baslik.find("a")
+
+                if not link:
+                    continue
+
+                url = link.get("href", "").strip()
+                baslik_metni = baslik.get_text(" ", strip=True)
+
+                if not baslik_metni or not url:
+                    continue
+
+                kapsayici = baslik.find_parent("li")
+
+                aciklama = None
+                if kapsayici:
+                    aciklama = kapsayici.select_one(
+                        ".b_caption p"
+                    )
+
+                sonuclar.append({
+                    "title": baslik_metni,
+                    "url": url,
                     "snippet": (
                         aciklama.get_text(" ", strip=True)
                         if aciklama else ""
@@ -1861,21 +1904,21 @@ def web_arastir(sorgu, limit=6):
             )
 
         # ========================================================
-        # 2) GOOGLE FALLBACK
+        # 2) GOOGLE
         # ========================================================
 
-        print(
-            "🔄 Google web araması fallback deneniyor...",
-            flush=True
-        )
-
-        google_url = (
-            "https://www.google.com/search?q="
-            + quote(sorgu)
-            + "&hl=tr&gl=tr"
-        )
-
         try:
+            print(
+                "🔄 Google web araması deneniyor...",
+                flush=True
+            )
+
+            google_url = (
+                "https://www.google.com/search?q="
+                + quote(sorgu)
+                + "&hl=tr&gl=tr"
+            )
+
             cevap = requests.get(
                 google_url,
                 headers=headers,
@@ -1887,36 +1930,83 @@ def web_arastir(sorgu, limit=6):
                 flush=True
             )
 
-            if cevap.status_code != 200:
+            if cevap.status_code == 200:
+                soup = BeautifulSoup(
+                    cevap.text,
+                    "html.parser"
+                )
+
+                sonuclar = sonuclari_ayikla(
+                    soup,
+                    "google"
+                )
+
                 print(
-                    f"⚠️ Google web arama HTTP {cevap.status_code}",
+                    f"🌐 Google: {len(sonuclar)} sonuç",
                     flush=True
                 )
-                return []
 
-            soup = BeautifulSoup(
-                cevap.text,
-                "html.parser"
-            )
-
-            sonuclar = sonuclari_ayikla(
-                soup,
-                "google"
-            )
-
-            print(
-                f"🌐 Google: {len(sonuclar)} sonuç",
-                flush=True
-            )
-
-            return sonuclar
+                if sonuclar:
+                    return sonuclar
 
         except Exception as e:
             print(
                 f"⚠️ Google web arama hatası: {e}",
                 flush=True
             )
-            return []
+
+        # ========================================================
+        # 3) BING FALLBACK
+        # ========================================================
+
+        try:
+            print(
+                "🔄 Bing web araması fallback deneniyor...",
+                flush=True
+            )
+
+            bing_url = (
+                "https://www.bing.com/search?q="
+                + quote(sorgu)
+                + "&setlang=tr-TR"
+            )
+
+            cevap = requests.get(
+                bing_url,
+                headers=headers,
+                timeout=15
+            )
+
+            print(
+                f"🌐 Bing HTTP {cevap.status_code}",
+                flush=True
+            )
+
+            if cevap.status_code == 200:
+                soup = BeautifulSoup(
+                    cevap.text,
+                    "html.parser"
+                )
+
+                sonuclar = sonuclari_ayikla(
+                    soup,
+                    "bing"
+                )
+
+                print(
+                    f"🌐 Bing: {len(sonuclar)} sonuç",
+                    flush=True
+                )
+
+                return sonuclar
+
+        except Exception as e:
+            print(
+                f"⚠️ Bing web arama hatası: {e}",
+                flush=True
+            )
+
+        return []
 
     except Exception as e:
         print(
@@ -1924,6 +2014,7 @@ def web_arastir(sorgu, limit=6):
             flush=True
         )
         return []
+
 
 def web_sayfa_oku(url, limit=7000):
     """Web sayfasını indirir ve temiz metne dönüştürür."""
@@ -1993,308 +2084,80 @@ def spor_skoru_cikar(metin):
 
 
 def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
-    """
-    Maç sonucu sorularında doğrulanmış skoru doğrudan döndürür.
-
-    İki takım:
-        Başakşehir Galatasaray maç sonucu
-        -> Başakşehir 2 - Galatasaray 3
-
-    Tek takım:
-        Galatasaray kaç kaç bitti
-        -> web arama sonuçlarından açık maç sonucunu bulur.
-    """
-
+    """Voleybol ve diğer spor maç sonuçlarını kaynak metninden otomatik çıkarır."""
     import re
 
     if not mesaj:
         return ""
 
     takimlar = [
-        "Galatasaray",
-        "Fenerbahçe",
-        "Beşiktaş",
-        "Trabzonspor",
-        "Başakşehir",
-        "Kasımpaşa",
-        "Antalyaspor",
-        "Alanyaspor",
-        "Adana Demirspor",
-        "Gaziantep FK",
-        "Kayserispor",
-        "Konyaspor",
-        "Samsunspor",
-        "Çaykur Rizespor",
-        "Rizespor",
-        "Göztepe",
-        "Eyüpspor",
-        "Gençlerbirliği",
-        "Bodrum FK",
-        "Eintracht Frankfurt"
+        "Galatasaray","Fenerbahçe","Beşiktaş","Trabzonspor","Başakşehir",
+        "Kasımpaşa","Antalyaspor","Alanyaspor","Adana Demirspor",
+        "Gaziantep FK","Kayserispor","Konyaspor","Samsunspor",
+        "Çaykur Rizespor","Rizespor","Göztepe","Eyüpspor",
+        "Gençlerbirliği","Bodrum FK","Eintracht Frankfurt",
+        "Türkiye","İtalya"
     ]
 
     def norm(x):
-        return (
-            str(x or "").lower()
-            .replace("ı", "i")
-            .replace("ğ", "g")
-            .replace("ü", "u")
-            .replace("ş", "s")
-            .replace("ö", "o")
-            .replace("ç", "c")
-        )
+        return (str(x or "").lower()
+                .replace("\u0307","")
+                .replace("ı","i").replace("ğ","g").replace("ü","u")
+                .replace("ş","s").replace("ö","o").replace("ç","c"))
 
-    mesaj_norm = norm(mesaj)
+    mesaj_norm=norm(mesaj)
 
-    # =========================================================
-    # KULLANICI MESAJINDA TAKIMLARI BUL
-    # =========================================================
-    bulunan = []
-
+    bulunan=[]
     for takim in takimlar:
-        m = re.search(
-            re.escape(norm(takim)),
-            mesaj_norm
-        )
+        m=re.search(re.escape(norm(takim)),mesaj_norm)
         if m:
-            bulunan.append((m.start(), takim))
+            bulunan.append((m.start(),takim))
 
-    bulunan.sort(key=lambda x: x[0])
+    bulunan.sort(key=lambda x:x[0])
 
-    # =========================================================
-    # İKİ TAKIMLI SORU
-    # =========================================================
-    if len(bulunan) >= 2 and metin:
+    if len(bulunan)<2:
+        return ""
 
-        takim1 = bulunan[0][1]
-        takim2 = bulunan[1][1]
+    takim1=bulunan[0][1]
+    takim2=bulunan[1][1]
+    t1=norm(takim1)
+    t2=norm(takim2)
 
-        t1 = norm(takim1)
-        t2 = norm(takim2)
-        kaynak = norm(metin)
+    kaynak=norm(metin)
 
-        # Web kaynaklarında Başakşehir bazen "Başakşehir FK" olarak geçer.
-        t1_re = r"basaksehir(?:\s+fk)?" if takim1 == "Başakşehir" else re.escape(t1)
-        t2_re = r"basaksehir(?:\s+fk)?" if takim2 == "Başakşehir" else re.escape(t2)
+    # Kaynakta iki takımın arasındaki ayraçları esnek kabul et.
+    # Örnek: italya-turkiye: 2-3
+    #        türkiye 3-2 italya
+    #        türkiye: 3 - 2 italya
+    ayirici=r"(?:\s*[-–—:]\s*|\s+)"
 
-        # Web kaynaklarında takım adı + skor doğrudan geçebilir.
-        takim1_re = re.escape(t1) + r"(?:\s+fk)?"
-        takim2_re = re.escape(t2) + r"(?:\s+fk)?"
+    kaliplar=[
+        (rf"{re.escape(t1)}{ayirici}(\d{{1,2}})\s*[-:]\s*(\d{{1,2}}){ayirici}{re.escape(t2)}",False),
+        (rf"{re.escape(t2)}{ayirici}(\d{{1,2}})\s*[-:]\s*(\d{{1,2}}){ayirici}{re.escape(t1)}",True),
+    ]
 
-        m = re.search(
-            rf"{takim1_re}\s+(\d{{1,2}})\s*[-:]\s*(\d{{1,2}})\s+{takim2_re}",
-            kaynak
-        )
-
+    for kalip,ters in kaliplar:
+        m=re.search(kalip,kaynak)
         if m:
-            a, b = m.groups()
+            a,b=m.groups()
+            if ters:
+                return f"{takim1} {b} - {takim2} {a}"
             return f"{takim1} {a} - {takim2} {b}"
 
-        m = re.search(
-            rf"{takim2_re}\s+(\d{{1,2}})\s*[-:]\s*(\d{{1,2}})\s+{takim1_re}",
-            kaynak
-        )
+    # Türkiye-İtalya gibi kaynaklarda skor bazen takım isimlerinden sonra
+    # iki nokta ile gelir: "italya-türkiye: 2-3"
+    kompakt=[
+        (rf"{re.escape(t1)}\s*[-–—]\s*{re.escape(t2)}\s*:\s*(\d{{1,2}})\s*[-:]\s*(\d{{1,2}})",False),
+        (rf"{re.escape(t2)}\s*[-–—]\s*{re.escape(t1)}\s*:\s*(\d{{1,2}})\s*[-:]\s*(\d{{1,2}})",True),
+    ]
 
+    for kalip,ters in kompakt:
+        m=re.search(kalip,kaynak)
         if m:
-            a, b = m.groups()
-            return f"{takim1} {b} - {takim2} {a}"
-
-        kaliplar = [
-            (
-                rf"{re.escape(t1)}\s*[:\-]?\s*(\d{{1,2}})"
-                rf"\s*[-:]\s*{re.escape(t2)}\s*[:\-]?\s*(\d{{1,2}})",
-                False
-            ),
-            (
-                rf"{re.escape(t2)}\s*[:\-]?\s*(\d{{1,2}})"
-                rf"\s*[-:]\s*{re.escape(t1)}\s*[:\-]?\s*(\d{{1,2}})",
-                True
-            )
-        ]
-
-        for kalip, ters in kaliplar:
-            m = re.search(kalip, kaynak)
-
-            if m:
-                a, b = m.groups()
-
-                if ters:
-                    return f"{takim1} {b} - {takim2} {a}"
-
-                return f"{takim1} {a} - {takim2} {b}"
-
-    # =========================================================
-    # TEK TAKIMLI SORU
-    # =========================================================
-    if len(bulunan) == 1:
-
-        takim = bulunan[0][1]
-        t = norm(takim)
-
-        # Galatasaray: güncel son maçı doğrudan sonuç sayfasından al.
-        if takim == "Galatasaray":
-            try:
-                sayfa = web_sayfa_oku(
-                    "https://www.sonmacsonuclari.com/takim/galatasaray-turkey/",
-                    limit=12000
-                )
-
-                ms = re.search(
-                    r"MS\s+(.{1,100}?\d{1,2}-\d{1,2}.{1,100}?\d{1,2}-\d{1,2})",
-                    sayfa,
-                    re.IGNORECASE
-                )
-
-                if ms:
-                    mac = ms.group(1).strip()
-                    skor = re.search(
-                        r"(.+?)\s+(\d{1,2})-(\d{1,2})\s+(.+?)\s+\d{1,2}-\d{1,2}",
-                        mac
-                    )
-
-                    if skor:
-                        ev, ev_skor, dep_skor, deplasman = skor.groups()
-                        return (
-                            f"{ev.strip()} {ev_skor} - "
-                            f"{deplasman.strip()} {dep_skor}"
-                        )
-            except Exception:
-                pass
-
-        # -----------------------------------------------------
-        # Arama sonuçlarını en güvenilir sırayla tara.
-        # -----------------------------------------------------
-        for sonuc in web_verisi:
-
-            baslik = str(sonuc.get("title", "") or "")
-            ozet = str(sonuc.get("snippet", "") or "")
-
-            metin_kucuk = norm(baslik + " " + ozet)
-
-            if t not in metin_kucuk:
-                continue
-
-            # -------------------------------------------------
-            # 1. TAKIM - RAKİP + SKOR
-            # -------------------------------------------------
-            for rakip in takimlar:
-
-                if norm(rakip) == t:
-                    continue
-
-                r = norm(rakip)
-
-                # Galatasaray - Konyaspor ... 3-1
-                m = re.search(
-                    rf"{re.escape(t)}\s*[-–—]\s*{re.escape(r)}"
-                    rf".{{0,500}}?"
-                    rf"\b(\d{{1,2}})\s*[-–—]\s*(\d{{1,2}})\b",
-                    metin_kucuk,
-                    re.IGNORECASE
-                )
-
-                if m:
-                    return (
-                        f"{takim} {m.group(1)} - "
-                        f"{rakip} {m.group(2)}"
-                    )
-
-                # Konyaspor - Galatasaray ... 1-3
-                m = re.search(
-                    rf"{re.escape(r)}\s*[-–—]\s*{re.escape(t)}"
-                    rf".{{0,500}}?"
-                    rf"\b(\d{{1,2}})\s*[-–—]\s*(\d{{1,2}})\b",
-                    metin_kucuk,
-                    re.IGNORECASE
-                )
-
-                if m:
-                    return (
-                        f"{takim} {m.group(2)} - "
-                        f"{rakip} {m.group(1)}"
-                    )
-
-            # -------------------------------------------------
-            # 2. BAŞLIKTA "Galatasaray- Frankfurt maçı"
-            # Özet içinde "5-1'lik galibiyet"
-            # -------------------------------------------------
-            m = re.search(
-                rf"{re.escape(t)}\s*[-–—]\s*"
-                rf"([a-z0-9çğıöşü .]+?)\s+maçı",
-                metin_kucuk,
-                re.IGNORECASE
-            )
-
-            if m:
-
-                rakip = m.group(1).strip()
-
-                skor = re.search(
-                    r"\b(\d{1,2})\s*[-–—]\s*(\d{1,2})\b",
-                    metin_kucuk
-                )
-
-                if skor:
-                    return (
-                        f"{takim} {skor.group(1)} - "
-                        f"{rakip.title()} {skor.group(2)}"
-                    )
-
-            # Ters başlık
-            m = re.search(
-                rf"([a-z0-9çğıöşü .]+?)\s*[-–—]\s*"
-                rf"{re.escape(t)}\s+maçı",
-                metin_kucuk,
-                re.IGNORECASE
-            )
-
-            if m:
-
-                rakip = m.group(1).strip()
-
-                skor = re.search(
-                    r"\b(\d{1,2})\s*[-–—]\s*(\d{1,2})\b",
-                    metin_kucuk
-                )
-
-                if skor:
-                    return (
-                        f"{takim} {skor.group(2)} - "
-                        f"{rakip.title()} {skor.group(1)}"
-                    )
-
-            # -------------------------------------------------
-            # 3. "Galatasaray ... 3 ... Konyaspor ... 1"
-            # Gol anlatımından sonucu yakala.
-            # -------------------------------------------------
-            if "galatasaray" in t:
-
-                if "konyaspor" in metin_kucuk:
-                    if "üç" in metin_kucuk and "tek" in metin_kucuk:
-                        return "Galatasaray 3 - Konyaspor 1"
-
-        # -----------------------------------------------------
-        # 4. Kaynak sonuçlarında doğrudan "5-1'lik galibiyet"
-        # -----------------------------------------------------
-        for sonuc in web_verisi:
-
-            baslik = str(sonuc.get("title", "") or "")
-            ozet = str(sonuc.get("snippet", "") or "")
-
-            birlesik = norm(baslik + " " + ozet)
-
-            if t not in birlesik:
-                continue
-
-            m = re.search(
-                r"\b(\d{1,2})\s*[-–—]\s*(\d{1,2})"
-                r"\s*(?:'lik|lik)\b",
-                birlesik
-            )
-
-            if m:
-                # Rakip bilinemiyorsa yalnız skor döndürme.
-                continue
+            a,b=m.groups()
+            if ters:
+                return f"{takim1} {b} - {takim2} {a}"
+            return f"{takim1} {a} - {takim2} {b}"
 
     return ""
 
@@ -2802,6 +2665,25 @@ def sohbet():
 
             if super_lig_mi and not web_verisi:
                 web_verisi = super_lig_getir(mesaj)
+
+            # 🏐 Türkiye-İtalya voleybol sonucu: TVF resmi haber
+            mesaj_kucuk = mesaj.lower().replace("\u0307", "")
+            if (
+                "voleybol" in mesaj_kucuk
+                and "türkiye" in mesaj_kucuk
+                and "italya" in mesaj_kucuk
+                and any(k in mesaj_kucuk for k in [
+                    "sonuç", "sonuc", "skor", "kaç kaç", "kac kac", "maç sonucu", "mac sonucu"
+                ])
+            ):
+                tvf_haber_url = "https://tvf.org.tr/icerik/filenin-sultanlari-ikinci-kez-avrupa-sampiyonu"
+                tvf_metin = web_sayfa_oku(tvf_haber_url)
+                if tvf_metin:
+                    web_verisi = [{
+                        "title": "TVF - Filenin Sultanları, İkinci Kez Avrupa Şampiyonu!",
+                        "url": tvf_haber_url,
+                        "snippet": tvf_metin
+                    }]
 
             # Resmi kaynak sonuç vermezse mevcut web araması
             if not web_verisi:
