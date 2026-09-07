@@ -1099,6 +1099,87 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
+    # 🧮 DOĞAL DİL ZAM / İNDİRİM HESABI
+    # Örn: "200 TL’ye %15 zam gelirse yeni fiyat kaç olur?"
+    dogal_zam_indirim = re.search(
+        r'(\d+(?:[.,]\d+)?)\D+(?:%|yüzde)\s*(\d+(?:[.,]\d+)?)\D*(zam|artış|artis|indirim)',
+        metin,
+        re.IGNORECASE
+    )
+
+    if dogal_zam_indirim:
+        ana_sayi = dogal_zam_indirim.group(1).replace(",", ".")
+        yuzde = dogal_zam_indirim.group(2).replace(",", ".")
+        tur = dogal_zam_indirim.group(3).lower()
+
+        miktar_istegi = bool(re.search(
+            r'\b(miktarı|miktari|tutarı|tutari)\b',
+            metin,
+            re.IGNORECASE
+        ))
+
+        if miktar_istegi:
+            karar["matematik_ifadesi"] = f"{ana_sayi} * {yuzde} / 100"
+            karar["yuzde_turu"] = f"{tur}_miktari"
+        elif tur == "indirim":
+            karar["matematik_ifadesi"] = f"{ana_sayi} - ({ana_sayi} * {yuzde} / 100)"
+            karar["yuzde_turu"] = "indirim"
+        else:
+            karar["matematik_ifadesi"] = f"{ana_sayi} + ({ana_sayi} * {yuzde} / 100)"
+            karar["yuzde_turu"] = "zam"
+
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Doğal dil içinde zam/indirim hesabı algılandı.",
+            "arac": "guvenli_hesaplama",
+            "islem": "hesapla",
+            "dogrulama": True
+        })
+        return karar
+
+    # 🧮 DOĞAL DİL YÜZDE HESABI
+    # Örn: "250’nin %18’i kaçtır?"
+    dogal_yuzde = re.search(
+        r'(\d+(?:[.,]\d+)?)\D+(?:%|yüzde)\s*(\d+(?:[.,]\d+)?)\D*(?:kaçtır|kaç|kactir|kac)',
+        metin,
+        re.IGNORECASE
+    )
+
+    if dogal_yuzde:
+        ana_sayi = dogal_yuzde.group(1).replace(",", ".")
+        yuzde = dogal_yuzde.group(2).replace(",", ".")
+        karar["matematik_ifadesi"] = f"{ana_sayi} * {yuzde} / 100"
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Doğal dil içinde yüzde hesabı algılandı.",
+            "arac": "guvenli_hesaplama",
+            "islem": "hesapla",
+            "dogrulama": True
+        })
+        return karar
+
+    # 🧮 DOĞAL DİL MATEMATİK
+    # Örn: "125 + 375 kaç eder?", "Python'da 10 + 20 kaç eder?"
+    dogal_matematik = re.search(
+        r'(?<![A-Za-z_])([0-9()\s]+(?:\*\*|[+\-/%])\s*[0-9()\s]+)(?=\s*(?:kaç eder|kac eder|sonucu nedir|sonucu ne|kaç|kac|hesapla|eder)\b)',
+        metin,
+        re.IGNORECASE
+    )
+
+    if dogal_matematik:
+        karar["matematik_ifadesi"] = dogal_matematik.group(1).strip()
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Doğal dil içinde matematiksel ifade algılandı.",
+            "arac": "guvenli_hesaplama",
+            "islem": "hesapla",
+            "dogrulama": True
+        })
+        return karar
+
     # 💻 KOD / HATA
     kod_kelimeleri = [
         "kod", "python", "java", "javascript",
@@ -2580,7 +2661,7 @@ def sohbet():
             "kodu acikla"
         ]
 
-        if any(x in mesaj_kucuk for x in kod_takip_ifadeleri):
+        if karar.get("intent") != "matematik" and any(x in mesaj_kucuk for x in kod_takip_ifadeleri):
             aktif_kod_takibi = True
             karar.update({
                 "intent": "kod_hata",
@@ -2749,10 +2830,6 @@ def sohbet():
             else:
                 kaynak_kod = mesaj.strip()
 
-            # 🧠 Python kodunu konuşma bağlamına kaydet.
-            sohbet_baglam["aktif_kod"] = kaynak_kod
-            sohbet_baglam["aktif_kod_dili"] = "python"
-            sohbet_baglam_kaydet(sohbet_baglam)
 
             # Markdown kod çitlerini temizle.
             if kaynak_kod.startswith("```") and kaynak_kod.endswith("```"):
@@ -2765,6 +2842,10 @@ def sohbet():
                     satirlar = satirlar[:-1]
 
                 kaynak_kod = "\n".join(satirlar).strip()
+            # 🧠 Temizlenmiş Python kodunu konuşma bağlamına kaydet.
+            sohbet_baglam["aktif_kod"] = kaynak_kod
+            sohbet_baglam["aktif_kod_dili"] = "python"
+            sohbet_baglam_kaydet(sohbet_baglam)
 
             # Ön analiz: syntax + mantık
             analiz_motoru = autofix_engine.analiz_motoru
@@ -2851,10 +2932,11 @@ def sohbet():
                             f"• Satır {satir}: {tur} — {neden}"
                         )
 
-                        if aday.get('eski') is not None and aday.get('yeni') is not None:
-                            cevap.append(
-                                f"  ↳ {aday.get('eski')} → {aday.get('yeni')}"
-                            )
+                        if isinstance(aday, dict):
+                            if aday.get("eski") is not None and aday.get("yeni") is not None:
+                                cevap.append(
+                                    f"  ↳ {aday.get('eski')} → {aday.get('yeni')}"
+                                )
 
                 return jsonify({
                     "ok": True,
@@ -3230,8 +3312,13 @@ def sohbet():
 
     # 🧮 Güvenli matematik doğrulaması
     hesaplama_metni = ""
-    if re.fullmatch(r"[0-9+*/().%\-\s]+", mesaj):
-        ifade = mesaj.replace("%", "/100")
+    ifade = karar.get("matematik_ifadesi", "")
+
+    if not ifade and re.fullmatch(r"[0-9+*/().%\-\s]+", mesaj):
+        ifade = mesaj
+
+    if ifade:
+        ifade = ifade.replace("%", "/100")
         ok, sonuc_hesap = guvenli_hesapla(ifade)
         if ok:
             hesaplama_metni = (
@@ -3243,8 +3330,6 @@ def sohbet():
                 "===== HESAPLAMA SONU ====="
             )
 
-
-    # 🧠 Güvenli mantıksal doğrulama
     mantiksal_metni = ""
     ok, sonuc_mantiksal = guvenli_mantiksal_hesapla(mesaj)
     if ok:
@@ -3280,7 +3365,7 @@ def sohbet():
 
     # 🧠 Eagle teknik bilgi bankası — doğrudan cevap
     bilgi_sonuclari = []
-    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api") and not autofix_istegi:
+    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api", "guvenli_hesaplama") and not autofix_istegi:
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
     if bilgi_sonuclari:
