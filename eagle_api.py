@@ -10,6 +10,8 @@ import re
 import json
 import ast
 import operator
+import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 
@@ -510,7 +512,7 @@ def bilgi_bankasi_ara(mesaj):
         "path.name", "path.suffix", "f-string", "find()", "count()",
         "isdigit()", "isalpha()", "isalnum()", "capitalize()", "title()",
         "append()", "extend()", "insert()", "remove()", "pop()", "clear()",
-        "reverse()", "keys()", "values()", "items()", "get()", "update()", "isinstance", "isinstance()"
+        "reverse()", "keys()", "values()", "items()", "get()", "update()", "isinstance", "isinstance()", "break", "continue"
     )
 
     mesaj_alt = metin.replace(" ", "").lower()
@@ -2546,6 +2548,48 @@ def sohbet():
     autofix_istegi = False
     karar = eagle_karar_motoru(mesaj, gecmis)
 
+    # 🧠 AKTİF PYTHON KODU TAKİBİ
+    aktif_kod = sohbet_baglam.get("aktif_kod", "")
+    aktif_kod_takibi = False
+
+    if aktif_kod:
+        kod_takip_ifadeleri = [
+            "bu kod",
+            "yukarıdaki kod",
+            "yukaridaki kod",
+            "son kod",
+            "kodun çıktısı",
+            "kodun ciktisi",
+            "çıktısı nedir",
+            "ciktisi nedir",
+            "ne yazdırır",
+            "ne yazdirir",
+            "çalışınca ne olur",
+            "calisinca ne olur",
+            "çalıştırınca ne olur",
+            "calistirinca ne olur",
+            "sonuç ne",
+            "sonucu ne",
+            "bu kodda hata var mı",
+            "bu kodda hata var mi",
+            "kodda hata var mı",
+            "kodda hata var mi",
+            "neden böyle çalışır",
+            "neden boyle calisir",
+            "kodu açıkla",
+            "kodu acikla"
+        ]
+
+        if any(x in mesaj_kucuk for x in kod_takip_ifadeleri):
+            aktif_kod_takibi = True
+            karar.update({
+                "intent": "kod_hata",
+                "guven": "yüksek",
+                "neden": "Önceki mesajdaki aktif Python koduna devam eden istek algılandı.",
+                "arac": "kod_analiz",
+                "baglamdan": True
+            })
+
     # 🧠 Önceki konuşmanın aktif konusu belirsiz mesajı açıklıyorsa kullan.
     karar = eagle_baglam_yonlendir(
         mesaj,
@@ -2590,14 +2634,125 @@ def sohbet():
         return skor >= 2
 
 
-    # 🧠 EAGLE YAPIŞTIRILMIŞ KOD ANALİZİ + AUTOFIX
-    # Doğrudan Python kodu yapıştırıldığında:
-    # analiz → mantık → güvenli düzeltme → syntax → test
-    if eagle_yapistirilmis_kod_mu(mesaj):
+    # ▶️ AKTİF PYTHON KODU GERÇEK ÇIKTI TESTİ
+    if aktif_kod_takibi and any(x in mesaj_kucuk for x in [
+        "çıktısı", "ciktisi", "ne yazdırır", "ne yazdirir",
+        "çalışınca", "calisinca", "çalıştırınca", "calistirinca",
+        "sonuç ne", "sonucu ne"
+    ]):
         try:
             import tempfile
 
-            kaynak_kod = mesaj.strip()
+            calisma_klasoru = Path(
+                tempfile.mkdtemp(
+                    prefix=".eagle_exec_",
+                    dir=str(Path(__file__).resolve().parent)
+                )
+            )
+
+            calisma_dosyasi = calisma_klasoru / "aktif_kod.py"
+            calisma_dosyasi.write_text(
+                aktif_kod,
+                encoding="utf-8"
+            )
+
+            try:
+                sonuc = subprocess.run(
+                    [sys.executable, str(calisma_dosyasi)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=str(calisma_klasoru)
+                )
+
+                stdout = (sonuc.stdout or "").strip()
+                stderr = (sonuc.stderr or "").strip()
+
+                cevap = [
+                    "🦅 EAGLE PYTHON ÇIKTI ANALİZİ",
+                    ""
+                ]
+
+                if stdout:
+                    cevap.extend([
+                        "📤 Gerçek çalışma çıktısı:",
+                        "",
+                        "```text",
+                        stdout,
+                        "```"
+                    ])
+                else:
+                    cevap.append("📤 Kod çalıştı ancak ekrana çıktı yazdırmadı.")
+
+                if stderr:
+                    cevap.extend([
+                        "",
+                        "⚠️ Hata çıktısı:",
+                        "",
+                        "```text",
+                        stderr,
+                        "```"
+                    ])
+
+                if sonuc.returncode == 0:
+                    cevap.extend([
+                        "",
+                        "✅ Python kodu başarıyla çalıştı."
+                    ])
+                else:
+                    cevap.extend([
+                        "",
+                        f"❌ Python kodu hata koduyla sonlandı: {sonuc.returncode}"
+                    ])
+
+                return jsonify({
+                    "ok": True,
+                    "answer": "\n".join(cevap),
+                    "eagle_direct": True,
+                    "code_analysis": True,
+                    "code_execution": True,
+                    "return_code": sonuc.returncode,
+                    "memory_count": len(hafiza_yukle())
+                })
+
+            finally:
+                try:
+                    if calisma_dosyasi.exists():
+                        calisma_dosyasi.unlink()
+                    if calisma_klasoru.exists():
+                        calisma_klasoru.rmdir()
+                except Exception:
+                    pass
+
+        except subprocess.TimeoutExpired:
+            return jsonify({
+                "ok": True,
+                "answer": "🦅 EAGLE PYTHON ÇIKTI ANALİZİ\n\n⏱️ Kod 5 saniye içinde tamamlanmadı; güvenli süre sınırı nedeniyle durduruldu.",
+                "eagle_direct": True,
+                "code_analysis": True,
+                "code_execution": False,
+                "memory_count": len(hafiza_yukle())
+            })
+
+        except Exception as exc:
+            print(f"❌ Python çıktı testi hatası: {exc}", flush=True)
+
+    # 🧠 EAGLE YAPIŞTIRILMIŞ KOD ANALİZİ + AUTOFIX
+    # Doğrudan Python kodu yapıştırıldığında:
+    # analiz → mantık → güvenli düzeltme → syntax → test
+    if eagle_yapistirilmis_kod_mu(mesaj) or aktif_kod_takibi:
+        try:
+            import tempfile
+
+            if aktif_kod_takibi:
+                kaynak_kod = aktif_kod.strip()
+            else:
+                kaynak_kod = mesaj.strip()
+
+            # 🧠 Python kodunu konuşma bağlamına kaydet.
+            sohbet_baglam["aktif_kod"] = kaynak_kod
+            sohbet_baglam["aktif_kod_dili"] = "python"
+            sohbet_baglam_kaydet(sohbet_baglam)
 
             # Markdown kod çitlerini temizle.
             if kaynak_kod.startswith("```") and kaynak_kod.endswith("```"):

@@ -140,7 +140,17 @@
       "continue mevcut turu atlayıp döngünün sonraki turuna geçer.",
       "for döngüsü bir koleksiyonun elemanları üzerinde tekrar yapmak için kullanılır.",
       "while döngüsü verilen koşul doğru olduğu sürece çalışır.",
-      "continue mevcut döngü turunu atlayıp sonraki tura geçer."
+      "continue mevcut döngü turunu atlayıp sonraki tura geçer.",
+      "while döngüsü, bir koşul doğru olduğu sürece kodun tekrar tekrar çalışmasını sağlar.",
+      "while döngüsünün devam etmesi için koşulun bir noktada yanlış olması gerekir.",
+      "Sayaç kullanılan while döngülerinde sayaç değerinin güncellenmesi sonsuz döngüyü önlemeye yardımcı olur.",
+      "while döngüsü, tekrar sayısının önceden kesin olarak bilinmediği durumlarda kullanışlıdır.",
+      "while döngüsünde koşul başlangıçta yanlışsa döngünün gövdesi hiç çalışmaz.",
+      "break döngüyü tamamen sonlandırmak için kullanılır.",
+      "continue döngünün mevcut turunun kalan kısmını atlayıp sonraki tura geçmesini sağlar.",
+      "break bir koşul gerçekleştiğinde döngüden çıkmak için kullanılabilir.",
+      "continue belirli koşullarda mevcut işlemi atlayarak döngünün devam etmesini sağlar.",
+      "break ve continue özellikle for ve while döngülerinin akışını kontrol etmek için kullanılır."
     ],
     "listeler": [
       "Listenin elemanlarına indeks numarasıyla erişilir ve ilk indeks 0'dır.",
@@ -191,7 +201,15 @@
       "KeyError bir sözlükte bulunmayan bir anahtara doğrudan erişildiğini gösterir.",
       "Hata düzeltmede önce hata mesajı okunmalı, hatanın bulunduğu satır incelenmeli, düzeltme yapılmalı ve kod tekrar test edilmelidir.",
       "try/except Python'da oluşabilecek hataları kontrollü şekilde yakalamak için kullanılır.",
-      "finally bloğu hata oluşsa da oluşmasa da çalıştırılmak istenen kodlar için kullanılır."
+      "finally bloğu hata oluşsa da oluşmasa da çalıştırılmak istenen kodlar için kullanılır.",
+      "try bloğu hata oluşturabilecek kodu denemek için kullanılır.",
+      "except bloğu try içinde oluşan belirli bir hatayı yakalayıp kontrollü işlem yapmak için kullanılır.",
+      "ValueError sayısal dönüşüm gibi işlemlerde geçersiz bir değer kullanıldığında yakalanabilir.",
+      "FileNotFoundError açılmak istenen dosya bulunamadığında oluşan hatayı yakalamak için kullanılabilir.",
+      "Birden fazla except bloğu farklı hata türlerini ayrı ayrı yönetmek için kullanılabilir.",
+      "try/except programın beklenmeyen bir hata nedeniyle tamamen durmasını önlemeye yardımcı olur.",
+      "Hata yakalamada mümkün olduğunca genel Exception yerine beklenen hata türünün belirtilmesi daha sağlıklıdır.",
+      "else bloğu try başarılı olduğunda çalıştırılmak istenen kodlar için kullanılabilir."
     ],
     "ornekler": [
       "Örnek: isim = 'Ali' bir str değişkenidir.",

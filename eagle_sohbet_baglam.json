@@ -1,3 +1,5 @@
 {
-  "aktif_borc_id": "5"
+  "aktif_borc_id": "5",
+  "aktif_kod": "try:\n    sayi = 10 / 0\nexcept:\n    print(\"Hata oluştu\")",
+  "aktif_kod_dili": "python"
 }

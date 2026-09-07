@@ -1,6 +1,8 @@
-kullanici_adi = "Ozhan"
+for sayi in range(1, 6):
+    if sayi == 3:
+        continue
+    if sayi == 5:
+        break
+    print("Sayı:", sayi)
 
-def test():
-    return kullanici_adi
-
-print(test())
+print("Döngü tamamlandı.")

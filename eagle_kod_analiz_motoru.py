@@ -526,7 +526,7 @@ class EagleKodAnalizMotoru:
                     "str", "int", "float",
                     "list", "dict", "set", "tuple",
                     "open", "enumerate", "zip",
-                    "sum", "min", "max", "abs"
+                    "sum", "min", "max", "abs", "isinstance"
                 })
 
                 if node.id not in tanimli_isimler and node.id not in bilinen:
@@ -884,6 +884,14 @@ class EagleKodAnalizMotoru:
                     adaylar = []
                     aday_havuzu = satir_kapsami(satir)
 
+                    # Built-in isimleri yazım hatası adayı olarak kullanma.
+                    # Yalnızca kullanıcının kodunda tanımlanan isimleri değerlendir.
+                    builtin_isimler = set(dir(__builtins__))
+                    aday_havuzu = [
+                        isim for isim in aday_havuzu
+                        if isim not in builtin_isimler
+                    ]
+
                     for isim in aday_havuzu:
                         if not isinstance(isim, str):
                             continue
@@ -928,6 +936,13 @@ class EagleKodAnalizMotoru:
                             f"'{aday}' isimli çok benzer bir değişken bulunuyor. "
                             "Yazım hatası olma ihtimali yüksek."
                         )
+                    elif len(adaylar) > 1:
+                        karar["guven"] = "düşük"
+                        karar["karar"] = "SADECE_RAPORLA"
+                        karar["neden"] = (
+                            f"'{hatali}' tanımsız; birden fazla benzer isim bulunduğu "
+                            "için güvenli otomatik düzeltme önerilemiyor."
+                        )
 
             elif tur == "BareExcept":
                 karar["guven"] = "yüksek"
@@ -951,13 +966,11 @@ class EagleKodAnalizMotoru:
 
             elif tur == "ZeroDivision":
                 karar["guven"] = "yüksek"
-                karar["karar"] = "DUZELTME_ADAYI"
-                karar["duzeltme_adayi"] = {
-                    "tur": "ZeroDivisionGuard"
-                }
+                karar["karar"] = "SADECE_RAPORLA"
                 karar["neden"] = (
-                    "Bölen değişken değeri 0. "
-                    "Bölme işlemine sıfır kontrolü eklenmeli."
+                    "Sıfıra bölme tespit edildi. "
+                    "Literal sıfıra bölme otomatik değiştirilmez; "
+                    "kullanıcı müdahalesi gerekir."
                 )
             elif tur == "UnreachableCode":
                 karar["guven"] = "yüksek"
