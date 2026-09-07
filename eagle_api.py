@@ -461,6 +461,14 @@ def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").lower()
 
     konu_eslesmeleri = {
+        "comprehension": ["comprehension", "liste comprehension", "dictionary comprehension", "set comprehension"],
+        "lambda": ["lambda", "lambda fonksiyonu", "lambda fonksiyonları", "lambda fonksiyonlari", "anonim fonksiyon"],
+        "enumerate": ["enumerate", "enumerate()", "indeks ve eleman"],
+        "zip": ["zip", "zip()", "koleksiyonları birlikte"],
+        "map": ["map", "map()", "haritalama fonksiyonu"],
+        "filter": ["filter", "filter()", "filtreleme fonksiyonu"],
+        "sorted": ["sorted", "sorted()", "sıralama"],
+        "any_all": ["any", "any()", "all", "all()", "koşulların tamamı", "en az biri"],
         "liste": ["liste", "listeler", "listeleme", "append", "remove", "extend", "insert", "pop", "clear", "reverse", "dilimleme", "indeks"],
         "fonksiyon": ["fonksiyon", "fonksiyonlar", "def", "parametre", "return", "find", "count", "isdigit", "isalpha", "isalnum", "capitalize", "title", "f-string"],
         "döngü": ["döngü", "dongu", "for", "while"],
@@ -502,7 +510,7 @@ def bilgi_bankasi_ara(mesaj):
         "path.name", "path.suffix", "f-string", "find()", "count()",
         "isdigit()", "isalpha()", "isalnum()", "capitalize()", "title()",
         "append()", "extend()", "insert()", "remove()", "pop()", "clear()",
-        "reverse()", "keys()", "values()", "items()", "get()", "update()"
+        "reverse()", "keys()", "values()", "items()", "get()", "update()", "isinstance", "isinstance()"
     )
 
     mesaj_alt = metin.replace(" ", "").lower()
