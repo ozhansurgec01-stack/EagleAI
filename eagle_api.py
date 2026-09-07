@@ -1445,7 +1445,8 @@ def super_lig_getir(mesaj=""):
         desen = re.compile(
             r'(\d{2}\.\d{2}\.\d{4})\s+'
             r'(\d{1,2}:\d{2})\s+'
-            r'(.+?)\s+-\s+'
+            r'(.+?)\s+'
+            r'(?:([0-9]+)\s+-\s+([0-9]+)|-)\s+'
             r'(.+?)\s+Detaylar',
             re.IGNORECASE
         )
@@ -1456,7 +1457,20 @@ def super_lig_getir(mesaj=""):
             tarih = eslesme.group(1).strip()
             saat = eslesme.group(2).strip()
             ev = eslesme.group(3).strip()
-            deplasman = eslesme.group(4).strip()
+            ev_skor = eslesme.group(4)
+            deplasman_skor = eslesme.group(5)
+            deplasman = eslesme.group(6).strip()
+
+            oynandi = (
+                ev_skor is not None
+                and deplasman_skor is not None
+            )
+
+            skor = (
+                f"{ev_skor}-{deplasman_skor}"
+                if oynandi
+                else "-"
+            )
 
             try:
                 dt = datetime.strptime(
@@ -1471,6 +1485,10 @@ def super_lig_getir(mesaj=""):
                 "deplasman": deplasman,
                 "tarih": tarih,
                 "saat": saat,
+                "ev_skor": ev_skor,
+                "deplasman_skor": deplasman_skor,
+                "skor": skor,
+                "oynandi": oynandi,
                 "_tarih": dt
             })
 
@@ -1541,19 +1559,36 @@ def super_lig_getir(mesaj=""):
 
         bugun = datetime.now().date()
 
-        bugunun_maclari = [
-            mac for mac in maclar
-            if mac["_tarih"].date() == bugun
-        ]
+        sonuc_istegi = any(k in mesaj_kucuk for k in [
+            "sonuç",
+            "sonuc",
+            "skor",
+            "maç sonucu",
+            "mac sonucu",
+            "maç sonuçları",
+            "mac sonuclari"
+        ])
 
-        if bugunun_maclari:
-            secilecek = bugunun_maclari[:8]
-        else:
-            gelecek = [
+        if sonuc_istegi:
+            secilecek = [
                 mac for mac in maclar
-                if mac["_tarih"].date() > bugun
+                if mac["oynandi"]
+                and mac["_tarih"].date() <= bugun
+            ][-8:]
+        else:
+            bugunun_maclari = [
+                mac for mac in maclar
+                if mac["_tarih"].date() == bugun
             ]
-            secilecek = gelecek[:8]
+
+            if bugunun_maclari:
+                secilecek = bugunun_maclari[:8]
+            else:
+                gelecek = [
+                    mac for mac in maclar
+                    if mac["_tarih"].date() > bugun
+                ]
+                secilecek = gelecek[:8]
 
         sonuc = []
 
@@ -1564,10 +1599,17 @@ def super_lig_getir(mesaj=""):
                     f"{mac['ev']} - {mac['deplasman']}"
                 ),
                 "url": url,
+                "ev": mac["ev"],
+                "deplasman": mac["deplasman"],
+                "ev_skor": mac["ev_skor"],
+                "deplasman_skor": mac["deplasman_skor"],
+                "skor": mac["skor"],
+                "oynandi": mac["oynandi"],
                 "snippet": (
                     f"{mac['tarih']} {mac['saat']} Türkiye saati | "
                     f"{mac['ev']} - {mac['deplasman']} | "
-                    f"{'BUGÜN' if mac['_tarih'].date() == bugun else 'GELECEK MAÇ'} | "
+                    f"{mac['skor']} | "
+                    f"{'OYNANDI' if mac['oynandi'] else 'GELECEK MAÇ'} | "
                     f"TFF resmi fikstürü."
                 )
             })
@@ -1585,7 +1627,6 @@ def super_lig_getir(mesaj=""):
             flush=True
         )
         return []
-
 
 def tvf_voleybol_getir(hedef_tarih=None):
     """TVF resmi fikstüründen Türkiye'nin güncel ve yaklaşan maçlarını çeker."""
@@ -2708,6 +2749,41 @@ def sohbet():
         f"web_metni={len(web_metni)}",
         flush=True
     )
+
+    # 🇹🇷 SÜPER LİG — TFF sonuçlarını doğrudan cevapla
+    if karar.get("intent") == "spor" and web_verisi:
+        mesaj_super = mesaj.lower().replace("\u0307", "")
+        super_lig_istegi = any(k in mesaj_super for k in [
+            "süper lig", "super lig"
+        ])
+        sonuc_istegi = any(k in mesaj_super for k in [
+            "sonuç", "sonuc", "skor",
+            "maç sonucu", "mac sonucu",
+            "maç sonuçları", "mac sonuclari"
+        ])
+
+        if super_lig_istegi and sonuc_istegi:
+            satirlar = [
+                "🏟️ EAGLE SPOR",
+                "",
+                "🇹🇷 SÜPER LİG MAÇ SONUÇLARI"
+            ]
+
+            for mac in web_verisi[:8]:
+                ev = str(mac.get("ev", "")).strip()
+                deplasman = str(mac.get("deplasman", "")).strip()
+                skor = str(mac.get("skor", "-")).strip()
+
+                if ev and deplasman and skor != "-":
+                    satirlar.append(f"⚽ {ev} {skor} {deplasman}")
+
+            return jsonify({
+                "ok": True,
+                "answer": "\n".join(satirlar),
+                "web_search": True,
+                "sports_direct": True,
+                "memory_count": len(hafiza_yukle())
+            })
 
     # 🇹🇷 SÜPER LİG FİKSTÜRÜ — TFF verisini doğrudan cevapla
     if karar.get("intent") == "spor" and web_verisi:
