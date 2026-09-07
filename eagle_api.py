@@ -473,7 +473,7 @@ def bilgi_bankasi_ara(mesaj):
         "fonksiyon": ["fonksiyon", "fonksiyonlar", "def", "parametre", "return", "find", "count", "isdigit", "isalpha", "isalnum", "capitalize", "title", "f-string"],
         "döngü": ["döngü", "dongu", "for", "while"],
         "değişken": ["değişken", "degisken", "variable"],
-        "sözlük": ["sözlük", "sozluk", "dictionary", "dict", "keys", "values", "items", "get", "update"],
+        "sözlük": ["sözlük", "sozluk", "dictionary", "dict", "keys", "values", "items"],
         "tuple": ["tuple"],
         "set": ["set"],
         "veri tipi": ["veri tipi", "veritipi", "str", "int", "float", "bool"],
@@ -486,8 +486,8 @@ def bilgi_bankasi_ara(mesaj):
         "type": ["type"],
         "len": ["len"],
         "algoritma": ["algoritma"],
-        "python": ["python", "py", "python nedir", "python öğren", "python ogren", "os", "os.getcwd", "os.listdir", "os.mkdir", "os.makedirs", "os.remove", "os.path.exists", "path.exists", "path.mkdir", "path.name", "path.suffix"],
         "json": ["json", "json nedir", "json dosyası", "json dosyasi"],
+        "python": ["python", "py", "python nedir", "python öğren", "python ogren", "os", "os.getcwd", "os.listdir", "os.mkdir", "os.makedirs", "os.remove", "os.path.exists", "path.exists", "path.mkdir", "path.name", "path.suffix"],
         "api": ["api", "api nedir", "api ne işe yarar", "api ne ise yarar"],
         "http": ["http", "http nedir", "404", "200", "429", "500"],
         "flask": ["flask", "flask nedir", "flask route", "flask api"]
