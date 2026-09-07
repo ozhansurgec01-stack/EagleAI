@@ -8,7 +8,7 @@ import time
 from eagle_kod_analiz_motoru import EagleKodAnalizMotoru
 
 class EagleAutoFixEngine:
-    def __init__(self, project_root=".", max_attempts=3):
+    def __init__(self, project_root=".", max_attempts=10):
         self.project_root = Path(project_root).resolve()
         self.max_attempts = max_attempts
         self.backup_dir = self.project_root / ".eagle_backups"
@@ -351,25 +351,51 @@ class EagleAutoFixEngine:
                     )
                 )
 
-                # Daha önce uygulanmış güvenli düzeltmeleri tekrar seçme.
+                # Daha önce aynı konuma uygulanmış güvenli düzeltmeleri tekrar seçme.
+                # Aynı düzeltme türü farklı satırdaki farklı bir hatayı düzeltebilir.
+                uygulanmis_imzalar = set()
                 uygulanmis_turler = set()
+
                 for gecmis in history:
                     fix_gecmis = gecmis.get("logic_fix")
-                    if isinstance(fix_gecmis, dict):
-                        tur_gecmis = fix_gecmis.get("tur") or fix_gecmis.get("rule")
-                        if tur_gecmis:
-                            uygulanmis_turler.add(tur_gecmis)
+                    if not isinstance(fix_gecmis, dict):
+                        continue
 
-                adaylar = [
-                    karar for karar in adaylar
-                    if (
-                        not isinstance(karar.get("duzeltme_adayi"), dict)
-                        or (
-                            karar["duzeltme_adayi"].get("tur")
-                            not in uygulanmis_turler
+                    tur_gecmis = fix_gecmis.get("tur") or fix_gecmis.get("rule")
+                    if not tur_gecmis:
+                        continue
+
+                    satir_gecmis = fix_gecmis.get("satir")
+
+                    if satir_gecmis is not None:
+                        uygulanmis_imzalar.add(
+                            (tur_gecmis, satir_gecmis)
                         )
-                    )
-                ]
+                    else:
+                        uygulanmis_turler.add(tur_gecmis)
+
+                filtreli_adaylar = []
+                for karar in adaylar:
+                    duzeltme_adayi = karar.get("duzeltme_adayi")
+
+                    if not isinstance(duzeltme_adayi, dict):
+                        filtreli_adaylar.append(karar)
+                        continue
+
+                    tur = duzeltme_adayi.get("tur")
+                    satir = karar.get("satir")
+
+                    if tur in {
+                        "MissingColonFix",
+                        "ReservedKeywordFix",
+                        "UnclosedParenFix",
+                    }:
+                        if (tur, satir) not in uygulanmis_imzalar:
+                            filtreli_adaylar.append(karar)
+                    elif tur not in uygulanmis_turler:
+                        filtreli_adaylar.append(karar)
+
+                adaylar = filtreli_adaylar
 
                 if adaylar:
                     aday = adaylar[0]
@@ -473,6 +499,7 @@ class EagleAutoFixEngine:
                         fix = self.apply_known_fix(target_file, fix_info)
 
                         if fix.get("fixed"):
+                            fix["satir"] = aday.get("satir")
                             history[-1]["logic_fix"] = fix
                             syntax_ok, syntax_msg = self.check_syntax(target_file)
 
