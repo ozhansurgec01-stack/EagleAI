@@ -469,7 +469,7 @@ def bilgi_bankasi_ara(mesaj):
         "filter": ["filter", "filter()", "filtreleme fonksiyonu"],
         "sorted": ["sorted", "sorted()", "sıralama"],
         "any_all": ["any", "any()", "all", "all()", "koşulların tamamı", "en az biri"],
-        "liste": ["liste", "listeler", "listeleme", "append", "remove", "extend", "insert", "pop", "clear", "reverse", "dilimleme", "indeks"],
+        "liste": ["liste", "listeler", "list", "listeleme", "append", "remove", "extend", "insert", "pop", "clear", "reverse", "dilimleme", "indeks"],
         "fonksiyon": ["fonksiyon", "fonksiyonlar", "def", "parametre", "return", "find", "count", "isdigit", "isalpha", "isalnum", "capitalize", "title", "f-string"],
         "döngü": ["döngü", "dongu", "for", "while"],
         "değişken": ["değişken", "degisken", "variable"],
