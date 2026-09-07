@@ -256,6 +256,34 @@ def borc_mesaji_isle(mesaj):
         rapor = genel_rapor()
         return f"Toplam kalan borcunuz: **{rapor['toplam_kalan']:,.2f} TL** (Genel Borç: {rapor['toplam_borc']:,.2f} TL, Ödenen: {rapor['toplam_odenen']:,.2f} TL)"
 
+    # 🧾 FATURA ÖDENDİ
+    # Örn: "Elektrik faturası ödendi"
+    if "ödendi" in mesaj_kucuk or "odendi" in mesaj_kucuk:
+        fatura_adlari = ["elektrik", "su", "internet", "telefon", "d-smart", "dsmart", "d smart"]
+
+        hedef_fatura = None
+        for fatura_ad in fatura_adlari:
+            if fatura_ad in mesaj_kucuk:
+                hedef_fatura = "d-smart" if fatura_ad in ("dsmart", "d smart") else fatura_ad
+                break
+
+        if hedef_fatura:
+            borclar = borclari_yukle()
+
+            for b in borclar:
+                if str(b.get("ad", "")).strip().lower() == hedef_fatura:
+                    toplam = float(b.get("toplam_borc", 0) or 0)
+
+                    if toplam > 0:
+                        b["odenen_tutar"] = toplam
+                        b["kalan_borc"] = 0.0
+                        borclari_kaydet(borclar)
+                        return f"✅ **{b['ad']} faturası** ödendi. Kalan: **0 TL**."
+
+                    return f"ℹ️ **{b['ad']} faturası** için kayıtlı ödenecek tutar bulunmuyor."
+
+        return "Hangi faturanın ödendiğini anlayamadım."
+
     # 2. Ödeme yapma (Örn: "Elektrik borcuma 500 TL ödeme yaptım")
     if "ödeme" in mesaj_kucuk or "odedim" in mesaj_kucuk or "yatırdım" in mesaj_kucuk or "yatirdim" in mesaj_kucuk:
         # Sayı bul
@@ -283,6 +311,31 @@ def borc_mesaji_isle(mesaj):
         
         return "Ödeme miktarını veya hangi borca ödeme yaptığınızı tam anlayamadım. Örn: 'Elektrik borcuma 500 TL ödeme yaptım'"
 
+    # 🧾 DOĞAL FATURA GİRİŞİ
+    # Örn: "Elektrik 4310 TL geldi", "Su faturası 633 TL"
+    fatura_adlari = ["elektrik", "su", "internet", "telefon", "d-smart", "dsmart", "d smart"]
+
+    sayilar = re.findall(r'\d+(?:[.,]\d+)?', mesaj)
+    if sayilar:
+        hedef_fatura = None
+
+        for fatura_ad in fatura_adlari:
+            if fatura_ad in mesaj_kucuk:
+                hedef_fatura = "d-smart" if fatura_ad in ("dsmart", "d smart") else fatura_ad
+                break
+
+        if hedef_fatura:
+            tutar = para_degerini_oku(sayilar[-1])
+            borclar = borclari_yukle()
+
+            for b in borclar:
+                if str(b.get("ad", "")).strip().lower() == hedef_fatura:
+                    b["toplam_borc"] = tutar
+                    b["odenen_tutar"] = 0.0
+                    b["kalan_borc"] = tutar
+                    borclari_kaydet(borclar)
+                    return f"✅ **{b['ad']} faturası** {tutar:,.2f} TL olarak güncellendi."
+
     # 3. Borç ekleme (Örn: "Elektrik borcu ekle: 3000 TL" veya "Kredi borcu 50000 TL")
     if "ekle" in mesaj_kucuk or "borcum var" in mesaj_kucuk or "borç ekle" in mesaj_kucuk:
         sayilar = re.findall(r'\d+(?:[.,]\d+)?', mesaj)
@@ -301,6 +354,24 @@ def borc_mesaji_isle(mesaj):
             ad = ad_temiz if len(ad_temiz) > 2 else f"{kategori} Borcu"
             ad = ad.capitalize()
             
+            # 🧾 Fatura ise mevcut kaydı güncelle
+            fatura_adlari = ["elektrik", "su", "internet", "telefon", "d-smart", "dsmart", "d smart"]
+            hedef_fatura = None
+
+            for fatura_ad in fatura_adlari:
+                if fatura_ad in mesaj_kucuk:
+                    hedef_fatura = "d-smart" if fatura_ad in ("dsmart", "d smart") else fatura_ad
+                    break
+
+            if hedef_fatura:
+                for b in borclar:
+                    if str(b.get("ad", "")).strip().lower() == hedef_fatura:
+                        b["toplam_borc"] = tutar
+                        b["odenen_tutar"] = 0.0
+                        b["kalan_borc"] = tutar
+                        borclari_kaydet(borclar)
+                        return f"✅ **{b['ad']} faturası** {tutar:,.2f} TL olarak güncellendi."
+
             yeni = borc_ekle(ad, kategori, tutar, 1)
             return f"✅ Yeni borç eklendi:\n• **{yeni['ad']}** ({yeni['kategori']}) - Tutar: {yeni['toplam_borc']:,.2f} TL"
 
