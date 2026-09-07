@@ -222,7 +222,7 @@ def borc_mesaji_isle(mesaj):
     mesaj_kucuk = mesaj.lower().replace("İ", "i").replace("I", "ı")
     
     # 1. Rapor / Listeleme / Toplam sorguları
-    if any(k in mesaj_kucuk for k in ["borçlarımı göster", "borclarimi goster", "kalan borç", "kalan borc", "borç listesi", "borc listesi"]):
+    if any(k in mesaj_kucuk for k in ["borçlarımı göster", "borclarimi goster", "kalan borç", "kalan borc", "borç listesi", "borc listesi", "borç ve taksit raporu", "borc ve taksit raporu", "borç raporu", "borc raporu", "taksit raporu", "taksitlerimi göster", "taksitlerimi goster"]):
         rapor = genel_rapor()
         if not rapor["borclar"]:
             return "Henüz kayıtlı bir borcunuz bulunmuyor. 'Elektrik borcu ekle: 3000 TL' şeklinde ekleme yapabilirsiniz."
