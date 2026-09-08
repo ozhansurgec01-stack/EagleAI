@@ -3321,14 +3321,17 @@ def sohbet():
         ifade = ifade.replace("%", "/100")
         ok, sonuc_hesap = guvenli_hesapla(ifade)
         if ok:
-            hesaplama_metni = (
-                "\n\n===== GERÇEK HESAPLAMA SONUCU =====\n"
-                f"İfade: {ifade}\n"
-                f"Sonuç: {sonuc_hesap}\n"
-                "Bu sonuç EagleAI güvenli hesaplama motoruyla doğrulandı. "
-                "Cevap verirken bu sonucu esas al.\n"
-                "===== HESAPLAMA SONU ====="
-            )
+            yuzde_turu = karar.get("yuzde_turu", "")
+            if yuzde_turu == "zam":
+                hesaplama_metni = f"Yeni fiyat: {sonuc_hesap} TL"
+            elif yuzde_turu == "indirim":
+                hesaplama_metni = f"İndirim sonrası fiyat: {sonuc_hesap} TL"
+            elif yuzde_turu == "zam_miktari":
+                hesaplama_metni = f"Zam miktarı: {sonuc_hesap} TL"
+            elif yuzde_turu == "indirim_miktari":
+                hesaplama_metni = f"İndirim miktarı: {sonuc_hesap} TL"
+            else:
+                hesaplama_metni = str(sonuc_hesap)
 
     mantiksal_metni = ""
     ok, sonuc_mantiksal = guvenli_mantiksal_hesapla(mesaj)
