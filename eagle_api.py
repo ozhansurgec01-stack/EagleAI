@@ -466,7 +466,7 @@ def bilgi_bankasi_yukle():
     return {}
 
 def bilgi_bankasi_ara(mesaj):
-    metin = str(mesaj or "").lower()
+    metin = str(mesaj or "").replace("İ", "i").lower()
 
     konu_eslesmeleri = {
         "comprehension": ["comprehension", "liste comprehension", "dictionary comprehension", "set comprehension"],
@@ -498,17 +498,94 @@ def bilgi_bankasi_ara(mesaj):
         "python": ["python", "py", "python nedir", "python öğren", "python ogren", "os", "os.getcwd", "os.listdir", "os.mkdir", "os.makedirs", "os.remove", "os.path.exists", "path.exists", "path.mkdir", "path.name", "path.suffix"],
         "api": ["api", "api nedir", "api ne işe yarar", "api ne ise yarar"],
         "http": ["http", "http nedir", "404", "200", "429", "500"],
-        "flask": ["flask", "flask nedir", "flask route", "flask api"]
+        "flask": ["flask", "flask nedir", "flask route", "flask api"],
+        "matematik": [
+            "matematik", "toplama", "çıkarma", "cikarma", "çarpma", "carpma",
+            "bölme", "bolme", "işlem önceliği", "islem onceligi",
+            "üslü sayı", "uslu sayi", "üslü sayılar", "uslu sayilar",
+            "karekök", "karekok", "yüzde", "yuzde", "zam", "indirim",
+            "oran", "orantı", "oranti", "ortalama", "mutlak değer",
+            "mutlak deger", "pozitif sayı", "negatif sayı",
+            "pozitif negatif", "kesir", "kesirler", "ondalık sayı",
+            "ondalik sayi", "bölünebilme", "bolunebilme", "asal sayı",
+            "asal sayi", "ebob", "ekok", "denklem", "denklem çöz",
+            "denklem coz"
+        ]
     }
 
     konu = None
-    for ad, kelimeler in konu_eslesmeleri.items():
-        if any(k in metin for k in kelimeler):
-            konu = ad
-            break
+
+    # ➗ Matematik sorularını genel Python kelimelerinden önce yakala.
+    # Böylece "bölünebilme kuralları" içindeki "all" gibi
+    # alt kelimelerin yanlış konuya eşleşmesi önlenir.
+    matematik_oncelik = (
+        "matematik", "toplama", "çıkarma", "cikarma", "çarpma", "carpma",
+        "bölme", "bolme", "işlem önceliği", "islem onceligi",
+        "üslü sayı", "uslu sayi", "üslü sayılar", "uslu sayilar",
+        "karekök", "karekok", "yüzde", "yuzde", "zam", "indirim",
+        "oran", "orantı", "oranti", "ortalama", "mutlak değer",
+        "mutlak deger", "pozitif sayı", "negatif sayı", "pozitif negatif",
+        "kesir", "kesirler", "ondalık sayı", "ondalik sayi",
+        "bölünebilme", "bolunebilme", "asal sayı", "asal sayi",
+        "ebob", "ekok", "denklem"
+    )
+
+    if any(k in metin for k in matematik_oncelik):
+        konu = "matematik"
+    else:
+        for ad, kelimeler in konu_eslesmeleri.items():
+            if any(k in metin for k in kelimeler):
+                konu = ad
+                break
 
     bilgi = bilgi_bankasi_yukle()
     bulunan = []
+
+    # ➗ Matematik bilgi bankası için özel arama
+    if konu == "matematik":
+        matematik = bilgi.get("matematik", {})
+        matematik_eslesmeleri = {
+            "temel_islemler": ["toplama", "çıkarma", "cikarma", "çarpma", "carpma", "bölme", "bolme", "temel işlem"],
+            "islem_onceligi": ["işlem önceliği", "islem onceligi", "öncelik sırası", "oncelik sirasi"],
+            "uslu_sayilar": ["üslü sayı", "uslu sayi", "üslü sayılar", "uslu sayilar", "üs", "us"],
+            "karekok": ["karekök", "karekok", "karekök nedir", "karekok nedir"],
+            "yuzde": ["yüzde", "yuzde", "%"],
+            "ters_yuzde": ["ters yüzde", "ters yuzde", "yüzde ise sayı", "yuzde ise sayi"],
+            "zam": ["zam", "zam gelirse", "zam oranı", "zam orani"],
+            "indirim": ["indirim", "indirim oranı", "indirim orani"],
+            "oran": ["oran", "oran nedir"],
+            "oranti": ["orantı", "oranti", "orantı nedir", "oranti nedir"],
+            "ortalama": ["ortalama", "aritmetik ortalama", "ortalama nedir"],
+            "mutlak_deger": ["mutlak değer", "mutlak deger", "mutlak değer nedir", "mutlak deger nedir"],
+            "pozitif_negatif_sayilar": ["pozitif sayı", "negatif sayı", "pozitif negatif", "pozitif ve negatif"],
+            "kesirler": ["kesir", "kesirler", "kesir nedir", "kesirler nasıl"],
+            "ondalik_sayilar": ["ondalık sayı", "ondalik sayi", "ondalık sayılar", "ondalik sayilar"],
+            "bolunebilme": ["bölünebilme", "bolunebilme", "bölünebilme kuralları", "bolunebilme kurallari"],
+            "asal_sayilar": ["asal sayı", "asal sayi", "asal sayılar", "asal sayilar"],
+            "ebob": ["ebob", "ebob nedir", "en büyük ortak bölen"],
+            "ekok": ["ekok", "ekok nedir", "en küçük ortak kat"],
+            "basit_denklem": ["denklem", "denklem çöz", "denklem coz", "basit denklem"]
+        }
+
+        secilen = None
+        for alt_konu, kelimeler in matematik_eslesmeleri.items():
+            if any(k in metin for k in kelimeler):
+                secilen = alt_konu
+                break
+
+        if secilen and isinstance(matematik.get(secilen), dict):
+            kayit = matematik[secilen]
+            parcalar = []
+
+            for alan in ("aciklama", "formul", "kural", "kurallar", "sira", "not", "ornek", "ornekler"):
+                deger = kayit.get(alan)
+                if isinstance(deger, str):
+                    parcalar.append(deger)
+                elif isinstance(deger, list):
+                    parcalar.extend(str(x) for x in deger)
+
+            if parcalar:
+                return parcalar[:3]
 
     # 🎯 Özel Python terimleri için doğrudan eşleşme
     # Genel konu eşleşmesinden önce çalışır; yanlış/ilgisiz sonuçları önler.
@@ -1140,7 +1217,30 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
-    # 🧮 DOĞAL DİL YÜZDE HESABI
+    # 🧮 DOĞAL DİL TERS YÜZDE HESABI
+    # Örn: "Bir sayının %20'si 36 ise bu sayı kaçtır?"
+    ters_yuzde = re.search(
+        r'(?:bir\s+sayının|bir\s+sayinin).*?(?:%|yüzde)\s*(\d+(?:[.,]\d+)?).*?(\d+(?:[.,]\d+)?)\s*(?:ise|olan)\b.*?(?:kaçtır|kaç|kactir|kac|nedir)',
+        metin,
+        re.IGNORECASE
+    )
+
+    if ters_yuzde:
+        yuzde = ters_yuzde.group(1).replace(",", ".")
+        bilinen_sonuc = ters_yuzde.group(2).replace(",", ".")
+        karar["matematik_ifadesi"] = f"{bilinen_sonuc} * 100 / {yuzde}"
+        karar["yuzde_turu"] = "ters_yuzde"
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Doğal dil içinde ters yüzde hesabı algılandı.",
+            "arac": "guvenli_hesaplama",
+            "islem": "hesapla",
+            "dogrulama": True
+        })
+        return karar
+
+# 🧮 DOĞAL DİL YÜZDE HESABI
     # Örn: "250’nin %18’i kaçtır?"
     dogal_yuzde = re.search(
         r'(\d+(?:[.,]\d+)?)\D+(?:%|yüzde)\s*(\d+(?:[.,]\d+)?)\D*(?:kaçtır|kaç|kactir|kac)',

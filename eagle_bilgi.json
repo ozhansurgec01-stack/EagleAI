@@ -262,5 +262,171 @@
       "jsonify() Python verilerini JSON HTTP cevabı olarak döndürmeye yardımcı olur.",
       "request gelen HTTP isteğinin bilgilerine erişmek için kullanılır."
     ]
+  },
+  "matematik": {
+    "temel_islemler": {
+      "aciklama": "Temel matematik işlemleri toplama, çıkarma, çarpma ve bölmedir.",
+      "kurallar": [
+        "Toplama iki veya daha fazla sayının toplamını bulur.",
+        "Çıkarma bir sayıdan başka bir sayıyı çıkarmaktır.",
+        "Çarpma aynı sayının tekrarlı toplamının kısa gösterimidir.",
+        "Bölme bir sayıyı eş parçalara ayırma işlemidir.",
+        "Sıfıra bölme tanımsızdır."
+      ],
+      "ornekler": [
+        "25 + 17 = 42",
+        "50 - 18 = 32",
+        "12 × 8 = 96",
+        "144 ÷ 12 = 12"
+      ]
+    },
+    "islem_onceligi": {
+      "aciklama": "Bir matematik işleminde işlemlerin hangi sırayla yapılacağını belirler.",
+      "sira": [
+        "Parantez içi işlemler",
+        "Üslü işlemler",
+        "Çarpma ve bölme",
+        "Toplama ve çıkarma"
+      ],
+      "ornekler": [
+        "2 + 3 × 4 = 14",
+        "(2 + 3) × 4 = 20"
+      ]
+    },
+    "uslu_sayilar": {
+      "aciklama": "Bir sayının kendisiyle belirli sayıda çarpılmasını gösterir.",
+      "ornekler": [
+        "2⁵ = 32",
+        "3² = 9",
+        "10² = 100"
+      ]
+    },
+    "karekok": {
+      "aciklama": "Bir sayının karekökü, karesi o sayıyı veren sayıdır.",
+      "ornekler": [
+        "√81 = 9",
+        "√100 = 10",
+        "√25 = 5"
+      ]
+    },
+    "yuzde": {
+      "aciklama": "Yüzde, bir bütünün 100 eş parçadan kaçının alındığını ifade eder.",
+      "formul": "Bir sayının yüzde p'si = sayı × p / 100",
+      "ornekler": [
+        "250'nin %18'i = 250 × 18 / 100 = 45",
+        "200'ün %25'i = 50"
+      ]
+    },
+    "ters_yuzde": {
+      "aciklama": "Bir sayının belirli yüzdesinin değeri biliniyorsa, başlangıç sayısını bulmak için kullanılır.",
+      "formul": "Başlangıç sayısı = bilinen sonuç × 100 / yüzde",
+      "ornekler": [
+        "Bir sayının %20'si 36 ise sayı = 36 × 100 / 20 = 180",
+        "Bir sayının %25'i 50 ise sayı = 50 × 100 / 25 = 200"
+      ]
+    },
+    "zam": {
+      "aciklama": "Bir değere belirli bir yüzde oranında artış uygulanmasıdır.",
+      "formul": "Yeni değer = eski değer + (eski değer × zam oranı / 100)",
+      "ornekler": [
+        "200 TL'ye %15 zam = 230 TL",
+        "100 TL'ye %20 zam = 120 TL"
+      ]
+    },
+    "indirim": {
+      "aciklama": "Bir değerden belirli bir yüzde oranında azaltma yapılmasıdır.",
+      "formul": "Yeni değer = eski değer - (eski değer × indirim oranı / 100)",
+      "ornekler": [
+        "500 TL'ye %20 indirim = 400 TL",
+        "200 TL'ye %10 indirim = 180 TL"
+      ]
+    },
+    "oran": {
+      "aciklama": "İki çokluğun birbirine bölünerek karşılaştırılmasıdır.",
+      "ornekler": [
+        "3 ve 4'ün oranı = 3/4 = 0,75",
+        "6'nın 3'e oranı = 2"
+      ]
+    },
+    "oranti": {
+      "aciklama": "İki oranın birbirine eşit olmasıdır.",
+      "kural": "a/b = c/d ise a × d = b × c",
+      "ornekler": [
+        "5/3 = x/12 ise x = 20"
+      ]
+    },
+    "ortalama": {
+      "aciklama": "Sayıların toplamının sayı adedine bölünmesiyle bulunur.",
+      "formul": "Aritmetik ortalama = sayıların toplamı / sayı adedi",
+      "ornekler": [
+        "10, 20 ve 30'un ortalaması = 20"
+      ]
+    },
+    "mutlak_deger": {
+      "aciklama": "Bir sayının sıfıra olan uzaklığıdır ve sonuç negatif olamaz.",
+      "ornekler": [
+        "|-25| = 25",
+        "|25| = 25",
+        "|0| = 0"
+      ]
+    },
+    "pozitif_negatif_sayilar": {
+      "aciklama": "Pozitif sayılar sıfırdan büyük, negatif sayılar sıfırdan küçüktür.",
+      "kurallar": [
+        "Pozitif × pozitif = pozitif",
+        "Negatif × negatif = pozitif",
+        "Pozitif × negatif = negatif",
+        "Negatif × pozitif = negatif"
+      ]
+    },
+    "kesirler": {
+      "aciklama": "Kesirler bir bütünün parçalarını ifade eder.",
+      "kurallar": [
+        "Pay üstte, payda alttadır.",
+        "Payda sıfır olamaz.",
+        "Basit kesirde pay paydadan küçüktür.",
+        "Bileşik kesirde pay paydadan büyük veya eşittir."
+      ]
+    },
+    "ondalik_sayilar": {
+      "aciklama": "Ondalık sayılar tam sayı ile kesirli kısmı ayırmak için virgül kullanır.",
+      "ornekler": [
+        "0,5 = 1/2",
+        "0,25 = 1/4",
+        "1,5 = 3/2"
+      ]
+    },
+    "bolunebilme": {
+      "aciklama": "Bir sayının başka bir sayıya kalansız bölünüp bölünmediğini belirleyen kurallardır.",
+      "kurallar": [
+        "2'ye bölünebilme: Son basamak çift olmalıdır.",
+        "3'e bölünebilme: Rakamları toplamı 3'ün katı olmalıdır.",
+        "5'e bölünebilme: Son basamak 0 veya 5 olmalıdır.",
+        "10'a bölünebilme: Son basamak 0 olmalıdır."
+      ]
+    },
+    "asal_sayilar": {
+      "aciklama": "1'den büyük ve yalnızca 1'e ve kendisine bölünebilen doğal sayılardır.",
+      "ornekler": [
+        "2, 3, 5, 7, 11, 13, 17, 19"
+      ],
+      "not": "1 asal sayı değildir."
+    },
+    "ebob": {
+      "aciklama": "İki veya daha fazla sayının ortak bölenlerinin en büyüğüdür.",
+      "ornek": "12 ve 18'in EBOB'u 6'dır."
+    },
+    "ekok": {
+      "aciklama": "İki veya daha fazla sayının ortak katlarının en küçüğüdür.",
+      "ornek": "12 ve 18'in EKOK'u 36'dır."
+    },
+    "basit_denklem": {
+      "aciklama": "Bilinmeyen bir değeri bulmak için eşitlik kullanılır.",
+      "ornekler": [
+        "x + 5 = 12 ise x = 7",
+        "2x = 10 ise x = 5",
+        "x - 8 = 3 ise x = 11"
+      ]
+    }
   }
 }
