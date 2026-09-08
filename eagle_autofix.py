@@ -491,6 +491,7 @@ class EagleAutoFixEngine:
                             "UnclosedParenFix": "UnclosedParen",
                             "BareExceptFix": "BareExcept",
                             "BooleanComparisonFix": "BooleanComparison",
+                            "UnusedVariableFix": "UnusedVariable",
                         }
                         fix_info = {
                             "type": tur_map[duzeltme["tur"]],
@@ -849,6 +850,12 @@ class EagleAutoFixEngine:
         import re
 
         error_type = str(error_info.get("type", ""))
+
+        if error_type == "UnusedVariable":
+            return self._unused_variable_fix_block(
+                target_file,
+                error_info
+            )
 
         if error_type == "MissingColon":
             content = target_file.read_text(encoding="utf-8")

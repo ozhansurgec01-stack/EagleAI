@@ -1088,6 +1088,25 @@ class EagleKodAnalizMotoru:
                             "için güvenli otomatik düzeltme önerilemiyor."
                         )
 
+            elif tur == "UnusedVariable":
+                if bulgu.get("otomatik_duzeltilebilir") is True:
+                    karar["guven"] = "yüksek"
+                    karar["karar"] = "DUZELTME_ADAYI"
+                    karar["duzeltme_adayi"] = {
+                        "tur": "UnusedVariableFix",
+                    }
+                    karar["neden"] = (
+                        "Basit ve yan etkisiz sabit atama kullanılmıyor; "
+                        "güvenli şekilde kaldırılabilir."
+                    )
+                else:
+                    karar["guven"] = "düşük"
+                    karar["karar"] = "SADECE_RAPORLA"
+                    karar["neden"] = (
+                        "Kullanılmayan değişken tespit edildi ancak "
+                        "otomatik kaldırma için yeterli güvenli kanıt yok."
+                    )
+
             elif tur == "BareExcept":
                 karar["guven"] = "yüksek"
                 karar["karar"] = "DUZELTME_ADAYI"
