@@ -43,6 +43,7 @@ def fatura_adi_bul(mesaj):
         ("dsmart", "D-Smart"),
         ("d smart", "D-Smart"),
         ("elektrik", "Elektrik"),
+        ("elektrige", "Elektrik"),
         ("internet", "İnternet"),
         ("telefon", "Telefon"),
         ("su", "Su"),
@@ -55,7 +56,7 @@ def fatura_adi_bul(mesaj):
     return None
 
 
-def borc_ekle(ad, kategori, toplam_borc, taksit_sayisi=1):
+def borc_ekle(ad, kategori, toplam_borc):
     borclar = borclari_yukle()
     yeni_id = str(len(borclar) + 1)
     
@@ -65,8 +66,7 @@ def borc_ekle(ad, kategori, toplam_borc, taksit_sayisi=1):
         "kategori": str(kategori).strip().capitalize(),
         "toplam_borc": float(toplam_borc),
         "odenen_tutar": 0.0,
-        "kalan_borc": float(toplam_borc),
-        "taksit_sayisi": int(taksit_sayisi) if taksit_sayisi > 0 else 1
+        "kalan_borc": float(toplam_borc)
     }
     
     borclar.append(yeni_borc)
@@ -79,7 +79,6 @@ def borc_guncelle(
     ad=None,
     kategori=None,
     toplam_borc=None,
-    taksit_sayisi=None,
     odenen_tutar=None
 ):
     borclar = borclari_yukle()
@@ -104,12 +103,6 @@ def borc_guncelle(
                 0.0,
                 yeni_toplam - float(b.get("odenen_tutar", 0.0))
             )
-
-        if taksit_sayisi is not None:
-            yeni_taksit = int(taksit_sayisi)
-            if yeni_taksit < 1:
-                yeni_taksit = 1
-            b["taksit_sayisi"] = yeni_taksit
 
         if odenen_tutar is not None:
             yeni_odenen = float(odenen_tutar)
@@ -161,21 +154,8 @@ def odeme_yap(borc_adi_veya_id, odenen_tutar):
         return True, guncel_borc
     return False, None
 
-def taksit_hesapla(borc_adi_veya_id, taksit_sayisi=None):
-    borclar = borclari_yukle()
-    for b in borclar:
-        if (str(b["id"]) == str(borc_adi_veya_id) or 
-            str(b["ad"]).lower() in str(borc_adi_veya_id).lower()):
-            
-            sayi = int(taksit_sayisi) if taksit_sayisi else b["taksit_sayisi"]
-            if sayi <= 0:
-                sayi = 1
-            
-            aylik = b["kalan_borc"] / sayi
-            return True, {"borc": b["ad"], "kalan": b["kalan_borc"], "taksit_sayisi": sayi, "aylik_taksit": aylik}
-    return False, None
-
-def genel_rapor():
+def borc_ozeti():
+    """Borçların toplam, ödenen ve kalan tutarlarını hesaplar."""
     borclar = borclari_yukle()
 
     toplam_borc = 0.0
@@ -183,56 +163,26 @@ def genel_rapor():
     toplam_kalan = 0.0
 
     for b in borclar:
-        toplam = float(b.get("toplam_borc", 0.0))
-        odenen = float(b.get("odenen_tutar", 0.0))
+        toplam = float(b.get("toplam_borc", 0.0) or 0.0)
+        odenen = float(b.get("odenen_tutar", 0.0) or 0.0)
         kalan = max(0.0, toplam - odenen)
 
         b["toplam_borc"] = toplam
         b["odenen_tutar"] = odenen
         b["kalan_borc"] = kalan
 
-        taksit = int(b.get("taksit_sayisi", 1) or 1)
-        if taksit < 1:
-            taksit = 1
-
-        aylik_taksit = toplam / taksit
-
-        if kalan > 0:
-            kalan_taksit = int((kalan + aylik_taksit - 0.000001) // aylik_taksit)
-            if kalan_taksit < 1:
-                kalan_taksit = 1
-        else:
-            kalan_taksit = 0
-
-        b["aylik_taksit"] = round(aylik_taksit, 2)
-        b["kalan_taksit"] = kalan_taksit
-
         toplam_borc += toplam
         toplam_odenen += odenen
         toplam_kalan += kalan
 
-    kategoriler = {}
-
-    for b in borclar:
-        kat = b.get("kategori", "Diğer")
-
-        if kat not in kategoriler:
-            kategoriler[kat] = {
-                "toplam": 0.0,
-                "kalan": 0.0
-            }
-
-        kategoriler[kat]["toplam"] += float(b.get("toplam_borc", 0.0))
-        kategoriler[kat]["kalan"] += float(b.get("kalan_borc", 0.0))
+    borclari_kaydet(borclar)
 
     return {
         "toplam_borc": toplam_borc,
         "toplam_odenen": toplam_odenen,
         "toplam_kalan": toplam_kalan,
-        "borclar": borclar,
-        "kategoriler": kategoriler
+        "borclar": borclar
     }
-
 
 def para_degerini_oku(metin):
     s = str(metin).strip().replace(" ", "")
@@ -249,11 +199,10 @@ def para_degerini_oku(metin):
 
 
 def borc_mesaji_isle(mesaj):
-    """Doğal Türkçe borç ve sabit fatura işlemlerini yönetir."""
+    """Doğal Türkçe borç ve fatura işlemlerini yönetir."""
     mesaj = str(mesaj or "").strip()
     m = mesaj.lower()
 
-    # Türkçe karakterleri yalnızca eşleştirme için normalize et.
     norm = m.translate(str.maketrans({
         "ı": "i",
         "ş": "s",
@@ -263,88 +212,118 @@ def borc_mesaji_isle(mesaj):
         "ç": "c"
     }))
 
-    # 1. Rapor
-    rapor_ifadeleri = [
+    # Borçları sade şekilde göster
+    if any(x in norm for x in [
         "borclarimi goster",
         "kalan borc",
         "borc listesi",
-        "borc ve taksit raporu",
-        "borc raporu",
-        "taksit raporu",
-        "taksitlerimi goster",
-    ]
+        "borclarim"
+    ]):
+        borclar = borclari_yukle()
 
-    if any(x in norm for x in rapor_ifadeleri):
-        rapor = genel_rapor()
-
-        if not rapor["borclar"]:
+        if not borclar:
             return "Henüz kayıtlı bir borcunuz bulunmuyor."
 
         def tl(sayi):
-            return f"{sayi:,.0f}".replace(",", ".")
+            return f"{float(sayi):,.0f}".replace(",", ".")
 
-        yanit = "💳 BORÇ VE TAKSİT RAPORU\n\n"
+        satirlar = ["💳 BORÇLARIM", ""]
 
-        for b in rapor["borclar"]:
-            yanit += (
-                f"• {b['ad']}\n"
-                f"  Kategori: {b['kategori']}\n"
-                f"  Toplam: {tl(b.get('toplam_borc', 0))} TL\n"
+        for b in borclar:
+            satirlar.append(
+                f"• {b.get('ad', 'Bilinmeyen')}\n"
+                f"  Toplam Borç: {tl(b.get('toplam_borc', 0))} TL\n"
                 f"  Ödenen: {tl(b.get('odenen_tutar', 0))} TL\n"
-                f"  Kalan: {tl(b.get('kalan_borc', 0))} TL\n"
+                f"  Kalan: {tl(b.get('kalan_borc', 0))} TL"
             )
 
-            if str(b.get("kategori", "")).strip().lower() != "fatura":
-                yanit += f"  Taksit: {b.get('taksit_sayisi', 1)}\n"
+        return "\n\n".join(satirlar)
 
-            yanit += "\n"
-
-        yanit += (
-            f"💰 Genel Toplam: {tl(rapor['toplam_borc'])} TL\n"
-            f"💵 Ödenen: {tl(rapor['toplam_odenen'])} TL\n"
-            f"📌 Kalan: {tl(rapor['toplam_kalan'])} TL"
-        )
-        return yanit
-
-    # 2. Toplam borç
+    # Toplam kalan borç
     if any(x in norm for x in [
         "borclarimin toplami",
         "toplam borc ne kadar"
     ]):
-        rapor = genel_rapor()
-        return (
-            f"Toplam kalan borcunuz: **{rapor['toplam_kalan']:,.2f} TL** "
-            f"(Genel Borç: {rapor['toplam_borc']:,.2f} TL, "
-            f"Ödenen: {rapor['toplam_odenen']:,.2f} TL)"
+        borclar = borclari_yukle()
+        toplam_kalan = sum(
+            max(
+                0.0,
+                float(b.get("toplam_borc", 0) or 0)
+                - float(b.get("odenen_tutar", 0) or 0)
+            )
+            for b in borclar
         )
+        return f"Toplam kalan borcunuz: **{toplam_kalan:,.2f} TL**"
 
-    # 3. Sabit fatura adı
+    # Fatura adı
     fatura = fatura_adi_bul(mesaj)
 
-    # 4. Fatura ödendi
-    if "odendi" in norm and fatura:
+    # Sayısal tutar
+    sayilar = re.findall(r'\d+(?:[.,]\d+)?', mesaj)
+
+    # Ödeme ifadeleri: "ödedim", "ödeme yaptım", "yatırdım" vb.
+    odeme_ifadeleri = [
+        "odedim",
+        "odendi",
+        "odeme yaptim",
+        "odeme yapildi",
+        "yatirdim",
+        "yatirildi",
+        "para verdim",
+        "parasini verdim"
+    ]
+
+    if fatura and any(x in norm for x in odeme_ifadeleri):
         borclar = borclari_yukle()
 
         for b in borclar:
-            if b.get("ad") == fatura:
-                toplam = float(b.get("toplam_borc", 0) or 0)
+            if b.get("ad") != fatura:
+                continue
 
-                if toplam <= 0:
-                    return f"ℹ️ **{fatura} faturası** için kayıtlı ödenecek tutar bulunmuyor."
+            kalan = max(
+                0.0,
+                float(b.get("toplam_borc", 0) or 0)
+                - float(b.get("odenen_tutar", 0) or 0)
+            )
 
-                b["odenen_tutar"] = toplam
-                b["kalan_borc"] = 0.0
+            if kalan <= 0:
+                return f"ℹ️ **{fatura}** için kalan borç bulunmuyor."
+
+            if sayilar:
+                tutar = para_degerini_oku(sayilar[-1])
+                if tutar <= 0:
+                    return "Ödeme tutarı 0'dan büyük olmalı."
+
+                gercek_odeme = min(tutar, kalan)
+                b["odenen_tutar"] = float(b.get("odenen_tutar", 0) or 0) + gercek_odeme
+                b["kalan_borc"] = max(
+                    0.0,
+                    float(b.get("toplam_borc", 0) or 0) - b["odenen_tutar"]
+                )
                 borclari_kaydet(borclar)
 
-                return f"✅ **{fatura} faturası** ödendi. Kalan: **0 TL**."
+                return (
+                    f"✅ **{fatura}** için {gercek_odeme:,.2f} TL ödeme işlendi.\n"
+                    f"Ödenen: **{b['odenen_tutar']:,.2f} TL**\n"
+                    f"Kalan: **{b['kalan_borc']:,.2f} TL**"
+                )
+
+            # Tutar belirtilmediyse kalan borcun tamamını öde
+            b["odenen_tutar"] = float(b.get("toplam_borc", 0) or 0)
+            b["kalan_borc"] = 0.0
+            borclari_kaydet(borclar)
+
+            return f"✅ **{fatura}** faturası ödendi. Kalan: **0 TL**."
 
         return f"**{fatura}** faturası kaydı bulunamadı."
 
-    # 5. Fatura tutarı girme/güncelleme
-    sayilar = re.findall(r'\d+(?:[.,]\d+)?', mesaj)
-
+    # Fatura tutarı girme/güncelleme
     if fatura and sayilar:
         tutar = para_degerini_oku(sayilar[-1])
+
+        if tutar <= 0:
+            return "Fatura tutarı 0'dan büyük olmalı."
+
         borclar = borclari_yukle()
 
         for b in borclar:
@@ -352,7 +331,6 @@ def borc_mesaji_isle(mesaj):
                 b["toplam_borc"] = tutar
                 b["odenen_tutar"] = 0.0
                 b["kalan_borc"] = tutar
-                b["taksit_sayisi"] = 1
                 borclari_kaydet(borclar)
 
                 return (
@@ -362,34 +340,7 @@ def borc_mesaji_isle(mesaj):
 
         return f"**{fatura}** faturası kaydı bulunamadı."
 
-    # 6. Taksit hesaplama
-    if "taksit" in norm or "taksite bol" in norm:
-        sayilar = re.findall(r'\d+', mesaj)
-
-        if len(sayilar) >= 2:
-            ilk = float(sayilar[0])
-            ikinci = float(sayilar[1])
-
-            if ilk > 12:
-                tutar = ilk
-                taksit = int(ikinci)
-            else:
-                taksit = int(ilk)
-                tutar = ikinci
-
-            if taksit <= 0:
-                taksit = 1
-
-            aylik = tutar / taksit
-
-            return (
-                f"🧮 **Taksit Hesaplama:**\n"
-                f"• Toplam Tutar: {tutar:,.2f} TL\n"
-                f"• Taksit Sayısı: {taksit}\n"
-                f"• **Aylık Ödeme:** **{aylik:,.2f} TL**"
-            )
-
-    # 7. Normal borç ekleme
+    # Normal borç ekleme
     if any(x in norm for x in ["ekle", "borcum var", "borc ekle"]):
         if sayilar:
             tutar = para_degerini_oku(sayilar[-1])
@@ -410,7 +361,7 @@ def borc_mesaji_isle(mesaj):
             if len(ad) < 3:
                 ad = f"{kategori} Borcu"
 
-            yeni = borc_ekle(ad, kategori, tutar, 1)
+            yeni = borc_ekle(ad, kategori, tutar)
 
             return (
                 f"✅ Yeni borç eklendi:\n"
@@ -457,11 +408,23 @@ def akilli_borc_niyeti(mesaj):
     if any(x in m for x in sil_ifadeleri):
         return "sil"
 
-    # 🧾 Borcun/taksidin bittiğini bildirme
+    # 💰 Ödeme niyeti
+    odeme_ifadeleri = [
+        "odedim",
+        "odendi",
+        "odeme yaptim",
+        "odeme yapildi",
+        "yatirdim",
+        "yatirildi",
+        "para verdim",
+        "parasini verdim",
+    ]
+
+    if any(x in m for x in odeme_ifadeleri):
+        return "odeme"
+
+    # 🧾 Borcun kapandığını bildirme
     durum_ifadeleri = [
-        "taksidi bitmis",
-        "taksidini odedim",
-        "son taksidi de odedim",
         "borcu bitti",
         "borcu bitmis",
         "artik borc degil",
@@ -558,7 +521,7 @@ def akilli_borc_isle(mesaj, aktif_borc_id=None, history=None):
             return f"{borc.get('ad')} faturası için kayıtlı tutar: {kalan:,.0f} TL.", aktif_borc_id
 
         if kalan <= 0:
-            return f"Evet, {borc.get('ad')} taksidi bitmiş. Kalan borç: 0 TL.", aktif_borc_id
+            return f"Evet, {borc.get('ad')} borcu bitmiş. Kalan borç: 0 TL.", aktif_borc_id
 
         return f"{borc.get('ad')} için borç henüz bitmemiş. Kalan borç: {kalan:,.0f} TL.", aktif_borc_id
 

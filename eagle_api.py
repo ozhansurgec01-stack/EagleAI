@@ -29,8 +29,7 @@ import borc_modulu
 def api_borclari_getir():
     try:
         veri = borc_modulu.borclari_yukle()
-        rapor = borc_modulu.genel_rapor()
-        return jsonify({'success': True, 'borclar': veri, 'rapor': rapor})
+        return jsonify({'success': True, 'borclar': veri})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -47,13 +46,11 @@ def api_borc_ekle():
         kisi = data.get('kisi')
         tutar = data.get('tutar')
         kategori = data.get('kategori', 'Genel')
-        taksit = data.get('taksit', 1)
         if kisi and tutar:
             borc_modulu.borc_ekle(
                 kisi,
                 kategori,
-                float(tutar),
-                int(taksit)
+                float(tutar)
             )
             return jsonify({'success': True, 'message': 'Borç başarıyla eklendi.'})
             
@@ -76,7 +73,6 @@ def api_borc_guncelle():
         ad = data.get('kisi')
         kategori = data.get('kategori')
         tutar = data.get('tutar')
-        taksit = data.get('taksit')
         odenen = data.get('odenen')
 
         basari, guncel = borc_modulu.borc_guncelle(
@@ -84,7 +80,6 @@ def api_borc_guncelle():
             ad=ad,
             kategori=kategori,
             toplam_borc=float(tutar) if tutar is not None else None,
-            taksit_sayisi=int(taksit) if taksit is not None else None,
             odenen_tutar=float(odenen) if odenen is not None else None
         )
 
@@ -147,8 +142,19 @@ def api_odeme_yap():
         kisi = data.get('kisi')
         tutar = data.get('tutar')
         if kisi and tutar:
-            sonuc = borc_modulu.odeme_yap(kisi, float(tutar))
-            return jsonify({'success': True, 'message': sonuc})
+            basari, guncel = borc_modulu.odeme_yap(kisi, float(tutar))
+
+            if not basari:
+                return jsonify({
+                    'success': False,
+                    'error': 'Borç bulunamadı veya ödeme tutarı geçersiz.'
+                }), 404
+
+            return jsonify({
+                'success': True,
+                'message': 'Ödeme başarıyla işlendi.',
+                'borc': guncel
+            })
         return jsonify({'success': False, 'error': 'Kisi ve tutar gerekli.'}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -1068,7 +1074,6 @@ def eagle_karar_motoru(mesaj, gecmis=None):
     # 💳 BORÇ
     borc_kelimeleri = [
         "borç", "borc", "borcum",
-        "taksit", "taksidi", "taksidini",
         "ödeme", "odeme", "ödedim", "odedim",
         "yatırdım", "yatirdim",
         "kredi kartı", "kredi karti",
@@ -1076,9 +1081,6 @@ def eagle_karar_motoru(mesaj, gecmis=None):
     ]
 
     borc_dogal_dil = any(x in k for x in [
-        "taksidi bitmiş", "taksidi bitmis",
-        "taksidini ödedim", "taksidini odedim",
-        "son taksidi de ödedim", "son taksidi de odedim",
         "borcu bitti", "borcu bitmiş", "borcu bitmis",
         "artık borç değil", "artik borc degil",
         "ödemesi bitti", "odemesi bitti",
@@ -1092,7 +1094,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         karar.update({
             "intent": "borc",
             "guven": "yüksek",
-            "neden": "Borç veya taksit işlemi algılandı.",
+            "neden": "Borç işlemi algılandı.",
             "arac": "borc_modulu",
             "islem": "veri_getir",
             "dogrulama": True
@@ -1345,7 +1347,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         # Önceki konuşmada borç konusu varsa, yeni mesajdaki
         # borç adını da history bağlamında değerlendirme.
         borc_isaretleri = [
-            "borç", "borc", "taksit", "taksidi",
+            "borç", "borc",
             "ödeme", "odeme", "kredi"
         ]
 

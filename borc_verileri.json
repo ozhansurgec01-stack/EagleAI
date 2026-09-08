@@ -5,8 +5,8 @@
       "ad": "Elektrik",
       "kategori": "Fatura",
       "toplam_borc": 4310.0,
-      "odenen_tutar": 4310.0,
-      "kalan_borc": 0.0
+      "odenen_tutar": 0.0,
+      "kalan_borc": 4310.0
     },
     {
       "id": "2",
