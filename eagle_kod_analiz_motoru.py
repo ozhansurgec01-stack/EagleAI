@@ -982,6 +982,11 @@ class EagleKodAnalizMotoru:
             elif tur == "BooleanComparison":
                 karar["guven"] = "yüksek"
                 karar["karar"] = "DUZELTME_ADAYI"
+                karar["duzeltme_adayi"] = {
+                    "tur": "BooleanComparisonFix",
+                    "eski": "== True",
+                    "yeni": "",
+                }
                 karar["neden"] = (
                     "Boolean değer doğrudan koşul olarak kullanılabilir; "
                     "karşılaştırma gereksiz."

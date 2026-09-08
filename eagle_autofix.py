@@ -483,13 +483,14 @@ class EagleAutoFixEngine:
 
                     if isinstance(duzeltme, dict) and duzeltme.get("tur") in (
                         "MissingColonFix", "ReservedKeywordFix", "UnclosedParenFix",
-                        "BareExceptFix"
+                        "BareExceptFix", "BooleanComparisonFix"
                     ):
                         tur_map = {
                             "MissingColonFix": "MissingColon",
                             "ReservedKeywordFix": "ReservedKeywordName",
                             "UnclosedParenFix": "UnclosedParen",
                             "BareExceptFix": "BareExcept",
+                            "BooleanComparisonFix": "BooleanComparison",
                         }
                         fix_info = {
                             "type": tur_map[duzeltme["tur"]],
@@ -899,6 +900,63 @@ class EagleAutoFixEngine:
                 "fixed": True,
                 "tur": "UnclosedParenFix",
                 "aciklama": f"{satir_no}. satıra {acik} eksik ')' eklendi.",
+            }
+
+        # Statik analiz: Boolean karşılaştırmasını güvenli biçimde sadeleştir.
+        if error_type == "BooleanComparison":
+            import re
+
+            content = target_file.read_text(encoding="utf-8")
+            satirlar = content.splitlines()
+            satir_no = error_info.get("satir")
+
+            if not satir_no or not (1 <= satir_no <= len(satirlar)):
+                return {
+                    "fixed": False,
+                    "reason": "BooleanComparison: satır numarası geçersiz.",
+                }
+
+            idx = satir_no - 1
+            satir = satirlar[idx]
+
+            # Yalnızca basit değişken karşılaştırmalarını otomatik düzelt.
+            eslesme_true = re.match(
+                r"^(\s*)if\s+([A-Za-z_]\w*)\s*==\s*True\s*:\s*$",
+                satir,
+            )
+
+            eslesme_false = re.match(
+                r"^(\s*)if\s+([A-Za-z_]\w*)\s*==\s*False\s*:\s*$",
+                satir,
+            )
+
+            if eslesme_true:
+                girinti, isim = eslesme_true.groups()
+                satirlar[idx] = f"{girinti}if {isim}:"
+                yeni_kod = "\n".join(satirlar) + "\n"
+                target_file.write_text(yeni_kod, encoding="utf-8")
+
+                return {
+                    "fixed": True,
+                    "tur": "BooleanComparisonFix",
+                    "aciklama": f"{satir_no}. satırda '{isim} == True' -> '{isim}' olarak sadeleştirildi.",
+                }
+
+            if eslesme_false:
+                girinti, isim = eslesme_false.groups()
+                satirlar[idx] = f"{girinti}if not {isim}:"
+                yeni_kod = "\n".join(satirlar) + "\n"
+                target_file.write_text(yeni_kod, encoding="utf-8")
+
+                return {
+                    "fixed": True,
+                    "tur": "BooleanComparisonFix",
+                    "aciklama": f"{satir_no}. satırda '{isim} == False' -> 'not {isim}' olarak sadeleştirildi.",
+                }
+
+            return {
+                "fixed": False,
+                "reason": "BooleanComparison: güvenli basit değişken karşılaştırması bulunamadı.",
             }
 
         # Statik analiz: ZeroDivision için güvenli koşullu ifade.
