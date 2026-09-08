@@ -88,8 +88,130 @@ class EagleKodAnalizMotoru:
 
         self._gez(tree, tanimli_isimler)
         self._kontrol_sifir_degiskenleri(tree)
+        self._akilli_analiz_paketi(tree)
 
         return self.bulgular
+
+    def _akilli_analiz_paketi(self, tree):
+        """Güvenli ek statik analizler: kullanılmayan değişken,
+        kesin boş liste erişimi ve gelişmiş sıfıra bölme."""
+        # -----------------------------
+        # UNUSED VARIABLE
+        # -----------------------------
+        for scope in ast.walk(tree):
+            if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+
+            yuklenen = set()
+            atamalar = []
+
+            for node in ast.walk(scope):
+                if isinstance(node, ast.Name):
+                    if isinstance(node.ctx, ast.Load):
+                        yuklenen.add(node.id)
+                    elif isinstance(node.ctx, ast.Store):
+                        atamalar.append(node)
+
+            for node in atamalar:
+                isim = node.id
+
+                if isim.startswith("_"):
+                    continue
+
+                if isim in yuklenen:
+                    continue
+
+                # Sadece basit, yan etkisiz sabit atamaları
+                # otomatik düzeltme adayı yap.
+                parent_value = None
+                for n in ast.walk(scope):
+                    if isinstance(n, ast.Assign):
+                        if node in n.targets and isinstance(n.value, ast.Constant):
+                            parent_value = n.value
+                            break
+
+                otomatik = parent_value is not None
+
+                self._ekle(
+                    "UnusedVariable",
+                    "🟡 ÖNERİ",
+                    node.lineno,
+                    f"'{isim}' değişkeni tanımlanmış ancak kullanılmıyor.",
+                    otomatik,
+                    (
+                        "Kullanılmayan değişken kaldırılabilir."
+                        if otomatik
+                        else "Değişken kullanılmıyor; kaldırmadan önce atamanın amacını kontrol edin."
+                    )
+                )
+
+        # -----------------------------
+        # EMPTY LIST ACCESS
+        # -----------------------------
+        bos_listeler = {}
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                for hedef in node.targets:
+                    if (
+                        isinstance(hedef, ast.Name)
+                        and isinstance(node.value, ast.List)
+                        and len(node.value.elts) == 0
+                    ):
+                        bos_listeler[hedef.id] = node.lineno
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Subscript):
+                continue
+
+            if not isinstance(node.value, ast.Name):
+                continue
+
+            isim = node.value.id
+
+            if isim not in bos_listeler:
+                continue
+
+            indeks = node.slice
+
+            if (
+                isinstance(indeks, ast.Constant)
+                and isinstance(indeks.value, int)
+                and indeks.value >= 0
+                and node.lineno > bos_listeler[isim]
+            ):
+                self._ekle(
+                    "EmptyListAccess",
+                    "🔴 KESİN",
+                    node.lineno,
+                    f"'{isim}' kesin olarak boş liste; [{indeks.value}] erişimi IndexError oluşturur.",
+                    False,
+                    "Listeye erişmeden önce listenin dolu olduğu kontrol edilmeli."
+                )
+
+        # -----------------------------
+        # GELİŞMİŞ ZERO DIVISION
+        # -----------------------------
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.BinOp):
+                continue
+
+            if not isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)):
+                continue
+
+            if (
+                isinstance(node.right, ast.Constant)
+                and isinstance(node.right.value, bool)
+                and node.right.value is False
+            ):
+                self._ekle(
+                    "ZeroDivision",
+                    "🔴 KESİN",
+                    node.lineno,
+                    "Bölen False; Python'da False değeri 0 gibi davrandığı için sıfıra bölme oluşur.",
+                    False,
+                    "Bölenin sıfır/False olmadığı kontrol edilmeli."
+                )
 
     def _kontrol_sifir_degiskenleri(self, tree):
         """0 atanmış değişkenlerin bölme/mod işleminde kullanılmasını bulur."""

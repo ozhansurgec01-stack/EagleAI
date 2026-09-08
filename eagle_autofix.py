@@ -483,7 +483,7 @@ class EagleAutoFixEngine:
 
                     if isinstance(duzeltme, dict) and duzeltme.get("tur") in (
                         "MissingColonFix", "ReservedKeywordFix", "UnclosedParenFix",
-                        "BareExceptFix", "BooleanComparisonFix"
+                        "BareExceptFix", "BooleanComparisonFix", "UnusedVariableFix"
                     ):
                         tur_map = {
                             "MissingColonFix": "MissingColon",
@@ -776,6 +776,72 @@ class EagleAutoFixEngine:
                 "backup": str(backup_path)
             }
 
+
+    def _unused_variable_fix_block(self, target_file: Path, error_info: dict) -> dict:
+        import ast
+
+        content = target_file.read_text(encoding="utf-8")
+
+        try:
+            tree = ast.parse(content)
+        except SyntaxError:
+            return {
+                "fixed": False,
+                "reason": "UnusedVariable: syntax geçersiz."
+            }
+
+        satir_no = error_info.get("satir")
+        if not satir_no:
+            return {
+                "fixed": False,
+                "reason": "UnusedVariable: satır numarası yok."
+            }
+
+        lines = content.splitlines()
+        if not (1 <= satir_no <= len(lines)):
+            return {
+                "fixed": False,
+                "reason": "UnusedVariable: satır numarası geçersiz."
+            }
+
+        line = lines[satir_no - 1]
+
+        try:
+            parsed = ast.parse(line.strip())
+        except SyntaxError:
+            return {
+                "fixed": False,
+                "reason": "UnusedVariable: güvenli tek satır ataması bulunamadı."
+            }
+
+        if len(parsed.body) != 1 or not isinstance(parsed.body[0], ast.Assign):
+            return {
+                "fixed": False,
+                "reason": "UnusedVariable: yalnızca basit atamalar silinebilir."
+            }
+
+        stmt = parsed.body[0]
+
+        if len(stmt.targets) != 1 or not isinstance(stmt.targets[0], ast.Name):
+            return {
+                "fixed": False,
+                "reason": "UnusedVariable: basit değişken ataması değil."
+            }
+
+        if not isinstance(stmt.value, ast.Constant):
+            return {
+                "fixed": False,
+                "reason": "UnusedVariable: yan etkisiz sabit atama değil."
+            }
+
+        del lines[satir_no - 1]
+        target_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        return {
+            "fixed": True,
+            "tur": "UnusedVariableFix",
+            "aciklama": f"{satir_no}. satırdaki kullanılmayan sabit değişken kaldırıldı."
+        }
 
     def apply_known_fix(self, target_file: Path, error_info: dict) -> dict:
         """Kanıtlanabilir güvenli düzeltmeleri uygular."""
