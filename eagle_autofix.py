@@ -482,12 +482,14 @@ class EagleAutoFixEngine:
 
 
                     if isinstance(duzeltme, dict) and duzeltme.get("tur") in (
-                        "MissingColonFix", "ReservedKeywordFix", "UnclosedParenFix"
+                        "MissingColonFix", "ReservedKeywordFix", "UnclosedParenFix",
+                        "BareExceptFix"
                     ):
                         tur_map = {
                             "MissingColonFix": "MissingColon",
                             "ReservedKeywordFix": "ReservedKeywordName",
                             "UnclosedParenFix": "UnclosedParen",
+                            "BareExceptFix": "BareExcept",
                         }
                         fix_info = {
                             "type": tur_map[duzeltme["tur"]],

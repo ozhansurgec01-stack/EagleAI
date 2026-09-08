@@ -970,6 +970,7 @@ class EagleKodAnalizMotoru:
                 karar["guven"] = "yüksek"
                 karar["karar"] = "DUZELTME_ADAYI"
                 karar["duzeltme_adayi"] = {
+                    "tur": "BareExceptFix",
                     "eski": "except:",
                     "yeni": "except Exception:",
                 }
