@@ -2633,7 +2633,15 @@ def sohbet():
     aktif_kod = sohbet_baglam.get("aktif_kod", "")
     aktif_kod_takibi = False
 
-    if aktif_kod:
+    # Yeni mesajın içinde açık bir Python ataması varsa,
+    # eski aktif kod yerine yeni kod kullanılacak.
+    yeni_kod_eslesmesi = re.search(
+        r'([A-Za-z_]\w*\s*=\s*[^?]+)$',
+        mesaj
+    )
+    yeni_kod_var = bool(yeni_kod_eslesmesi)
+
+    if aktif_kod and not yeni_kod_var:
         kod_takip_ifadeleri = [
             "bu kod",
             "yukarıdaki kod",
@@ -2686,6 +2694,10 @@ def sohbet():
         """Mesajın doğrudan Python kodu içerip içermediğini belirler."""
         satirlar = metin.strip().splitlines()
 
+        # Tek satırlı veya soru içine gömülmüş Python atamasını yakala.
+        if re.search(r'([A-Za-z_]\w*\s*=\s*[^?]+)$', metin):
+            return True
+
         if len(satirlar) < 2:
             return False
 
@@ -2713,7 +2725,6 @@ def sohbet():
                 skor += 1
 
         return skor >= 2
-
 
     # ▶️ AKTİF PYTHON KODU GERÇEK ÇIKTI TESTİ
     if aktif_kod_takibi and any(x in mesaj_kucuk for x in [
@@ -2827,6 +2838,8 @@ def sohbet():
 
             if aktif_kod_takibi:
                 kaynak_kod = aktif_kod.strip()
+            elif yeni_kod_eslesmesi:
+                kaynak_kod = yeni_kod_eslesmesi.group(1).strip()
             else:
                 kaynak_kod = mesaj.strip()
 
@@ -3368,7 +3381,7 @@ def sohbet():
 
     # 🧠 Eagle teknik bilgi bankası — doğrudan cevap
     bilgi_sonuclari = []
-    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api", "guvenli_hesaplama") and not autofix_istegi:
+    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api", "guvenli_hesaplama", "kod_analiz") and not autofix_istegi:
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
     if bilgi_sonuclari:

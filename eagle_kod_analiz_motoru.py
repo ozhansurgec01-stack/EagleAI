@@ -461,8 +461,8 @@ class EagleKodAnalizMotoru:
                         "🔴 KESİN",
                         node.lineno,
                         "Sıfıra bölme tespit edildi.",
-                        True,
-                        "Bölen sıfırdan farklı olacak şekilde kontrol edilmeli."
+                        False,
+                        "Literal sıfıra bölme otomatik değiştirilmez; kullanıcı müdahalesi gerekir."
                     )
 
         # ---------------------------------------------------------
