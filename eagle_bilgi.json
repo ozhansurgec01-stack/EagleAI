@@ -77,7 +77,59 @@
       "any() ve all(), koleksiyonlardaki koşulları kontrol etmek için True veya False sonucu üretir.",
       "isinstance(), bir değerin belirli bir veri tipine ait olup olmadığını kontrol eder.",
       "isinstance(), doğru tip kontrolünde True, farklı tip kontrolünde False sonucu üretir.",
-      "isinstance(), str, int, list gibi farklı veri tiplerini kontrol etmek için kullanılabilir."
+      "isinstance(), str, int, list gibi farklı veri tiplerini kontrol etmek için kullanılabilir.",
+      {
+        "soru": "Python'da değişken nedir?",
+        "cevap": "Bir değeri isim altında saklayan yapıdır. Örnek: isim = 'Ali'."
+      },
+      {
+        "soru": "Python veri tipleri nelerdir?",
+        "cevap": "Yaygın temel tipler int, float, str, bool ve None değeridir."
+      },
+      {
+        "soru": "Python'da tür dönüşümü nasıl yapılır?",
+        "cevap": "int(), float(), str() ve bool() gibi fonksiyonlarla yapılır."
+      },
+      {
+        "soru": "Python f-string nedir?",
+        "cevap": "Değişkenleri metin içine kolayca yerleştirmeyi sağlayan string biçimlendirmesidir. Örnek: f'Merhaba {isim}'."
+      },
+      {
+        "soru": "Python dosya açma with open nedir?",
+        "cevap": "open() dosya açar; with kullanımı dosyanın güvenli şekilde yönetilmesini sağlar."
+      },
+      {
+        "soru": "Python JSON nasıl okunur ve yazılır?",
+        "cevap": "json modülündeki load veya loads ile okunur; dump veya dumps ile yazılır."
+      },
+      {
+        "soru": "Python pathlib nedir?",
+        "cevap": "Dosya ve dizin yollarını nesne tabanlı şekilde yönetmek için kullanılan standart kütüphanedir."
+      },
+      {
+        "soru": "Python math modülü nedir?",
+        "cevap": "Karekök, yuvarlama, trigonometrik işlemler ve çeşitli matematiksel fonksiyonlar sağlar."
+      },
+      {
+        "soru": "Python len sum min max nedir?",
+        "cevap": "len uzunluğu, sum toplamı, min en küçük değeri, max en büyük değeri bulur."
+      },
+      {
+        "soru": "Python string metotları nelerdir?",
+        "cevap": "lower, upper, strip, split, join, replace, startswith, endswith, find ve count sık kullanılan metotlardır."
+      },
+      {
+        "soru": "Python regex nedir?",
+        "cevap": "re modülü düzenli ifadelerle metin arama, eşleştirme ve değiştirme işlemleri yapar."
+      },
+      {
+        "soru": "Python if __name__ == '__main__' nedir?",
+        "cevap": "Dosyanın doğrudan çalıştırılması ile başka modülden import edilmesini ayırt etmek için kullanılır."
+      },
+      {
+        "soru": "Python datetime nedir?",
+        "cevap": "Tarih ve saat değerleriyle çalışmak için kullanılan standart modüldür."
+      }
     ],
     "operatörler": [
       "Toplama işlemi + operatörüyle yapılır.",
@@ -87,7 +139,11 @@
       "Mod alma işlemi % operatörüyle yapılır.",
       "Eşitlik karşılaştırması == operatörüyle yapılır.",
       "Eşit değil karşılaştırması != operatörüyle yapılır.",
-      "Büyüktür > ve küçüktür < karşılaştırma operatörleridir."
+      "Büyüktür > ve küçüktür < karşılaştırma operatörleridir.",
+      {
+        "soru": "Python'da and or not nedir?",
+        "cevap": "Mantıksal operatörlerdir. and tüm koşulların, or koşullardan en az birinin doğru olmasını; not ise sonucu tersine çevirmeyi ifade eder."
+      }
     ],
     "fonksiyonlar": [
       "Fonksiyonlar def anahtar kelimesiyle tanımlanır.",
@@ -120,7 +176,43 @@
       "isalnum() bir metnin yalnızca harf ve rakamlardan oluşup oluşmadığını kontrol eder.",
       "capitalize() bir metnin ilk harfini büyük harfe dönüştürür.",
       "title() bir metindeki kelimelerin ilk harflerini büyük harfe dönüştürür.",
-      "f-string Python'da değişkenleri metinlerin içine kolayca yerleştirmek için kullanılır."
+      "f-string Python'da değişkenleri metinlerin içine kolayca yerleştirmek için kullanılır.",
+      {
+        "soru": "Python fonksiyon parametre ve return nedir?",
+        "cevap": "Parametre fonksiyona veri aktarır, return ise fonksiyonun sonucunu döndürür."
+      },
+      {
+        "soru": "Python *args ve **kwargs nedir?",
+        "cevap": "*args değişken sayıda konumsal, **kwargs değişken sayıda isimli argüman almaya yarar."
+      },
+      {
+        "soru": "Python lambda nedir?",
+        "cevap": "Kısa ve isimsiz fonksiyon oluşturmak için kullanılan ifadedir."
+      },
+      {
+        "soru": "Python local ve global değişken nedir?",
+        "cevap": "Local değişken fonksiyon içinde, global değişken daha geniş kapsamda tanımlanır."
+      },
+      {
+        "soru": "Python class __init__ self nedir?",
+        "cevap": "class nesne şablonudur, __init__ nesne oluşturulurken çalışır, self mevcut nesneyi temsil eder."
+      },
+      {
+        "soru": "Python kalıtım nedir?",
+        "cevap": "Bir sınıfın başka bir sınıftaki özellik ve metotları devralmasını sağlar."
+      },
+      {
+        "soru": "Python iterator ve generator nedir?",
+        "cevap": "Iterator elemanları sırayla verir. Generator yield kullanarak değerleri ihtiyaç oldukça üretir."
+      },
+      {
+        "soru": "Python decorator nedir?",
+        "cevap": "Bir fonksiyonun davranışını fonksiyonun kendisini değiştirmeden sarmalayıp genişletmeye yarar."
+      },
+      {
+        "soru": "Python async await nedir?",
+        "cevap": "Asenkron programlama için kullanılır; bekleme gerektiren işlemlerde programın başka işler yapmasına olanak sağlar."
+      }
     ],
     "kosullar": [
       "elif, if koşulu sağlanmadığında başka bir koşulu kontrol etmek için kullanılır.",
@@ -130,7 +222,11 @@
       "Bir koşul yazarken karşılaştırma operatörleri ==, !=, >, <, >= ve <= kullanılabilir.",
       "if koşul doğru olduğunda belirli kodların çalışmasını sağlar.",
       "elif birden fazla koşulu sırayla kontrol etmek için kullanılır.",
-      "else önceki koşulların hiçbiri doğru olmadığında çalışır."
+      "else önceki koşulların hiçbiri doğru olmadığında çalışır.",
+      {
+        "soru": "Python'da if elif else nedir?",
+        "cevap": "Koşullara göre farklı kodların çalıştırılmasını sağlar."
+      }
     ],
     "donguler": [
       "range() belirli bir sayı aralığında değerler üretmek için kullanılır.",
@@ -150,7 +246,23 @@
       "continue döngünün mevcut turunun kalan kısmını atlayıp sonraki tura geçmesini sağlar.",
       "break bir koşul gerçekleştiğinde döngüden çıkmak için kullanılabilir.",
       "continue belirli koşullarda mevcut işlemi atlayarak döngünün devam etmesini sağlar.",
-      "break ve continue özellikle for ve while döngülerinin akışını kontrol etmek için kullanılır."
+      "break ve continue özellikle for ve while döngülerinin akışını kontrol etmek için kullanılır.",
+      {
+        "soru": "Python'da for döngüsü nedir?",
+        "cevap": "Bir koleksiyonun veya aralığın elemanları üzerinde tekrar yapmak için kullanılır."
+      },
+      {
+        "soru": "Python'da while döngüsü nedir?",
+        "cevap": "Koşul doğru olduğu sürece kod bloğunu tekrar çalıştırır."
+      },
+      {
+        "soru": "break continue pass nedir?",
+        "cevap": "break döngüyü bitirir, continue sonraki tura geçer, pass ise işlem yapmadan yer tutucu olarak kullanılır."
+      },
+      {
+        "soru": "enumerate ve zip nedir?",
+        "cevap": "enumerate elemanla birlikte indeks verir. zip birden fazla iterable'ın elemanlarını eşleştirir."
+      }
     ],
     "listeler": [
       "Listenin elemanlarına indeks numarasıyla erişilir ve ilk indeks 0'dır.",
@@ -172,7 +284,27 @@
       "remove() listedeki belirtilen değere sahip ilk elemanı siler.",
       "pop() listedeki bir elemanı konumuna göre çıkarır ve çıkarılan elemanı döndürür.",
       "clear() listenin bütün elemanlarını silmek için kullanılır.",
-      "reverse() listenin elemanlarının sırasını tersine çevirir."
+      "reverse() listenin elemanlarının sırasını tersine çevirir.",
+      {
+        "soru": "Python list comprehension nedir?",
+        "cevap": "Listeyi kısa ve okunabilir bir ifadeyle oluşturmaya yarar. Örnek: [x * 2 for x in sayilar]."
+      },
+      {
+        "soru": "Python tuple ve set nedir?",
+        "cevap": "Tuple sıralı ve değiştirilemez bir koleksiyondur. Set benzersiz elemanlardan oluşan koleksiyondur."
+      },
+      {
+        "soru": "Python sorted nedir?",
+        "cevap": "Bir iterable'ın sıralanmış yeni listesini döndürür."
+      },
+      {
+        "soru": "Python any ve all nedir?",
+        "cevap": "any en az bir doğru değer varsa True, all tüm değerler doğruysa True döndürür."
+      },
+      {
+        "soru": "Python map ve filter nedir?",
+        "cevap": "map elemanlara fonksiyon uygular, filter koşulu sağlayan elemanları seçer."
+      }
     ],
     "sozlukler": [
       "Sözlüklerde verilere anahtar kullanılarak erişilir.",
@@ -190,7 +322,15 @@
       "values() sözlükteki değerleri elde etmek için kullanılır.",
       "items() sözlükteki anahtar ve değer çiftlerini elde etmek için kullanılır.",
       "get() sözlükte belirtilen anahtarın değerini güvenli şekilde almak için kullanılır.",
-      "update() bir sözlüğe yeni anahtar-değer çiftleri eklemek veya mevcut değerleri güncellemek için kullanılır."
+      "update() bir sözlüğe yeni anahtar-değer çiftleri eklemek veya mevcut değerleri güncellemek için kullanılır.",
+      {
+        "soru": "Python dictionary comprehension nedir?",
+        "cevap": "Sözlükleri kısa bir ifadeyle oluşturmaya yarar."
+      },
+      {
+        "soru": "Python dictionary get nedir?",
+        "cevap": "get() anahtarın değerini güvenli şekilde almak için kullanılır; anahtar yoksa varsayılan değer verilebilir."
+      }
     ],
     "hata_ayiklama": [
       "SyntaxError Python kodunun yazım kurallarına uymadığını gösterir.",
@@ -209,7 +349,63 @@
       "Birden fazla except bloğu farklı hata türlerini ayrı ayrı yönetmek için kullanılabilir.",
       "try/except programın beklenmeyen bir hata nedeniyle tamamen durmasını önlemeye yardımcı olur.",
       "Hata yakalamada mümkün olduğunca genel Exception yerine beklenen hata türünün belirtilmesi daha sağlıklıdır.",
-      "else bloğu try başarılı olduğunda çalıştırılmak istenen kodlar için kullanılabilir."
+      "else bloğu try başarılı olduğunda çalıştırılmak istenen kodlar için kullanılabilir.",
+      {
+        "soru": "Python try except nedir?",
+        "cevap": "Hata oluşturabilecek kodları yakalayıp programın kontrollü şekilde devam etmesini sağlar."
+      },
+      {
+        "soru": "Python finally ve raise nedir?",
+        "cevap": "finally hata olsa da olmasa da çalışır. raise programcının belirli bir istisnayı oluşturmasını sağlar."
+      },
+      {
+        "soru": "Python SyntaxError nedir?",
+        "cevap": "Python sözdizimi kurallarına uyulmadığında oluşur."
+      },
+      {
+        "soru": "Python IndentationError nedir?",
+        "cevap": "Girintinin Python sözdizimine uygun olmaması nedeniyle oluşur."
+      },
+      {
+        "soru": "Python NameError nedir?",
+        "cevap": "Tanımlanmamış veya erişilemeyen bir isim kullanıldığında oluşur."
+      },
+      {
+        "soru": "Python TypeError nedir?",
+        "cevap": "Bir işlemin kullanılan veri tipiyle uyumsuz olması durumunda oluşur."
+      },
+      {
+        "soru": "Python ValueError nedir?",
+        "cevap": "Veri tipi uygun olsa bile verilen değerin beklenen biçimde olmaması durumunda oluşur."
+      },
+      {
+        "soru": "Python IndexError nedir?",
+        "cevap": "Liste veya benzeri sıralı yapıda bulunmayan bir indeks kullanıldığında oluşur."
+      },
+      {
+        "soru": "Python KeyError nedir?",
+        "cevap": "Dictionary içinde bulunmayan bir anahtara doğrudan erişildiğinde oluşur."
+      },
+      {
+        "soru": "Python AttributeError nedir?",
+        "cevap": "Bir nesnede bulunmayan özellik veya metoda erişilmeye çalışıldığında oluşur."
+      },
+      {
+        "soru": "Python ZeroDivisionError nedir?",
+        "cevap": "Bir sayının sıfıra bölünmeye çalışılmasıyla oluşur."
+      },
+      {
+        "soru": "Python ImportError nedir?",
+        "cevap": "Bir modül veya içeriğin import edilmesi başarısız olduğunda oluşur."
+      },
+      {
+        "soru": "Python ModuleNotFoundError nedir?",
+        "cevap": "İstenen modül bulunamadığında oluşur."
+      },
+      {
+        "soru": "Python'da en sık yapılan kod hataları nelerdir?",
+        "cevap": "Eksik parantez, eksik iki nokta, yanlış girinti, tanımsız değişken, yanlış indeks, yanlış dictionary anahtarı ve yanlış veri tipi sık görülür."
+      }
     ],
     "ornekler": [
       "Örnek: isim = 'Ali' bir str değişkenidir.",

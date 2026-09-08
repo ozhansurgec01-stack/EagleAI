@@ -541,6 +541,40 @@ def bilgi_bankasi_ara(mesaj):
     bilgi = bilgi_bankasi_yukle()
     bulunan = []
 
+    # 🎯 Yeni Python soru/cevap kayıtlarında önce özgül soru eşleşmesi yap.
+    # Böylece "Python NameError nedir?" gibi sorular genel "Python nedir?"
+    # kaydına takılmaz.
+    python_kayitlari = bilgi.get("python", {})
+    for kategori, maddeler in python_kayitlari.items():
+        if not isinstance(maddeler, list):
+            continue
+
+        for madde in maddeler:
+            if not isinstance(madde, dict):
+                continue
+
+            soru = str(madde.get("soru", "")).strip()
+            cevap = str(madde.get("cevap", "")).strip()
+
+            if not soru or not cevap:
+                continue
+
+            soru_metin = soru.lower().replace("İ", "i")
+            kullanici_metin = metin.lower().replace("İ", "i")
+
+            # "Python'da" / "Python da" / "Python" farkını kaldır.
+            soru_norm = re.sub(r"python(?:['’]da| da)?\b", "python", soru_metin)
+            metin_norm = re.sub(r"python(?:['’]da| da)?\b", "python", kullanici_metin)
+
+            # Noktalama ve fazla boşlukları normalize et.
+            soru_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", soru_norm)
+            metin_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", metin_norm)
+            soru_norm = re.sub(r"\s+", " ", soru_norm).strip()
+            metin_norm = re.sub(r"\s+", " ", metin_norm).strip()
+
+            if soru_norm == metin_norm or soru_norm in metin_norm or metin_norm in soru_norm:
+                return [cevap]
+
     # ➗ Matematik bilgi bankası için özel arama
     if konu == "matematik":
         matematik = bilgi.get("matematik", {})
@@ -634,14 +668,21 @@ def bilgi_bankasi_ara(mesaj):
 
         elif isinstance(veri, list):
             for madde in veri:
-                if not isinstance(madde, str):
+                if isinstance(madde, dict):
+                    soru = str(madde.get("soru", ""))
+                    cevap = str(madde.get("cevap", ""))
+                    madde_metin = (soru + " " + cevap).lower()
+                    gosterilecek = f"{soru} {cevap}".strip()
+                elif isinstance(madde, str):
+                    madde_metin = madde.lower()
+                    gosterilecek = madde
+                else:
                     continue
 
                 if konu:
                     hedefler = konu_eslesmeleri[konu]
-                    madde_metin = madde.lower()
                     if any(k in madde_metin for k in hedefler):
-                        bulunan.append((10, madde))
+                        bulunan.append((10, gosterilecek))
 
     tara(bilgi)
 
@@ -1279,6 +1320,32 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             "arac": "guvenli_hesaplama",
             "islem": "hesapla",
             "dogrulama": True
+        })
+        return karar
+
+    # 📚 Python bilgi soruları kod analizine gitmesin.
+    # Gerçek kod/hata istekleri aşağıdaki kod yönlendirmesine devam eder.
+    python_bilgi_sorusu = (
+        ("python" in k or "python'da" in k or "pythonda" in k)
+        and any(x in k for x in [
+            "nedir", "ne demek", "nasıl", "nasil", "nasıl kullanılır",
+            "nasil kullanilir", "ne işe yarar", "ne ise yarar",
+            "açıkla", "acikla", "örnek", "ornek"
+        ])
+        and not any(x in k for x in [
+            "kodu düzelt", "hatasını düzelt", "autofix",
+            "çalışmıyor", "calismiyor", "traceback",
+            "kodumu", "kodum", "kodda hata"
+        ])
+    )
+
+    if python_bilgi_sorusu:
+        karar.update({
+            "intent": "bilgi",
+            "guven": "yüksek",
+            "neden": "Python bilgi sorusu algılandı; bilgi bankasına yönlendirilecek.",
+            "arac": "bilgi_bankasi",
+            "islem": "cevapla"
         })
         return karar
 
