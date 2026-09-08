@@ -2940,6 +2940,8 @@ def sohbet():
 
             if aktif_kod_takibi:
                 kaynak_kod = aktif_kod.strip()
+            elif eagle_yapistirilmis_kod_mu(mesaj):
+                kaynak_kod = mesaj.strip()
             elif yeni_kod_eslesmesi:
                 kaynak_kod = yeni_kod_eslesmesi.group(1).strip()
             else:
