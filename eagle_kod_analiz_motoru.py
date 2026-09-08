@@ -473,20 +473,42 @@ class EagleKodAnalizMotoru:
                 isim = node.value.id
                 indeks = node.slice
 
-                # İsimden açıkça liste olduğu anlaşılan değişkenler
+                # İsimden açıkça türü anlaşılabilen değişkenler
                 liste_adlari = {
                     "liste", "listeler", "elemanlar",
                     "items", "numbers", "sayilar"
                 }
 
-                # İsimden açıkça sözlük olduğu anlaşılan değişkenler
                 sozluk_adlari = {
                     "veri", "sozluk", "dict",
                     "dictionary", "config", "ayarlar"
                 }
 
+                # AST'den değişkenin doğrudan liste/sözlük olarak
+                # tanımlanıp tanımlanmadığını kontrol et.
+                tur = None
+                if hasattr(self, "tree"):
+                    for atama in ast.walk(self.tree):
+                        if (
+                            isinstance(atama, ast.Assign)
+                            and any(
+                                isinstance(hedef, ast.Name)
+                                and hedef.id == isim
+                                for hedef in atama.targets
+                            )
+                        ):
+                            if isinstance(atama.value, ast.List):
+                                tur = "liste"
+                            elif isinstance(atama.value, ast.Dict):
+                                tur = "sozluk"
+
+                if isim.lower() in liste_adlari:
+                    tur = "liste"
+                elif isim.lower() in sozluk_adlari:
+                    tur = "sozluk"
+
                 if (
-                    isim.lower() in liste_adlari
+                    tur == "liste"
                     and isinstance(indeks, ast.Constant)
                     and isinstance(indeks.value, int)
                     and indeks.value >= 0
@@ -500,7 +522,7 @@ class EagleKodAnalizMotoru:
                     )
 
                 elif (
-                    isim.lower() in sozluk_adlari
+                    tur == "sozluk"
                     and isinstance(indeks, ast.Constant)
                     and isinstance(indeks.value, str)
                 ):
