@@ -58,6 +58,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.io.File;
+import java.io.FileOutputStream;
+import androidx.core.content.FileProvider;
 
 public class MainActivity extends Activity {
 
@@ -336,7 +339,7 @@ public class MainActivity extends Activity {
         final String mesaj =
                 mesajKutusu.getText().toString().trim();
 
-        if (mesaj.isEmpty()) {
+        if (mesaj.isEmpty() && secilenDosyaUri == null) {
             return;
         }
 
@@ -1857,24 +1860,44 @@ private void sohbetYukle(String id) {
                         (android.graphics.Bitmap) data.getExtras().get("data");
 
                 if (foto != null) {
-                    ImageView onizleme = new ImageView(this);
-                    onizleme.setImageBitmap(foto);
-                    onizleme.setAdjustViewBounds(true);
-                    onizleme.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                    try {
+                        File cacheDosya = new File(
+                                getCacheDir(),
+                                "eagle_kamera_" + System.currentTimeMillis() + ".jpg"
+                        );
 
-                    LinearLayout.LayoutParams resimLp =
-                            new LinearLayout.LayoutParams(
-                                    LinearLayout.LayoutParams.MATCH_PARENT,
-                                    420
-                            );
-                    resimLp.setMargins(18, 10, 18, 10);
+                        FileOutputStream cikis = new FileOutputStream(cacheDosya);
+                        foto.compress(
+                                android.graphics.Bitmap.CompressFormat.JPEG,
+                                90,
+                                cikis
+                        );
+                        cikis.flush();
+                        cikis.close();
 
+                        secilenDosyaUri = FileProvider.getUriForFile(
+                                this,
+                                "com.eagleai.borclar.fileprovider",
+                                cacheDosya
+                        );
 
-                    kaydirma.post(() ->
-                            kaydirma.fullScroll(View.FOCUS_DOWN)
-                    );
+                        Toast.makeText(
+                                this,
+                                "📷 Fotoğraf eklendi",
+                                Toast.LENGTH_SHORT
+                        ).show();
 
-                    Toast.makeText(this, "📷 Fotoğraf eklendi", Toast.LENGTH_SHORT).show();
+                    } catch (Exception exc) {
+                        android.util.Log.e(
+                                "EAGLE_CAMERA",
+                                "Fotoğraf kaydedilemedi: " + exc.getMessage()
+                        );
+                        Toast.makeText(
+                                this,
+                                "Fotoğraf kaydedilemedi",
+                                Toast.LENGTH_SHORT
+                        ).show();
+                    }
                 }
             }
             return;

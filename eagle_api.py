@@ -1,6 +1,29 @@
 from eagle_autofix import EagleAutoFixEngine
 from flask import Flask, request, jsonify
 import os
+
+
+def _env_dosyasini_yukle(dosya_yolu=".env"):
+    """.env dosyasındaki anahtar=deger satırlarını ortam değişkenlerine yükler."""
+    if not os.path.exists(dosya_yolu):
+        return
+    try:
+        with open(dosya_yolu, encoding="utf-8") as _f:
+            _icerik = _f.read()
+        for satir in _icerik.splitlines():
+            satir = satir.strip()
+            if not satir or satir.startswith("#") or "=" not in satir:
+                continue
+            anahtar, deger = satir.split("=", 1)
+            anahtar = anahtar.strip()
+            deger = deger.strip().strip('"').strip("'")
+            if anahtar and anahtar not in os.environ:
+                os.environ[anahtar] = deger
+    except Exception:
+        pass
+
+
+_env_dosyasini_yukle()
 import time
 import base64
 import requests
@@ -2773,6 +2796,132 @@ def sohbet():
     mesaj = str(
         data.get("message", "")
     ).strip()
+
+    # 📷 EAGLE GÖRSEL ANLAMA
+    # Android'den gelen Base64 görseli önce Gemini Vision'a gönder.
+    # Görsel yoksa mevcut EagleAI akışı aynen devam eder.
+    file_base64 = data.get("file_base64")
+    file_mime = str(
+        data.get("file_mime", "image/jpeg")
+    ).strip()
+
+    if file_base64:
+        try:
+            import os
+            import requests
+
+            gemini_key = os.getenv("GEMINI_API_KEY")
+
+            if gemini_key:
+                temiz_base64 = str(file_base64).strip()
+
+                # Olası data:image/...;base64, önekini temizle.
+                if ";base64," in temiz_base64:
+                    temiz_base64 = temiz_base64.split(
+                        ";base64,", 1
+                    )[1]
+
+                if file_mime.startswith("image/"):
+                    gemini_url = (
+                        "https://generativelanguage.googleapis.com/"
+                        "v1beta/models/gemini-2.5-flash:generateContent"
+                    )
+
+                    goruntu_prompt = (
+                        "Bu görseli genel amaçlı ve çok dikkatli şekilde analiz et. "
+                        "Görselde ne varsa önce tanımla; yalnızca cihaz veya nesne "
+                        "aramakla sınırlı kalma. İnsan, hayvan, bitki, araç, elektronik "
+                        "cihaz, makine, parça, ev eşyası, yemek, yapı, manzara, belge, "
+                        "ekran görüntüsü, tabela, yazı, harita veya başka herhangi bir "
+                        "görsel içerik olabilir. "
+                        "Kullanıcının sorusu: "
+                        f"{mesaj}\n\n"
+                        "Önce görseldeki ana nesneyi, kişiyi, canlıyı, yeri veya içeriği "
+                        "belirle. Ardından kullanıcının sorusunu doğrudan görseldeki "
+                        "bilgilere dayanarak cevapla. "
+                        "Görsel üzerinde okunabilir marka, model, etiket, başlık, tabela "
+                        "veya başka bir yazı varsa dikkate al ve gerektiğinde metni oku. "
+                        "Bir nesnenin ne işe yaradığını soruyorsa, önce nesnenin ne "
+                        "olduğunu belirle ve ardından temel kullanım amacını açıkla. "
+                        "Görselde birden fazla önemli unsur varsa bunları ayırt et. "
+                        "Görselin kesin olarak göstermediği model, teknik özellik, "
+                        "konum veya başka bir bilgiyi uydurma. Emin olmadığın durumda "
+                        "bunu açıkça belirt ve görselden doğrulanabilen bilgilerle "
+                        "sınırlı kal. "
+                        "Öncelik sırası: görseli anla, soruyu görsele göre cevapla, "
+                        "ancak gerekirse daha sonra dış bilgi doğrulaması yapılabilir."
+                    )
+
+                    gemini_payload = {
+                        "contents": [{
+                            "parts": [
+                                {
+                                    "inline_data": {
+                                        "mime_type": file_mime,
+                                        "data": temiz_base64,
+                                    }
+                                },
+                                {
+                                    "text": goruntu_prompt
+                                }
+                            ]
+                        }]
+                    }
+
+                    gemini_response = requests.post(
+                        gemini_url,
+                        params={"key": gemini_key},
+                        headers={
+                            "Content-Type":
+                                "application/json"
+                        },
+                        json=gemini_payload,
+                        timeout=45,
+                    )
+
+                    if gemini_response.ok:
+                        gemini_data = gemini_response.json()
+                        adaylar = gemini_data.get(
+                            "candidates", []
+                        )
+
+                        if adaylar:
+                            parcalar = adaylar[0].get(
+                                "content", {}
+                            ).get("parts", [])
+
+                            goruntu_cevabi = "\n".join(
+                                str(x.get("text", "")).strip()
+                                for x in parcalar
+                                if x.get("text")
+                            ).strip()
+
+                            if goruntu_cevabi:
+                                return jsonify({
+                                    "ok": True,
+                                    "answer": (
+                                        "📷 EAGLE GÖRSEL ANALİZİ\n\n"
+                                        + goruntu_cevabi
+                                    ),
+                                    "eagle_direct": True,
+                                    "image_analysis": True,
+                                    "vision_model": "gemini-2.5-flash",
+                                    "memory_count": len(
+                                        hafiza_yukle()
+                                    ),
+                                })
+
+                    print(
+                        "⚠️ Gemini görsel analizi başarısız; "
+                        "mevcut EagleAI akışına devam ediliyor.",
+                        flush=True,
+                    )
+
+        except Exception as exc:
+            print(
+                f"⚠️ Görsel analiz hatası: {exc}",
+                flush=True,
+            )
 
     gecmis = data.get("history", [])
     sohbet_baglam = sohbet_baglam_yukle()
