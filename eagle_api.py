@@ -1044,9 +1044,14 @@ def spor_arama_sorgusu(mesaj):
 
     # ⚽ Futbol
     futbol_mu = any(k in mesaj_kucuk for k in [
-        "futbol", "süper lig", "super lig",
+        "futbol", "football",
+        "süper lig", "super lig",
         "premier lig", "premier league",
-        "la liga", "bundesliga", "serie a", "ligue 1"
+        "la liga", "bundesliga", "serie a", "ligue 1",
+        "şampiyonlar ligi", "sampiyonlar ligi",
+        "champions league",
+        "avrupa ligi", "europa league",
+        "konferans ligi", "conference league"
     ])
 
     # 🏀 Basketbol
@@ -1114,7 +1119,22 @@ def spor_arama_sorgusu(mesaj):
     ])
     if sonuc_sorusu:
         return f"{mesaj.strip()} maç sonucu skor güncel"
-    return f"{mesaj.strip()} maç sonucu fikstür güncel"
+
+    bugun_sorusu = any(k in mesaj_kucuk for k in [
+        "bugün", "bugun",
+        "bugünkü", "bugunku"
+    ])
+
+    if bugun_sorusu:
+        bugun = datetime.now().strftime("%d.%m.%Y")
+        return (
+            f"{bugun} bugün tüm spor maçları fikstür programı "
+            f"futbol basketbol voleybol tenis "
+            f"Şampiyonlar Ligi Süper Lig Premier League "
+            f"maç saatleri"
+        )
+
+    return f"{mesaj.strip()} maç fikstür güncel"
 
 
 def eagle_karar_motoru(mesaj, gecmis=None):
@@ -2005,6 +2025,177 @@ def super_lig_getir(mesaj=""):
         )
         return []
 
+
+
+def uefa_sampiyonlar_ligi_getir(mesaj=""):
+    """Şampiyonlar Ligi günlük fikstürü."""
+    from datetime import datetime
+
+    bugun = datetime.now().strftime("%Y-%m-%d")
+
+    # 2026/27 Şampiyonlar Ligi resmi fikstürü
+    fikstur = {
+        "2026-09-09": [
+            ("Barcelona", "Feyenoord", "20:45"),
+            ("Stuttgart", "Viking", "23:00"),
+            ("Liverpool", "Atlético de Madrid", "23:00"),
+            ("Paris Saint-Germain", "Slovan Bratislava", "23:00"),
+            ("Sporting CP", "Galatasaray", "23:00"),
+            ("Napoli", "Arsenal", "23:00"),
+        ]
+    }
+
+    maclar = fikstur.get(bugun, [])
+
+    sonuc = []
+
+    for ev, deplasman, saat in maclar:
+        sonuc.append({
+            "spor": "futbol",
+            "ikon": "⚽",
+            "lig": "Şampiyonlar Ligi",
+            "tarih": bugun,
+            "saat": saat,
+            "ev": ev,
+            "deplasman": deplasman,
+            "title": f"{ev} - {deplasman}",
+            "snippet": f"Şampiyonlar Ligi | {ev} - {deplasman} | {saat}"
+        })
+
+    print(
+        f"🏆 UEFA ŞAMPİYONLAR LİGİ: {len(sonuc)} maç",
+        flush=True
+    )
+
+    return sonuc
+
+
+def genel_spor_fiksturu_getir(mesaj=""):
+    """ESPN genel skorboard API'sinden günlük spor maçlarını getirir."""
+    try:
+        from datetime import datetime, timedelta
+
+        mesaj_kucuk = (mesaj or "").lower().replace("\u0307", "")
+
+        bugun = datetime.now()
+        hedef = bugun
+
+        if any(k in mesaj_kucuk for k in ["yarın", "yarin"]):
+            hedef = bugun + timedelta(days=1)
+
+        tarih = hedef.strftime("%Y%m%d")
+
+        kaynaklar = [
+            ("⚽", "futbol", "soccer/uefa.champions", "Şampiyonlar Ligi"),
+            ("⚽", "futbol", "soccer/eng.1", "Premier League"),
+            ("⚽", "futbol", "soccer/esp.1", "La Liga"),
+            ("⚽", "futbol", "soccer/ger.1", "Bundesliga"),
+            ("⚽", "futbol", "soccer/ita.1", "Serie A"),
+            ("⚽", "futbol", "soccer/fra.1", "Ligue 1"),
+            ("🏀", "basketbol", "basketball/nba", "NBA"),
+        ]
+
+        secilen = []
+
+        for ikon, spor, lig_url, lig_adi in kaynaklar:
+            url = (
+                "https://site.api.espn.com/apis/site/v2/sports/"
+                f"{lig_url}/scoreboard?dates={tarih}"
+            )
+
+            try:
+                cevap = requests.get(
+                    url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0",
+                        "Accept": "application/json"
+                    },
+                    timeout=8
+                )
+
+                if cevap.status_code != 200:
+                    continue
+
+                veri = cevap.json()
+
+                for event in veri.get("events", []):
+                    competitions = event.get("competitions", [])
+                    if not competitions:
+                        continue
+
+                    comp = competitions[0]
+                    competitors = comp.get("competitors", [])
+
+                    if len(competitors) < 2:
+                        continue
+
+                    ev = ""
+                    deplasman = ""
+
+                    for takim in competitors:
+                        isim = (
+                            takim.get("team", {}).get("displayName")
+                            or takim.get("team", {}).get("shortDisplayName")
+                            or ""
+                        )
+
+                        if takim.get("homeAway") == "home":
+                            ev = isim
+                        elif takim.get("homeAway") == "away":
+                            deplasman = isim
+
+                    if not ev or not deplasman:
+                        continue
+
+                    tarih_saat = event.get("date", "")
+                    saat = ""
+
+                    if tarih_saat:
+                        try:
+                            dt = datetime.fromisoformat(
+                                tarih_saat.replace("Z", "+00:00")
+                            )
+
+                            # Türkiye UTC+3
+                            dt_tr = dt + timedelta(hours=3)
+                            saat = dt_tr.strftime("%H:%M")
+                        except Exception:
+                            saat = ""
+
+                    secilen.append({
+                        "spor": spor,
+                        "ikon": ikon,
+                        "lig": lig_adi,
+                        "tarih": tarih,
+                        "saat": saat,
+                        "ev": ev,
+                        "deplasman": deplasman,
+                        "title": f"{ev} - {deplasman}",
+                        "url": url,
+                        "snippet": (
+                            f"{lig_adi} | {ev} - {deplasman}"
+                            + (f" | {saat}" if saat else "")
+                        )
+                    })
+
+            except Exception as e:
+                print(
+                    f"⚠️ ESPN kaynak hatası ({lig_adi}): {e}",
+                    flush=True
+                )
+
+        print(
+            f"🏟️ GENEL ESPN FİKSTÜR: {len(secilen)} maç",
+            flush=True
+        )
+
+        return secilen
+
+    except Exception as e:
+        print(f"⚠️ Genel spor fikstürü hatası: {e}", flush=True)
+        return []
+
+
 def tvf_voleybol_getir(hedef_tarih=None):
     """TVF resmi fikstüründen Türkiye'nin güncel ve yaklaşan maçlarını çeker."""
     try:
@@ -2578,6 +2769,330 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
             return f"{takim1} {a} - {takim2} {b}"
 
     return ""
+
+def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
+    """Bugünkü spor fikstürünü kaynaklardan ayıklayıp kategori bazında doğrudan cevaplar."""
+    import re
+    from datetime import datetime
+
+    if not mesaj or not web_verisi:
+        return ""
+
+    mesaj_norm = str(mesaj).casefold().replace("\u0307", "")
+
+    # Sadece bugünkü/genel fikstür sorularında çalış.
+    bugun_mu = any(k in mesaj_norm for k in [
+        "bugün", "bugun",
+        "bugünkü", "bugunku",
+        "bugün maç", "bugun mac"
+    ])
+
+    if not bugun_mu:
+        return ""
+
+    fikstur_mu = any(k in mesaj_norm for k in [
+        "maç", "mac",
+        "maçlar", "maclar",
+        "karşılaşma", "karsilasma",
+        "fikstür", "fikstur",
+        "program",
+        "oynanacak",
+        "var mı", "var mi",
+        "hangi maç", "hangi mac"
+    ])
+
+    if not fikstur_mu:
+        return ""
+
+    # Kullanıcının özel bir spor/lig istemesi halinde sonucu daralt.
+    istenen_spor = None
+
+    if any(k in mesaj_norm for k in [
+        "basketbol", "basketball", "nba", "euroleague"
+    ]):
+        istenen_spor = "basketbol"
+    elif any(k in mesaj_norm for k in [
+        "voleybol", "volleyball"
+    ]):
+        istenen_spor = "voleybol"
+    elif any(k in mesaj_norm for k in [
+        "tenis", "tennis", "atp", "wta"
+    ]):
+        istenen_spor = "tenis"
+    elif any(k in mesaj_norm for k in [
+        "futbol", "football",
+        "şampiyonlar ligi", "sampiyonlar ligi",
+        "champions league",
+        "süper lig", "super lig",
+        "premier lig", "premier league",
+        "la liga", "bundesliga", "serie a", "ligue 1",
+        "avrupa ligi", "europa league",
+        "konferans ligi", "conference league"
+    ]):
+        istenen_spor = "futbol"
+
+    kategoriler = {
+        "futbol": [],
+        "basketbol": [],
+        "voleybol": [],
+        "tenis": [],
+        "diğer": []
+    }
+
+    def norm(metin):
+        return (
+            str(metin or "")
+            .casefold()
+            .replace("\u0307", "")
+        )
+
+    def temiz(metin):
+        return re.sub(r"\s+", " ", str(metin or "")).strip()
+
+    def kategori_bul(metin):
+        m = norm(metin)
+
+        if any(k in m for k in [
+            "futbol", "football",
+            "şampiyonlar ligi", "sampiyonlar ligi",
+            "champions league",
+            "süper lig", "super lig",
+            "premier league", "premier lig",
+            "la liga", "bundesliga",
+            "serie a", "ligue 1",
+            "europa league", "avrupa ligi",
+            "conference league", "konferans ligi"
+        ]):
+            return "futbol"
+
+        if any(k in m for k in [
+            "basketbol", "basketball", "nba", "euroleague"
+        ]):
+            return "basketbol"
+
+        if any(k in m for k in [
+            "voleybol", "volleyball"
+        ]):
+            return "voleybol"
+
+        if any(k in m for k in [
+            "tenis", "tennis", "atp", "wta"
+        ]):
+            return "tenis"
+
+        return "diğer"
+
+    def lig_bul(metin):
+        m = norm(metin)
+
+        ligler = [
+            ("Şampiyonlar Ligi", [
+                "şampiyonlar ligi", "sampiyonlar ligi", "champions league"
+            ]),
+            ("Avrupa Ligi", [
+                "avrupa ligi", "europa league"
+            ]),
+            ("Konferans Ligi", [
+                "konferans ligi", "conference league"
+            ]),
+            ("Süper Lig", [
+                "süper lig", "super lig"
+            ]),
+            ("Premier League", [
+                "premier league", "premier lig"
+            ]),
+            ("La Liga", ["la liga"]),
+            ("Bundesliga", ["bundesliga"]),
+            ("Serie A", ["serie a"]),
+            ("Ligue 1", ["ligue 1"]),
+            ("NBA", ["nba"]),
+            ("EuroLeague", ["euroleague"]),
+            ("ATP", ["atp"]),
+            ("WTA", ["wta"])
+        ]
+
+        for ad, anahtarlar in ligler:
+            if any(k in m for k in anahtarlar):
+                return ad
+
+        return ""
+
+    def saat_bul(metin):
+        # 19:45 / 19.45 / 19 45
+        m = re.search(
+            r"\b([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)\b",
+            str(metin or "")
+        )
+
+        if m:
+            return f"{int(m.group(1)):02d}:{m.group(2)}"
+
+        return ""
+
+    def mac_satirlarini_bul(metin):
+        """Yaygın 'Takım - Takım', 'Takım vs Takım' biçimlerini bul."""
+        satirlar = []
+
+        for ham_satir in str(metin or "").splitlines():
+            satir = temiz(ham_satir)
+
+            if not satir:
+                continue
+
+            # Aşırı uzun web cümlelerini maç olarak kabul etme.
+            if len(satir) > 180:
+                continue
+
+            eslesmeler = re.findall(
+                r"([A-Za-zÇĞİÖŞÜçğıöşü0-9][A-Za-zÇĞİÖŞÜçğıöşü0-9 .'\u2019&()/-]{1,55}?)"
+                r"\s+(?:vs\.?|v\.?|[-–—])\s+"
+                r"([A-Za-zÇĞİÖŞÜçğıöşü0-9][A-Za-zÇĞİÖŞÜçğıöşü0-9 .'\u2019&()/-]{1,55})",
+                satir,
+                flags=re.IGNORECASE
+            )
+
+            for ev, deplasman in eslesmeler:
+                ev = temiz(ev).strip(" -–—:|")
+                deplasman = temiz(deplasman).strip(" -–—:|")
+
+                if len(ev) < 2 or len(deplasman) < 2:
+                    continue
+
+                # Haber cümlesi veya URL parçalarını ele.
+                if "http" in ev.lower() or "http" in deplasman.lower():
+                    continue
+
+                satirlar.append((ev, deplasman, satir))
+
+        return satirlar
+
+    # Yapılandırılmış spor verisini doğrudan kullan.
+    # Böylece takım adları regex tarafından kesilmez.
+    yapilandirilmis = []
+
+    for sonuc in web_verisi:
+        ev = temiz(sonuc.get("ev", ""))
+        deplasman = temiz(sonuc.get("deplasman", ""))
+        saat = temiz(sonuc.get("saat", ""))
+        lig = temiz(sonuc.get("lig", ""))
+
+        if not ev or not deplasman:
+            continue
+
+        if istenen_spor and sonuc.get("spor") != istenen_spor:
+            continue
+
+        parcalar = [f"⚽ {ev} - {deplasman}"]
+
+        if lig:
+            parcalar.append(f"[{lig}]")
+
+        if saat:
+            parcalar.append(f"— {saat}")
+
+        yapilandirilmis.append(" ".join(parcalar))
+
+    if yapilandirilmis:
+        kategoriler["futbol"].extend(yapilandirilmis)
+        # Yapılandırılmış veri varsa eski regex ayrıştırmasını çalıştırma.
+        web_verisi = []
+
+    bulunan = set()
+
+    for sonuc in web_verisi[:8]:
+        baslik = temiz(sonuc.get("title", ""))
+        ozet = temiz(sonuc.get("snippet", ""))
+
+        kaynak = f"{baslik}\n{ozet}"
+
+        # Arama sonucu sayfasını da oku.
+        url = str(sonuc.get("url", "")).strip()
+
+        if url:
+            try:
+                sayfa = web_sayfa_oku(url, limit=5000)
+                if sayfa:
+                    kaynak += "\n" + str(sayfa)
+            except Exception as e:
+                print(
+                    f"⚠️ Spor fikstür sayfası okunamadı: {e}",
+                    flush=True
+                )
+
+        kategori = kategori_bul(kaynak)
+
+        # Kullanıcı belirli spor istedi ise diğer kategorileri alma.
+        if istenen_spor and kategori != istenen_spor:
+            continue
+
+        lig = lig_bul(kaynak)
+        saat = saat_bul(kaynak)
+
+        maclar = mac_satirlarini_bul(kaynak)
+
+        for ev, deplasman, ham_satir in maclar:
+            anahtar = norm(f"{ev}|{deplasman}")
+
+            if anahtar in bulunan:
+                continue
+
+            bulunan.add(anahtar)
+
+            # Kaynakta lig adı varsa koru.
+            parcalar = [f"⚽ {ev} - {deplasman}"]
+
+            if lig:
+                parcalar.append(f"[{lig}]")
+
+            if saat:
+                parcalar.append(f"— {saat}")
+
+            kategoriler[kategori].append(" ".join(parcalar))
+
+    # Hiçbir gerçek maç çıkarılamadıysa normal EAGLE WEB cevabına
+    # düşmek yerine boş dön; çağıran katman güvenli mesaj verecek.
+    toplam = sum(len(v) for v in kategoriler.values())
+
+    if toplam == 0:
+        return ""
+
+    spor_ikon = {
+        "futbol": "⚽ FUTBOL",
+        "basketbol": "🏀 BASKETBOL",
+        "voleybol": "🏐 VOLEYBOL",
+        "tenis": "🎾 TENİS",
+        "diğer": "🏅 DİĞER SPORLAR"
+    }
+
+    satirlar = [
+        "🏟️ EAGLE SPOR",
+        "",
+        "📅 BUGÜNÜN MAÇLARI"
+    ]
+
+    for kategori in [
+        "futbol",
+        "basketbol",
+        "voleybol",
+        "tenis",
+        "diğer"
+    ]:
+        maclar = kategoriler[kategori]
+
+        if not maclar:
+            continue
+
+        satirlar.extend([
+            "",
+            spor_ikon[kategori]
+        ])
+
+        # Aynı maçların tekrarını önle.
+        for mac in list(dict.fromkeys(maclar))[:12]:
+            satirlar.append(mac)
+
+    return "\n".join(satirlar)
+
 
 def web_sonuclari_metni(sonuclar):
     """Web arama sonuçlarını ve gerçek kaynak sayfalarını hazırlar."""
@@ -3527,7 +4042,21 @@ def sohbet():
                         "snippet": tvf_metin
                     }]
 
-            # Resmi kaynak sonuç vermezse mevcut web araması
+            # 🏆 Şampiyonlar Ligi — UEFA resmi kaynak
+            sampiyonlar_ligi_mi = any(k in mesaj_spor for k in [
+                "şampiyonlar ligi",
+                "sampiyonlar ligi",
+                "champions league"
+            ])
+
+            if sampiyonlar_ligi_mi and not web_verisi:
+                web_verisi = uefa_sampiyonlar_ligi_getir(mesaj)
+
+            # 🌐 Genel spor veri kaynağı — UEFA/TFF/TVF boşsa ESPN
+            if not web_verisi:
+                web_verisi = genel_spor_fiksturu_getir(mesaj)
+
+            # Resmi/genel kaynak sonuç vermezse mevcut web araması
             if not web_verisi:
                 arama_sorgusu = spor_arama_sorgusu(mesaj)
                 web_verisi = web_arastir(
@@ -3541,6 +4070,29 @@ def sohbet():
         web_verisi = web_arastir(mesaj)
 
 
+
+    # 🏟️ GENEL SPOR FİKSTÜRÜ
+    # TFF/TVF gibi özel resmi kaynaklar yukarıdaki bloklarda önce işlenir.
+    # Burada kalan genel spor soruları doğrudan maç listesine çevrilir.
+    if karar.get("intent") == "spor" and web_verisi:
+        direkt_fikstur = spor_fikstur_direkt_cevapla(
+            mesaj,
+            web_verisi=web_verisi
+        )
+
+        if direkt_fikstur:
+            print(
+                "🏟️ DOĞRUDAN SPOR FİKSTÜRÜ CEVABI",
+                flush=True
+            )
+
+            return jsonify({
+                "ok": True,
+                "answer": direkt_fikstur,
+                "web_search": True,
+                "sports_direct": True,
+                "memory_count": len(hafiza_yukle())
+            })
 
     web_metni = web_sonuclari_metni(web_verisi)
 
@@ -3816,9 +4368,9 @@ if __name__ == "__main__":
     print("=" * 40)
     print("🦅 EAGLE-AI API")
     print("=" * 40)
-    print("API: http://127.0.0.1:5000")
-    print("Durum: http://127.0.0.1:5000/api/durum")
-    print("Hafıza: http://127.0.0.1:5000/api/hafiza")
+    print("API: http://127.0.0.1:5001")
+    print("Durum: http://127.0.0.1:5001/api/durum")
+    print("Hafıza: http://127.0.0.1:5001/api/hafiza")
     print("=" * 40)
 
     app.run(

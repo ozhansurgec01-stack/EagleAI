@@ -73,6 +73,8 @@ public class MainActivity extends Activity {
     private LinearLayout mesajAlani;
     private EditText mesajKutusu;
     private Uri secilenDosyaUri;
+    private LinearLayout onizlemeAlani;
+    private ImageView onizlemeResmi;
     private ScrollView kaydirma;
 
     private final List<JSONObject> gecmis = new ArrayList<>();
@@ -254,6 +256,48 @@ public class MainActivity extends Activity {
 
         alt.addView(gonder, gonderLp);
 
+
+        // 🖼️ RESİM ÖNİZLEME ÇUBUĞU (gönderilmeden önce)
+        onizlemeAlani = new LinearLayout(this);
+        onizlemeAlani.setOrientation(LinearLayout.HORIZONTAL);
+        onizlemeAlani.setGravity(Gravity.CENTER_VERTICAL);
+        onizlemeAlani.setPadding(12, 8, 12, 8);
+        onizlemeAlani.setBackgroundColor(Color.rgb(230, 230, 230));
+        onizlemeAlani.setVisibility(View.GONE);
+
+        onizlemeResmi = new ImageView(this);
+        onizlemeResmi.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        LinearLayout.LayoutParams onizlemeResimLp =
+                new LinearLayout.LayoutParams(70, 70);
+        onizlemeResimLp.setMargins(0, 0, 12, 0);
+        onizlemeAlani.addView(onizlemeResmi, onizlemeResimLp);
+
+        TextView onizlemeYazi = new TextView(this);
+        onizlemeYazi.setText("📷 Fotoğraf eklendi");
+        onizlemeYazi.setTextColor(Color.rgb(60, 60, 60));
+        LinearLayout.LayoutParams onizlemeYaziLp =
+                new LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        1
+                );
+        onizlemeAlani.addView(onizlemeYazi, onizlemeYaziLp);
+
+        Button onizlemeKaldir = new Button(this);
+        onizlemeKaldir.setText("✕");
+        onizlemeKaldir.setTextColor(Color.WHITE);
+        onizlemeKaldir.setBackgroundColor(Color.rgb(180, 60, 60));
+        onizlemeKaldir.setAllCaps(false);
+        LinearLayout.LayoutParams onizlemeKaldirLp =
+                new LinearLayout.LayoutParams(48, 48);
+        onizlemeKaldir.setOnClickListener(v -> {
+            secilenDosyaUri = null;
+            onizlemeAlani.setVisibility(View.GONE);
+        });
+        onizlemeAlani.addView(onizlemeKaldir, onizlemeKaldirLp);
+
+        ana.addView(onizlemeAlani);
+
         ana.addView(alt);
 
         dosya.setOnClickListener(v -> dosyaSec());
@@ -376,6 +420,9 @@ public class MainActivity extends Activity {
         }
 
         mesajAlani.addView(kullaniciMesaji);
+        final Uri gonderilecekResim = secilenDosyaUri;
+        secilenDosyaUri = null;
+        onizlemeAlani.setVisibility(View.GONE);
         gecmiseKaydet("Sen: " + mesaj);
           sohbeteMesajEkle("Sen: " + mesaj);
         mesajKutusu.setText("");
@@ -391,7 +438,7 @@ public class MainActivity extends Activity {
         );
 
         executor.execute(() -> {
-            String sonucCevap = geminiIstek(mesaj);
+            String sonucCevap = geminiIstek(mesaj, gonderilecekResim);
 
             if (sonucCevap == null) {
                 sonucCevap =
@@ -495,14 +542,14 @@ public class MainActivity extends Activity {
         }
     }
 
-    private String dosyaBase64() {
-        if (secilenDosyaUri == null) {
+    private String dosyaBase64(Uri uri) {
+        if (uri == null) {
             return null;
         }
 
         try {
             InputStream inputStream =
-                    getContentResolver().openInputStream(secilenDosyaUri);
+                    getContentResolver().openInputStream(uri);
 
             if (inputStream == null) {
                 return null;
@@ -563,7 +610,7 @@ public class MainActivity extends Activity {
 
 
 
-    private String geminiIstek(String mesaj) {
+    private String geminiIstek(String mesaj, Uri resimUri) {
 
         HttpURLConnection baglanti = null;
 
@@ -610,10 +657,10 @@ public class MainActivity extends Activity {
             body.put("history", history);
 
             // 📎 Seçilen dosyayı API'ye gönder
-            if (secilenDosyaUri != null) {
-                String dosya64 = dosyaBase64();
+            if (resimUri != null) {
+                String dosya64 = dosyaBase64(resimUri);
                 String mime = getContentResolver()
-                        .getType(secilenDosyaUri);
+                        .getType(resimUri);
 
                 if (dosya64 != null) {
                     body.put("file_base64", dosya64);
@@ -1881,6 +1928,9 @@ private void sohbetYukle(String id) {
                                 cacheDosya
                         );
 
+                        onizlemeResmi.setImageBitmap(foto);
+                        onizlemeAlani.setVisibility(View.VISIBLE);
+
                         Toast.makeText(
                                 this,
                                 "📷 Fotoğraf eklendi",
@@ -1944,6 +1994,11 @@ private void sohbetYukle(String id) {
 
             if (mime == null) {
                 mime = "application/octet-stream";
+            }
+
+            if (mime.startsWith("image/")) {
+                onizlemeResmi.setImageURI(uri);
+                onizlemeAlani.setVisibility(View.VISIBLE);
             }
 
             /*

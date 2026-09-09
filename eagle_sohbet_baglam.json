@@ -1,5 +1,5 @@
 {
   "aktif_borc_id": "5",
-  "aktif_kod": "x = 10 + 20",
+  "aktif_kod": "def kontrol_et(aktif):\n    if aktif == True:\n        print(\"Aktif\")\n    else:\n        print(\"Pasif\")\n\nkontrol_et(True)",
   "aktif_kod_dili": "python"
 }
