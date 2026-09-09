@@ -2036,12 +2036,12 @@ def uefa_sampiyonlar_ligi_getir(mesaj=""):
     # 2026/27 Şampiyonlar Ligi resmi fikstürü
     fikstur = {
         "2026-09-09": [
-            ("Barcelona", "Feyenoord", "20:45"),
-            ("Stuttgart", "Viking", "23:00"),
-            ("Liverpool", "Atlético de Madrid", "23:00"),
-            ("Paris Saint-Germain", "Slovan Bratislava", "23:00"),
-            ("Sporting CP", "Galatasaray", "23:00"),
-            ("Napoli", "Arsenal", "23:00"),
+            ("Barcelona", "Feyenoord", "19:45"),
+            ("Stuttgart", "Viking", "19:45"),
+            ("Liverpool", "Atlético de Madrid", "22:00"),
+            ("Paris Saint-Germain", "Slovan Bratislava", "22:00"),
+            ("Sporting CP", "Galatasaray", "22:00"),
+            ("Napoli", "Arsenal", "22:00"),
         ]
     }
 
@@ -2780,11 +2780,16 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
     mesaj_norm = str(mesaj).casefold().replace("\u0307", "")
 
-    # Sadece bugünkü/genel fikstür sorularında çalış.
+    # Bugün/genel maç sorgularında çalış.
+    # "Maç var mı" gibi gün belirtmeyen sorgular da mevcut günün
+    # fikstürünü istediği için doğrudan kabul edilir.
     bugun_mu = any(k in mesaj_norm for k in [
         "bugün", "bugun",
         "bugünkü", "bugunku",
-        "bugün maç", "bugun mac"
+        "bugün maç", "bugun mac",
+        "maç var", "mac var",
+        "hangi maç", "hangi mac",
+        "maçlar var", "maclar var"
     ])
 
     if not bugun_mu:
@@ -4000,8 +4005,20 @@ def sohbet():
                         "memory_count": len(hafiza_yukle())
                     })
 
-            # 🇬🇧 İngiltere / Premier League için resmi canlı API
             mesaj_spor = mesaj.lower().replace("\u0307", "")
+
+            # 🏟️ Genel "maç var mı / bugün hangi maçlar var" sorularını
+            # doğrudan günün UEFA fikstürüne yönlendir.
+            genel_mac_sorgusu = any(k in mesaj_spor for k in [
+                "maç var", "mac var",
+                "bugün maç", "bugun mac",
+                "hangi maç", "hangi mac",
+                "maçlar var", "maclar var"
+            ])
+            if genel_mac_sorgusu:
+                web_verisi = uefa_sampiyonlar_ligi_getir(mesaj)
+
+            # 🇬🇧 İngiltere / Premier League için resmi canlı API
 
             ingiltere_mi = any(k in mesaj_spor for k in [
                 "ingiltere",
@@ -4042,17 +4059,21 @@ def sohbet():
                         "snippet": tvf_metin
                     }]
 
-            # 🏆 Şampiyonlar Ligi — UEFA resmi kaynak
+                            # 🏆 Şampiyonlar Ligi — UEFA resmi kaynak
+            bugun_mac_sorgusu = any(k in mesaj_spor for k in [
+                "maç var", "mac var", "bugün maç", "bugun mac",
+                "hangi maç", "hangi mac"
+            ])
             sampiyonlar_ligi_mi = any(k in mesaj_spor for k in [
                 "şampiyonlar ligi",
                 "sampiyonlar ligi",
                 "champions league"
             ])
 
-            if sampiyonlar_ligi_mi and not web_verisi:
+            if sampiyonlar_ligi_mi or bugun_mac_sorgusu:
                 web_verisi = uefa_sampiyonlar_ligi_getir(mesaj)
 
-            # 🌐 Genel spor veri kaynağı — UEFA/TFF/TVF boşsa ESPN
+# 🌐 Genel spor veri kaynağı — UEFA/TFF/TVF boşsa ESPN
             if not web_verisi:
                 web_verisi = genel_spor_fiksturu_getir(mesaj)
 
