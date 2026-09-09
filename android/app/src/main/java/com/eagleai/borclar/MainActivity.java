@@ -342,7 +342,37 @@ public class MainActivity extends Activity {
 
         sonMesajZamani = System.currentTimeMillis();
 
-        mesajAlani.addView(mesajOlustur("Sen: " + mesaj));
+        LinearLayout kullaniciMesaji = mesajOlustur("Sen: " + mesaj);
+
+        if (secilenDosyaUri != null) {
+            try {
+                ImageView gonderilenResim = new ImageView(this);
+                gonderilenResim.setImageURI(secilenDosyaUri);
+                gonderilenResim.setAdjustViewBounds(true);
+                gonderilenResim.setScaleType(ImageView.ScaleType.FIT_CENTER);
+
+                int resimYukseklik = (int) (
+                        240 * getResources().getDisplayMetrics().density
+                );
+
+                LinearLayout.LayoutParams resimLp =
+                        new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                resimYukseklik
+                        );
+
+                resimLp.setMargins(0, 0, 0, 12);
+                kullaniciMesaji.addView(gonderilenResim, 0, resimLp);
+
+            } catch (Exception exc) {
+                android.util.Log.e(
+                        "EAGLE_IMAGE",
+                        "Mesaj resmi gösterilemedi: " + exc.getMessage()
+                );
+            }
+        }
+
+        mesajAlani.addView(kullaniciMesaji);
         gecmiseKaydet("Sen: " + mesaj);
           sohbeteMesajEkle("Sen: " + mesaj);
         mesajKutusu.setText("");
@@ -1839,7 +1869,6 @@ private void sohbetYukle(String id) {
                             );
                     resimLp.setMargins(18, 10, 18, 10);
 
-                    mesajAlani.addView(onizleme, resimLp);
 
                     kaydirma.post(() ->
                             kaydirma.fullScroll(View.FOCUS_DOWN)
@@ -1971,10 +2000,6 @@ private void sohbetYukle(String id) {
 
                     resimLp.setMargins(18, 10, 18, 10);
 
-                    mesajAlani.addView(
-                            onizleme,
-                            resimLp
-                    );
 
                     kaydirma.post(() ->
                             kaydirma.fullScroll(
