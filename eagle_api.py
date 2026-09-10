@@ -938,6 +938,41 @@ def hava_durumu_getir(mesaj):
 # DuckDuckGo HTML — ücretli API kullanılmaz
 # ============================================================
 
+def doviz_arama_sorgusu(mesaj):
+    """Döviz kuru sorularını arama motoru için net sorguya dönüştürür."""
+    metin = (mesaj or "").casefold().replace("\u0307", "").strip()
+
+    para_birimleri = {
+        "usd": "USD",
+        "dolar": "USD",
+        "eur": "EUR",
+        "euro": "EUR",
+        "gbp": "GBP",
+        "sterlin": "GBP",
+        "sterlinı": "GBP",
+        "sterlini": "GBP",
+    }
+
+    kur_istegi = any(
+        ifade in metin
+        for ifade in [
+            "kur", "kuru", "kaç tl", "kac tl",
+            "kaç lira", "kac lira", "tl", "lira"
+        ]
+    )
+
+    if not kur_istegi:
+        return mesaj
+
+    for ifade, kod in para_birimleri.items():
+        if ifade in metin:
+            if kod == "GBP":
+                return "1 Sterlin kaç TL"
+            return f"1 {kod} kaç TL"
+
+    return mesaj
+
+
 def spor_sorgusu_mu(mesaj):
     """Güncel spor ve maç programı sorularını algılar."""
     kelimeler = [
@@ -2418,6 +2453,16 @@ def web_arastir(sorgu, limit=6):
             for baslik in soup.select("li.b_algo h2"):
                 link = baslik.find("a")
 
+                # Bing güncel HTML yapısında bağlantı h2 içinde olmayabilir.
+                kapsayici = baslik.find_parent("li")
+
+                if not link and kapsayici:
+                    for aday in kapsayici.select("a[href]"):
+                        href = aday.get("href", "").strip()
+                        if href.startswith(("http://", "https://")):
+                            link = aday
+                            break
+
                 if not link:
                     continue
 
@@ -2426,8 +2471,6 @@ def web_arastir(sorgu, limit=6):
 
                 if not baslik_metni or not url:
                     continue
-
-                kapsayici = baslik.find_parent("li")
 
                 aciklama = None
                 if kapsayici:
@@ -4092,10 +4135,14 @@ def sohbet():
                     limit=8
                 )
         else:
-            web_verisi = web_arastir(mesaj)
+            arama_sorgusu = doviz_arama_sorgusu(mesaj)
+            web_verisi = web_arastir(arama_sorgusu)
 
     elif karar.get("arac") == "web_arastirma":
-        web_verisi = web_arastir(mesaj)
+        arama_sorgusu = doviz_arama_sorgusu(mesaj)
+        print(f"🌐 WEB SORGU: {arama_sorgusu!r}", flush=True)
+        web_verisi = web_arastir(arama_sorgusu)
+        print(f"🌐 WEB SONUÇ: {len(web_verisi)}", flush=True)
 
 
 

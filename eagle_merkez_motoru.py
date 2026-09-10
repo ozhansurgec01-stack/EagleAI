@@ -560,11 +560,23 @@ class EagleMerkezMotoru:
         )
 
         if kur_sorusu:
-            kur_kalibi = re.compile(
+            # Öncelik 1: "1 EUR = 56,4698 TL" gibi doğrudan eşitlik.
+            kur_esitlik = re.compile(
                 r"\b1\s*([A-Z]{3})\s*=\s*"
                 r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,4})?"
                 r"|\d+(?:[.,]\d+)?)"
                 r"\s*(TL|₺|TRY)\b",
+                flags=re.IGNORECASE
+            )
+
+            # Öncelik 2: "1 Euro ... 56,4698 TL" gibi arama sonucu.
+            kur_deger = re.compile(
+                r"\b(?:1\s*)?"
+                r"(?:USD|EUR|GBP|DOLAR|EURO|STERLİN|STERLIN)"
+                r"\b.{0,120}?"
+                r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,4})?"
+                r"|\d+(?:[.,]\d+)?)"
+                r"\s*(TL|₺|TRY|TÜRK LİRASI|TURK LIRASI)\b",
                 flags=re.IGNORECASE
             )
 
@@ -577,11 +589,19 @@ class EagleMerkezMotoru:
                     for alan in ("title", "snippet", "text")
                 ).strip()
 
-                eslesme = kur_kalibi.search(metin)
-
+                # Önce kesin eşitlik biçimini dene.
+                eslesme = kur_esitlik.search(metin)
                 if eslesme:
                     return (
                         f"{eslesme.group(2)} {eslesme.group(3)}",
+                        0.82
+                    )
+
+                # Sonra doğal dildeki kur değerini dene.
+                eslesme = kur_deger.search(metin)
+                if eslesme:
+                    return (
+                        f"{eslesme.group(1)} TL",
                         0.82
                     )
 
