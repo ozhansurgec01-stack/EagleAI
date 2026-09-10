@@ -2840,21 +2840,53 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
             )
 
             puan = 0
+            cevre_norm = norm(cevre)
+            kaynak_norm2 = norm(kaynak)
 
-            # Güncel sonuç ifadesi güçlü kanıt.
+            # Açık sonuç ifadesi güçlü kanıt.
             if kazandi:
                 puan += 100
 
-            # Takım adı skorun yakınında ise güçlendir.
-            if takim_norm in norm(cevre):
+            # Hedef takım skorun çevresindeyse güçlendir.
+            if takim_norm in cevre_norm:
                 puan += 50
 
             # "son maç", "maç sonucu", "kaç kaç bitti" gibi ifadeler.
-            if any(k in norm(cevre) for k in [
+            if any(k in cevre_norm for k in [
                 "son maç", "son mac", "maç sonucu", "mac sonucu",
                 "kaç kaç", "kac kac", "bitti", "kazandı", "kazandi"
             ]):
                 puan += 30
+
+            # Skor başlıkta açık biçimde geçiyorsa güçlü kanıt.
+            # Örn: "MAÇ SONUCU: Sporting Lizbon 3-1 Galatasaray"
+            skor_metinleri = (
+                f"{a}-{b}",
+                f"{a} - {b}",
+                f"{a}–{b}",
+                f"{a}—{b}"
+            )
+            if any(x in kaynak_norm2[:180] for x in skor_metinleri):
+                puan += 80
+
+            # Güncellik en güçlü kriterlerden biridir.
+            # Son saatlerde yayımlanan sonuç, eski maç sonucunu geçmelidir.
+            if any(k in kaynak_norm2 for k in [
+                "dakika önce", "dakika once",
+                "saat önce", "saat once",
+                "bugün", "bugun"
+            ]):
+                puan += 300
+            elif "1 gün önce" in kaynak_norm2 or "1 gun once" in kaynak_norm2:
+                puan += 220
+            elif "2 gün önce" in kaynak_norm2 or "2 gun once" in kaynak_norm2:
+                puan += 150
+            elif "3 gün önce" in kaynak_norm2 or "3 gun once" in kaynak_norm2:
+                puan += 100
+            elif "4 gün önce" in kaynak_norm2 or "4 gun once" in kaynak_norm2:
+                puan += 50
+            elif "5 gün önce" in kaynak_norm2 or "5 gun once" in kaynak_norm2:
+                puan += 20
 
             adaylar.append((puan, a, b, cevre))
 
@@ -2866,37 +2898,51 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
 
     _, a, b, cevre = adaylar[0]
 
-    # Kaynak cümlesinde "Sporting Lizbon 3-1 kazandı" gibi
-    # açık bir takım + skor ifadesi varsa rakibi çıkar.
-    acik = re.search(
-        r"([A-Za-zÇĞİÖŞÜçğıöşü0-9]+(?:\s+[A-Za-zÇĞİÖŞÜçğıöşü0-9]+){0,3})"
-        r"\s+" + re.escape(a) +
-        r"\s*[-–—:]\s*" + re.escape(b) +
-        r"\s+kazand",
-        cevre,
-        re.IGNORECASE
-    )
+    # Rakibi kaynak cümlesinden çıkar; hedef takımla aynı olmasını kesinlikle engelle.
+    # Skorun çevresindeki bilinen takımları aday olarak değerlendir.
+    takim_normlari = [(norm(t), t) for t in takimlar if norm(t) != takim_norm]
 
-    if acik:
-        rakip = acik.group(1).strip()
-        if norm(rakip) != takim_norm:
-            return f"{rakip.title()} {a} - {takim} {b}"
+    for rakip_norm, rakip_adi in takim_normlari:
+        rakip_eslesme = re.search(
+            re.escape(rakip_norm),
+            norm(cevre),
+            re.IGNORECASE
+        )
+        if not rakip_eslesme:
+            continue
+
+        # Rakip ile hedef takım aynı olamaz.
+        if rakip_norm == takim_norm:
+            continue
+
+        # Aynı çevrede rakip + skor bulunuyorsa sonucu kabul et.
+        skor_konumu = cevre.find(f"{a}-{b}")
+        if skor_konumu < 0:
+            skor_konumu = cevre.find(f"{a} - {b}")
+        if skor_konumu < 0:
+            skor_konumu = cevre.find(f"{a}–{b}")
+        if skor_konumu < 0:
+            continue
+
+        rakip_konumu = rakip_eslesme.start()
+        uzaklik = abs(rakip_konumu - skor_konumu)
+
+        if uzaklik <= 180:
+            return f"{rakip_adi} {a} - {takim} {b}"
 
     # Ters yönde: Galatasaray 1-3 Sporting Lizbon
-    acik_ters = re.search(
-        re.escape(takim) +
-        r"\s+" + re.escape(a) +
-        r"\s*[-–—:]\s*" + re.escape(b) +
-        r"\s+([A-Za-zÇĞİÖŞÜçğıöşü0-9]+(?:\s+[A-Za-zÇĞİÖŞÜçğıöşü0-9]+){0,3})"
-        r"\s+kazand",
-        cevre,
-        re.IGNORECASE
-    )
+    for rakip_norm, rakip_adi in takim_normlari:
+        if rakip_norm == takim_norm:
+            continue
 
-    if acik_ters:
-        rakip = acik_ters.group(1).strip()
-        if norm(rakip) != takim_norm:
-            return f"{takim} {a} - {rakip.title()} {b}"
+        if re.search(
+            re.escape(takim_norm) + r".{0,80}" +
+            re.escape(a) + r"\s*[-–—:]\s*" + re.escape(b) +
+            r".{0,80}" + re.escape(rakip_norm) + r"\s+kazand",
+            norm(cevre),
+            re.IGNORECASE
+        ):
+            return f"{takim} {a} - {rakip_adi} {b}"
 
     # Rakip çıkarılamazsa en azından takımın skorunu döndürme;
     # merkez motorun tek sayı cevabına düşmesini engelle.
@@ -4246,7 +4292,17 @@ def sohbet():
         and any(x in mesaj_spor_sonuc for x in ["sonuç", "sonuc", "skor"])
     )
 
-    if karar.get("intent") == "spor" and web_verisi and not super_lig_sonuc:
+    if (
+        karar.get("intent") == "spor"
+        and web_verisi
+        and not super_lig_sonuc
+        and not any(k in (mesaj or "").lower() for k in [
+            "kaç kaç", "kac kac",
+            "maç sonucu", "mac sonucu",
+            "son maç", "son mac",
+            "skor", "sonuç", "sonuc"
+        ])
+    ):
         direkt_fikstur = spor_fikstur_direkt_cevapla(
             mesaj,
             web_verisi=web_verisi
