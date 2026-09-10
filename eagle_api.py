@@ -2747,83 +2747,160 @@ def spor_skoru_cikar(metin):
 
 
 def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
-    """Voleybol ve diğer spor maç sonuçlarını kaynak metninden otomatik çıkarır."""
+    """Spor maç sonuçlarını web kaynaklarından güvenilir biçimde çıkarır."""
     import re
 
     if not mesaj:
         return ""
 
     takimlar = [
-        "Galatasaray","Fenerbahçe","Beşiktaş","Trabzonspor","Başakşehir",
-        "Kasımpaşa","Antalyaspor","Alanyaspor","Adana Demirspor",
-        "Gaziantep FK","Kayserispor","Konyaspor","Samsunspor",
-        "Çaykur Rizespor","Rizespor","Göztepe","Eyüpspor",
-        "Gençlerbirliği","Bodrum FK","Eintracht Frankfurt",
-        "Türkiye","İtalya"
+        "Galatasaray", "Fenerbahçe", "Beşiktaş", "Trabzonspor", "Başakşehir",
+        "Kasımpaşa", "Antalyaspor", "Alanyaspor", "Adana Demirspor",
+        "Gaziantep FK", "Kayserispor", "Konyaspor", "Samsunspor",
+        "Çaykur Rizespor", "Rizespor", "Göztepe", "Eyüpspor",
+        "Gençlerbirliği", "Bodrum FK", "Eintracht Frankfurt",
+        "Sporting Lizbon", "Sporting CP", "Türkiye", "İtalya"
     ]
 
     def norm(x):
-        return (str(x or "").lower()
-                .replace("\u0307","")
-                .replace("ı","i").replace("ğ","g").replace("ü","u")
-                .replace("ş","s").replace("ö","o").replace("ç","c"))
+        return (
+            str(x or "").casefold()
+            .replace("\u0307", "")
+            .replace("ı", "i").replace("ğ", "g")
+            .replace("ü", "u").replace("ş", "s")
+            .replace("ö", "o").replace("ç", "c")
+        )
 
-    mesaj_norm=norm(mesaj)
+    mesaj_norm = norm(mesaj)
 
-    bulunan=[]
+    # Kullanıcının sorduğu takımı bul.
+    bulunan = []
     for takim in takimlar:
-        m=re.search(re.escape(norm(takim)),mesaj_norm)
+        m = re.search(re.escape(norm(takim)), mesaj_norm)
         if m:
-            bulunan.append((m.start(),takim))
+            bulunan.append((m.start(), takim))
 
-    bulunan.sort(key=lambda x:x[0])
+    bulunan.sort(key=lambda x: x[0])
 
-    if len(bulunan)<2:
+    if not bulunan:
         return ""
 
-    takim1=bulunan[0][1]
-    takim2=bulunan[1][1]
-    t1=norm(takim1)
-    t2=norm(takim2)
+    takim = bulunan[0][1]
+    takim_norm = norm(takim)
 
-    kaynak=norm(metin)
+    # Web kaynaklarını gerçekten kullan.
+    kaynaklar = []
 
-    # Kaynakta iki takımın arasındaki ayraçları esnek kabul et.
-    # Örnek: italya-turkiye: 2-3
-    #        türkiye 3-2 italya
-    #        türkiye: 3 - 2 italya
-    ayirici=r"(?:\s*[-–—:]\s*|\s+)"
+    if web_verisi:
+        for x in web_verisi:
+            if not isinstance(x, dict):
+                continue
 
-    kaliplar=[
-        (rf"{re.escape(t1)}{ayirici}(\d{{1,2}})\s*[-:]\s*(\d{{1,2}}){ayirici}{re.escape(t2)}",False),
-        (rf"{re.escape(t2)}{ayirici}(\d{{1,2}})\s*[-:]\s*(\d{{1,2}}){ayirici}{re.escape(t1)}",True),
-    ]
+            baslik = str(x.get("baslik", "") or "")
+            icerik = str(
+                x.get("icerik",
+                x.get("snippet",
+                x.get("metin", ""))) or ""
+            )
 
-    for kalip,ters in kaliplar:
-        m=re.search(kalip,kaynak)
-        if m:
-            a,b=m.groups()
-            if ters:
-                return f"{takim1} {b} - {takim2} {a}"
-            return f"{takim1} {a} - {takim2} {b}"
+            birlesik = f"{baslik} {icerik}".strip()
+            if birlesik:
+                kaynaklar.append(birlesik)
 
-    # Türkiye-İtalya gibi kaynaklarda skor bazen takım isimlerinden sonra
-    # iki nokta ile gelir: "italya-türkiye: 2-3"
-    kompakt=[
-        (rf"{re.escape(t1)}\s*[-–—]\s*{re.escape(t2)}\s*:\s*(\d{{1,2}})\s*[-:]\s*(\d{{1,2}})",False),
-        (rf"{re.escape(t2)}\s*[-–—]\s*{re.escape(t1)}\s*:\s*(\d{{1,2}})\s*[-:]\s*(\d{{1,2}})",True),
-    ]
+    if metin:
+        kaynaklar.append(str(metin))
 
-    for kalip,ters in kompakt:
-        m=re.search(kalip,kaynak)
-        if m:
-            a,b=m.groups()
-            if ters:
-                return f"{takim1} {b} - {takim2} {a}"
-            return f"{takim1} {a} - {takim2} {b}"
+    if not kaynaklar:
+        return ""
 
+    # Önce en güncel ve açık "takım X-Y kazandı" ifadelerini ara.
+    adaylar = []
+
+    for kaynak in kaynaklar:
+        kaynak_norm = norm(kaynak)
+
+        if takim_norm not in kaynak_norm:
+            continue
+
+        for m in re.finditer(r"(\d{1,2})\s*[-–—:]\s*(\d{1,2})", kaynak):
+            a, b = m.groups()
+            baslangic = max(0, m.start() - 180)
+            bitis = min(len(kaynak), m.end() + 220)
+            cevre = kaynak[baslangic:bitis]
+
+            # "X 3-1 kazandı" / "3-1 kazandı" gibi açık sonuç.
+            kazandi = re.search(
+                r"([^.!?\n]{0,100}?)\b"
+                + re.escape(a)
+                + r"\s*[-–—:]\s*"
+                + re.escape(b)
+                + r"\s+kazand",
+                cevre,
+                re.IGNORECASE
+            )
+
+            puan = 0
+
+            # Güncel sonuç ifadesi güçlü kanıt.
+            if kazandi:
+                puan += 100
+
+            # Takım adı skorun yakınında ise güçlendir.
+            if takim_norm in norm(cevre):
+                puan += 50
+
+            # "son maç", "maç sonucu", "kaç kaç bitti" gibi ifadeler.
+            if any(k in norm(cevre) for k in [
+                "son maç", "son mac", "maç sonucu", "mac sonucu",
+                "kaç kaç", "kac kac", "bitti", "kazandı", "kazandi"
+            ]):
+                puan += 30
+
+            adaylar.append((puan, a, b, cevre))
+
+    if not adaylar:
+        return ""
+
+    # En güçlü adayı seç.
+    adaylar.sort(key=lambda x: x[0], reverse=True)
+
+    _, a, b, cevre = adaylar[0]
+
+    # Kaynak cümlesinde "Sporting Lizbon 3-1 kazandı" gibi
+    # açık bir takım + skor ifadesi varsa rakibi çıkar.
+    acik = re.search(
+        r"([A-Za-zÇĞİÖŞÜçğıöşü0-9]+(?:\s+[A-Za-zÇĞİÖŞÜçğıöşü0-9]+){0,3})"
+        r"\s+" + re.escape(a) +
+        r"\s*[-–—:]\s*" + re.escape(b) +
+        r"\s+kazand",
+        cevre,
+        re.IGNORECASE
+    )
+
+    if acik:
+        rakip = acik.group(1).strip()
+        if norm(rakip) != takim_norm:
+            return f"{rakip.title()} {a} - {takim} {b}"
+
+    # Ters yönde: Galatasaray 1-3 Sporting Lizbon
+    acik_ters = re.search(
+        re.escape(takim) +
+        r"\s+" + re.escape(a) +
+        r"\s*[-–—:]\s*" + re.escape(b) +
+        r"\s+([A-Za-zÇĞİÖŞÜçğıöşü0-9]+(?:\s+[A-Za-zÇĞİÖŞÜçğıöşü0-9]+){0,3})"
+        r"\s+kazand",
+        cevre,
+        re.IGNORECASE
+    )
+
+    if acik_ters:
+        rakip = acik_ters.group(1).strip()
+        if norm(rakip) != takim_norm:
+            return f"{takim} {a} - {rakip.title()} {b}"
+
+    # Rakip çıkarılamazsa en azından takımın skorunu döndürme;
+    # merkez motorun tek sayı cevabına düşmesini engelle.
     return ""
-
 def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
     """Bugünkü spor fikstürünü kaynaklardan ayıklayıp kategori bazında doğrudan cevaplar."""
     import re
@@ -4128,10 +4205,19 @@ def sohbet():
                 web_verisi = uefa_sampiyonlar_ligi_getir(mesaj)
 
 # 🌐 Genel spor veri kaynağı — UEFA/TFF/TVF boşsa ESPN
+            # 🏟️ Geçmiş/son maç sonucu sorularında önce çoklu web araması.
+            if gecmis_mac:
+                arama_sorgusu = spor_arama_sorgusu(mesaj)
+                web_verisi = web_arastir(
+                    arama_sorgusu,
+                    limit=8
+                )
+
+            # Yapılandırılmış spor verisi yalnızca sonuç sorusu değilse.
             if not web_verisi:
                 web_verisi = genel_spor_fiksturu_getir(mesaj)
 
-            # Resmi/genel kaynak sonuç vermezse mevcut web araması
+            # Resmi/genel kaynak sonuç vermezse mevcut web araması.
             if not web_verisi:
                 arama_sorgusu = spor_arama_sorgusu(mesaj)
                 web_verisi = web_arastir(
