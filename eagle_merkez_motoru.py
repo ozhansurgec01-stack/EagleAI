@@ -937,6 +937,325 @@ class EagleMerkezMotoru:
         return None, 0.0
 
     @classmethod
+    def genel_doviz_cevabi(cls, mesaj, veriler, web_arayici=None):
+        """
+        Genel döviz sorgusunda USD, EUR ve GBP değerlerini ayrı ayrı çıkarır.
+        Tekil kur sorgularının mevcut akışına dokunmaz.
+        """
+        mesaj_norm = cls.normalize(mesaj)
+
+        genel_doviz = bool(
+            re.search(
+                r"\bdoviz\b|\bdöviz\b|\bdövizleri\b|"
+                r"\bdöviz kurları\b|\bdöviz kuru\b|"
+                r"\bdolar\b|\beuro\b|\bstерlin\b|\bsterlin\b|"
+                r"\busd\b|\beur\b|\bgbp\b",
+                mesaj_norm,
+                flags=re.IGNORECASE
+            )
+        )
+
+        if not genel_doviz:
+            return None, 0.0
+
+        para_birimleri = (
+            ("USD", ("usd", "dolar")),
+            ("EUR", ("eur", "euro")),
+            ("GBP", ("gbp", "sterlin")),
+        )
+
+        # Tekil para birimi sorusunda yalnızca istenen kuru çıkar.
+        tekil_kod = None
+        for kod, adlar in para_birimleri:
+            if any(re.search(r"\b" + re.escape(ad) + r"\b", mesaj_norm, re.IGNORECASE) for ad in adlar):
+                tekil_kod = kod
+                break
+
+        if tekil_kod:
+            para_birimleri = tuple(
+                item for item in para_birimleri if item[0] == tekil_kod
+            )
+
+        def kur_cikar(sonuclar, kod, adlar):
+            """Güncel kur değerini para birimine göre ve tarih kontrolüyle seçer."""
+            from datetime import datetime
+
+            isimler = tuple(dict.fromkeys((kod,) + tuple(adlar)))
+
+            kur_re = re.compile(
+                r"\b1\s*(?:" +
+                "|".join(re.escape(x) for x in isimler) +
+                r")\s*(?:=|→|->|:)\s*" +
+                r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,4})?|" +
+                r"\d+(?:[.,]\d+)?)\s*(?:TL|₺|TRY)\b",
+                flags=re.IGNORECASE
+            )
+
+            genel_re = re.compile(
+                r"\b(?:" +
+                "|".join(re.escape(x) for x in isimler) +
+                r")\b.{0,100}?" +
+                r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,4})?|" +
+                r"\d+(?:[.,]\d+)?)\s*(?:TL|₺|TRY)\b",
+                flags=re.IGNORECASE
+            )
+
+            yil_re = re.compile(r"\b(?:19|20)\d{2}\b")
+
+            def sayi(metin):
+                x = str(metin).strip().replace(" ", "")
+
+                try:
+                    if "," in x and "." in x:
+                        if x.rfind(",") > x.rfind("."):
+                            x = x.replace(".", "").replace(",", ".")
+                        else:
+                            x = x.replace(",", "")
+
+                    elif "," in x:
+                        parca = x.split(",")
+                        if len(parca) == 2 and len(parca[1]) <= 4:
+                            x = x.replace(",", ".")
+                        else:
+                            x = x.replace(",", "")
+
+                    elif "." in x:
+                        parca = x.split(".")
+                        if not (len(parca) == 2 and len(parca[1]) <= 4):
+                            x = x.replace(".", "")
+
+                    return float(x)
+
+                except (TypeError, ValueError):
+                    return None
+
+            adaylar = []
+
+            for veri in sonuclar or []:
+                metin = " ".join(
+                    str(veri.get(k, "") or "")
+                    for k in ("title", "snippet", "text")
+                ).strip()
+
+                if not metin:
+                    continue
+
+                kaynak = str(
+                    veri.get("url", "") or veri.get("title", "")
+                ).strip()
+
+                if not kaynak:
+                    continue
+
+                # Açıkça geçmiş yıllara ait sonuçları kullanma.
+                yillar = [int(x) for x in yil_re.findall(metin)]
+
+                if any(y < datetime.now().year for y in yillar):
+                    continue
+
+                eslesmeler = list(kur_re.finditer(metin))
+
+                if not eslesmeler:
+                    eslesmeler = list(genel_re.finditer(metin))
+
+                for eslesme in eslesmeler:
+                    gorunen = eslesme.group(1)
+                    deger = sayi(gorunen)
+
+                    if deger is None or not (1 <= deger <= 1000):
+                        continue
+
+                    baslangic = max(0, eslesme.start() - 100)
+                    bitis = min(len(metin), eslesme.end() + 100)
+                    baglam = metin[baslangic:bitis].casefold()
+
+                    dogrudan = bool(
+                        re.search(
+                            r"\b1\s*(?:" +
+                            "|".join(re.escape(x) for x in isimler) +
+                            r")\s*(?:=|→|->|:)",
+                            baglam,
+                            flags=re.IGNORECASE
+                        )
+                    )
+
+                    guncel = bool(
+                        re.search(
+                            r"bugün|bugun|güncel|guncel|anlık|anlik|"
+                            r"canlı|canli|şimdi|simdi|"
+                            r"saat önce|saat once|"
+                            r"gün önce|gun once|"
+                            r"dakika önce|dakika once|"
+                            r"2026",
+                            baglam,
+                            flags=re.IGNORECASE
+                        )
+                    )
+
+                    adaylar.append({
+                        "deger": deger,
+                        "gorunen": gorunen,
+                        "kaynak": kaynak,
+                        "dogrudan": dogrudan,
+                        "guncel": guncel,
+                    })
+
+            if not adaylar:
+                return None, 0
+
+            benzersiz = {}
+
+            for aday in adaylar:
+                anahtar = (
+                    aday["kaynak"],
+                    round(aday["deger"], 6)
+                )
+
+                if anahtar not in benzersiz:
+                    benzersiz[anahtar] = aday
+                else:
+                    benzersiz[anahtar]["dogrudan"] |= aday["dogrudan"]
+                    benzersiz[anahtar]["guncel"] |= aday["guncel"]
+
+            adaylar = list(benzersiz.values())
+
+            # Birbirine çok yakın değerleri aynı kur grubu kabul et.
+            kumeler = []
+
+            for aday in sorted(adaylar, key=lambda x: x["deger"]):
+                eklendi = False
+
+                for kume in kumeler:
+                    merkez = sum(
+                        x["deger"] for x in kume
+                    ) / len(kume)
+
+                    fark = (
+                        abs(aday["deger"] - merkez)
+                        / max(merkez, 1)
+                    )
+
+                    if fark <= 0.01:
+                        kume.append(aday)
+                        eklendi = True
+                        break
+
+                if not eklendi:
+                    kumeler.append([aday])
+
+            def skor(kume):
+                kaynak = len({
+                    x["kaynak"] for x in kume
+                })
+
+                guncel = sum(
+                    1 for x in kume if x["guncel"]
+                )
+
+                dogrudan = sum(
+                    1 for x in kume if x["dogrudan"]
+                )
+
+                return (
+                    kaynak * 100
+                    + guncel * 10
+                    + dogrudan * 5
+                )
+
+            en_iyi = max(kumeler, key=skor)
+
+            kaynak_sayisi = len({
+                x["kaynak"] for x in en_iyi
+            })
+
+            # Tek kaynakta da doğru para birimini koru.
+            # Gerçek web araması yapıldığında ek kaynaklar ayrıca toplanır.
+            if kaynak_sayisi < 1:
+                return None, 0
+
+            secilen = max(
+                en_iyi,
+                key=lambda x: (
+                    1 if x["guncel"] else 0,
+                    1 if x["dogrudan"] else 0,
+                    x["deger"]
+                )
+            )
+
+            return (
+                secilen["gorunen"].replace(" ", ""),
+                kaynak_sayisi
+            )
+
+        bulunan = {}
+
+        for kod, adlar in para_birimleri:
+            deger, kaynak_sayisi = kur_cikar(
+                veriler,
+                kod,
+                adlar
+            )
+
+            if deger:
+                bulunan[kod] = (deger, kaynak_sayisi)
+
+        if web_arayici:
+            sorgular = {
+                "USD": "1 USD kaç TL bugün 10.09.2026",
+                "EUR": "1 EUR kaç TL bugün 10.09.2026",
+                "GBP": "1 GBP kaç TL bugün 10.09.2026",
+            }
+
+            for kod, adlar in para_birimleri:
+                try:
+                    ek_veriler = web_arayici(
+                        sorgular[kod],
+                        limit=6
+                    )
+                except Exception as hata:
+                    print(
+                        "⚠️ Merkezi motor döviz ek arama hatası:",
+                        hata,
+                        flush=True
+                    )
+                    ek_veriler = []
+
+                deger, kaynak_sayisi = kur_cikar(
+                    ek_veriler,
+                    kod,
+                    adlar
+                )
+
+                if deger:
+                    bulunan[kod] = (deger, kaynak_sayisi)
+
+        # Tekil kur sorgusunda bir para birimi yeterlidir.
+        # Genel döviz sorgusunda en az iki para birimi gerekir.
+        if tekil_kod:
+            if tekil_kod not in bulunan:
+                return None, 0.0
+        elif len(bulunan) < 2:
+            return None, 0.0
+
+        sirali = []
+
+        for kod in ("USD", "EUR", "GBP"):
+            if kod in bulunan:
+                deger, _ = bulunan[kod]
+                sirali.append(f"{kod}: {deger} TL")
+
+        if not sirali:
+            return None, 0.0
+
+        toplam_kaynak = sum(
+            bulunan[kod][1]
+            for kod in bulunan
+        )
+
+        guven = 0.90 if toplam_kaynak >= 6 else 0.82
+
+        return " | ".join(sirali), guven
+
     def kaynak_ozeti(cls, veriler):
         """
         Kaynak sayısını ve farklı domainleri hesaplar.
@@ -1028,7 +1347,30 @@ class EagleMerkezMotoru:
                 neden="Kullanılabilir web verisi yok."
             )
 
-        # 4. Kısa sayısal/güncel cevap adayı.
+        # 4. Genel döviz isteğini tekil sayı çıkarımından önce ele.
+        doviz_cevap, doviz_guven = self.genel_doviz_cevabi(
+            mesaj,
+            veriler,
+            web_arayici=web_arayici
+        )
+
+        if doviz_cevap and doviz_guven >= 0.75:
+            return EagleMerkezSonuc(
+                ok=True,
+                cevap=doviz_cevap,
+                guven=doviz_guven,
+                kaynak_sayisi=(
+                    kaynak_ozet["kaynak_sayisi"]
+                ),
+                gemini_gerekli=False,
+                kaynak_goster=False,
+                neden=(
+                    "Genel döviz isteğinde birden fazla "
+                    "para biriminin güncel değeri çıkarıldı."
+                )
+            )
+
+        # 5. Kısa sayısal/güncel cevap adayı.
         if self.deger_sorusu_mu(mesaj):
             cevap, guven = self.net_sayisal_cevap(
                 mesaj,

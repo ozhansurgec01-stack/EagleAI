@@ -970,6 +970,10 @@ def doviz_arama_sorgusu(mesaj):
                 return "1 Sterlin kaç TL"
             return f"1 {kod} kaç TL"
 
+    # Genel döviz isteğinde üç ana para birimini birlikte araştır.
+    if any(x in metin for x in ["döviz", "doviz"]):
+        return "1 USD kaç TL 1 EUR kaç TL 1 GBP kaç TL"
+
     return mesaj
 
 
