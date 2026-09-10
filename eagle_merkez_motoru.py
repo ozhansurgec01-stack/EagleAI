@@ -543,6 +543,49 @@ class EagleMerkezMotoru:
         # -------------------------------------------------
         mesaj_norm = cls.normalize(mesaj)
 
+          # -------------------------------------------------
+        # 2.1) Kur sorularında doğrudan "1 PARA = DEĞER TL"
+        # kalıbını yakala.
+        # Örn: 1 EUR = 56,1200 TL
+        # Baz değer yerine kur karşılığını döndür.
+        # Para birimi hardcode edilmez.
+        # -------------------------------------------------
+        kur_sorusu = bool(
+            re.search(
+                r"\bkur\b|\bkuru\b|\bkaç tl\b|"
+                r"\bkac tl\b|\bkaç lira\b|\bkac lira\b",
+                mesaj_norm,
+                flags=re.IGNORECASE
+            )
+        )
+
+        if kur_sorusu:
+            kur_kalibi = re.compile(
+                r"\b1\s*([A-Z]{3})\s*=\s*"
+                r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,4})?"
+                r"|\d+(?:[.,]\d+)?)"
+                r"\s*(TL|₺|TRY)\b",
+                flags=re.IGNORECASE
+            )
+
+            for veri in veriler:
+                if not isinstance(veri, dict):
+                    continue
+
+                metin = " ".join(
+                    str(veri.get(alan, "") or "")
+                    for alan in ("title", "snippet", "text")
+                ).strip()
+
+                eslesme = kur_kalibi.search(metin)
+
+                if eslesme:
+                    return (
+                        f"{eslesme.group(2)} {eslesme.group(3)}",
+                        0.82
+                    )
+
+
         hedef_birimler = []
 
         if re.search(
@@ -720,6 +763,18 @@ class EagleMerkezMotoru:
             hedef_birim_puani = 0
             yakin_birim_puani = 0
             ondalik_puani = 0
+            kur_karsilik_puani = 0
+
+            # Kur/değer sorularında eşitlik ifadesinin
+            # karşılığındaki sayıyı önceliklendir.
+            kur_sorusu = bool(
+                re.search(
+                    r"\bkur\b|\bkuru\b|\bkaç tl\b|"
+                    r"\bkac tl\b|\bkaç lira\b|\bkac lira\b",
+                    mesaj_norm,
+                    flags=re.IGNORECASE
+                )
+            )
 
             for aday in grup:
                 if aday["yakin_birim"]:
@@ -742,7 +797,29 @@ class EagleMerkezMotoru:
                         1
                     )
 
+                if kur_sorusu and aday["birim"]:
+                    baglam_norm = cls.normalize(
+                        aday["baglam"]
+                    )
+
+                    deger_norm = cls.normalize(
+                        aday["deger"]
+                    )
+
+                    # "1 USD = 48,4947 TL" gibi ifadelerde
+                    # eşitliğin sağındaki/karşılığındaki değeri yakala.
+                    if re.search(
+                        r"=.{0,80}" + re.escape(deger_norm),
+                        baglam_norm,
+                        flags=re.IGNORECASE
+                    ):
+                        kur_karsilik_puani = max(
+                            kur_karsilik_puani,
+                            20
+                        )
+
             puan = (
+                kur_karsilik_puani,
                 hedef_birim_puani,
                 yakin_birim_puani,
                 ondalik_puani,
@@ -774,9 +851,18 @@ class EagleMerkezMotoru:
                 if x["yakin_birim"]
             ]
 
+            # Kur sorularında eşitliğin karşılığındaki
+            # gerçek değeri, baz birimden önce seç.
+            if kur_sorusu and puan[0] >= 20:
+                secilen = (
+                    hedef_birimli[0]
+                    if hedef_birimli
+                    else yakin_birimli[0]
+                )
+
             # Kullanıcı belirli bir birim istediyse
             # başka birimin sayısını seçme.
-            if hedef_birimler:
+            elif hedef_birimler:
                 if not hedef_birimli:
                     continue
 

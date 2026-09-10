@@ -1592,7 +1592,7 @@ def web_arastirma_gerekli(mesaj):
         "skor", "puan durumu",
         "bitcoin", "btc", "ethereum",
         "altın", "gram altın",
-        "dolar", "euro",
+        "dolar", "euro", "sterlin",
         "en son", "son durum",
         "ne oldu",
         "araştır", "arastir",
@@ -2452,6 +2452,10 @@ def web_arastir(sorgu, limit=6):
     try:
         sorgu = sorgu[:400]
 
+        # 🧠 Tüm başarılı arama kaynaklarını tek havuzda topla.
+        # Bir kaynak başarısız olsa bile diğerleri devam eder.
+        tum_sonuclar = []
+
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Linux; Android 15) "
@@ -2500,7 +2504,7 @@ def web_arastir(sorgu, limit=6):
                         f"✅ DuckDuckGo: {len(sonuclar)} sonuç",
                         flush=True
                     )
-                    return sonuclar
+                    tum_sonuclar.extend(sonuclar)
 
         except Exception as e:
             print(
@@ -2552,7 +2556,7 @@ def web_arastir(sorgu, limit=6):
                 )
 
                 if sonuclar:
-                    return sonuclar
+                    tum_sonuclar.extend(sonuclar)
 
         except Exception as e:
             print(
@@ -2603,13 +2607,20 @@ def web_arastir(sorgu, limit=6):
                     flush=True
                 )
 
-                return sonuclar
+                tum_sonuclar.extend(sonuclar)
 
         except Exception as e:
             print(
                 f"⚠️ Bing web arama hatası: {e}",
                 flush=True
             )
+
+        if tum_sonuclar:
+            print(
+                f"🧠 Web toplam: {len(tum_sonuclar)} sonuç (çoklu kaynak)",
+                flush=True
+            )
+            return tum_sonuclar[:limit * 3]
 
         return []
 
