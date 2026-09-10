@@ -1,3 +1,4 @@
+from eagle_merkez_motoru import eagle_merkez_motorunu_kur
 from eagle_autofix import EagleAutoFixEngine
 from flask import Flask, request, jsonify
 import os
@@ -42,6 +43,9 @@ app = Flask(__name__)
 
 # 🦅 Eagle otomatik kod düzeltme motoru
 autofix_engine = EagleAutoFixEngine(Path(__file__).resolve().parent)
+
+# 🧠 Eagle merkezi akıllı koordinasyon motoru
+merkez_motor = eagle_merkez_motorunu_kur()
 
 
 # --- EAGLE BORÇ/TAKSİT ENTEGRASYONU ---
@@ -4341,8 +4345,50 @@ def sohbet():
             "memory_count": len(hafiza_yukle())
         })
 
-    # 🌐 Eagle web sonuçlarını doğrudan cevapla
+    # 🧠 EAGLE MERKEZ AKILLI MOTORU
+    # Web sonuçları kullanıcıya ham liste olarak verilmez.
+    # Merkezi motor gerçek cevabı çıkarmayı dener.
     if web_verisi:
+        try:
+            merkez_sonuc = merkez_motor.calistir(
+                mesaj=mesaj,
+                karar=karar,
+                web_verisi=web_verisi,
+                sayfa_okuyucu=web_sayfa_oku,
+                web_arayici=web_arastir,
+            )
+
+            if hasattr(merkez_sonuc, "as_dict"):
+                merkez_sonuc = merkez_sonuc.as_dict()
+
+            if isinstance(merkez_sonuc, dict):
+                merkez_cevap = str(
+                    merkez_sonuc.get(
+                        "cevap",
+                        merkez_sonuc.get("answer", "")
+                    )
+                ).strip()
+
+                if (
+                    merkez_sonuc.get("ok")
+                    and merkez_cevap
+                ):
+                    return jsonify({
+                        "ok": True,
+                        "answer": merkez_cevap,
+                        "web_search": True,
+                        "eagle_direct": True,
+                        "merkez_motor": True,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
+        except Exception as merkez_hatasi:
+            print(
+                "⚠️ Merkezi motor hatası:",
+                merkez_hatasi
+            )
+
+        # Merkez cevap üretemezse mevcut sistem bozulmaz.
         satirlar = ["🌐 EAGLE WEB", ""]
 
         for sonuc in web_verisi[:8]:
@@ -4351,7 +4397,9 @@ def sohbet():
 
             baslik = str(sonuc.get("title", "")).strip()
             ozet = str(sonuc.get("snippet", "")).strip()
-            url = web_kaynak_url(str(sonuc.get("url", "")).strip())
+            url = web_kaynak_url(
+                str(sonuc.get("url", "")).strip()
+            )
 
             if baslik:
                 satirlar.append(f"• {baslik}")
@@ -4367,6 +4415,7 @@ def sohbet():
             "answer": "\n".join(satirlar).strip(),
             "web_search": True,
             "eagle_direct": True,
+            "merkez_motor": False,
             "memory_count": len(hafiza_yukle())
         })
 
