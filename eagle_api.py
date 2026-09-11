@@ -2834,7 +2834,148 @@ def spor_web_sayfalarini_oku(mesaj, web_verisi, sayfa_okuyucu):
 
     return sonuc
 
+
+def sofascore_son_mac_getir(mesaj):
+    """Takımın tüm organizasyonlardaki en son tamamlanmış maçını SofaScore'dan bulur."""
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        }
+
+        r = requests.get(
+            "https://www.sofascore.com/api/v1/search/all/",
+            params={"q": mesaj},
+            headers=headers,
+            timeout=10,
+        )
+
+        if r.status_code != 200:
+            return None
+
+        takim = None
+
+        for item in r.json().get("results", []):
+            if item.get("type") != "team":
+                continue
+
+            entity = item.get("entity", {})
+
+            if entity.get("sport", {}).get("slug") != "football":
+                continue
+
+            takim = entity
+            break
+
+        if not takim or not takim.get("id"):
+            return None
+
+        takim_id = takim["id"]
+
+        r = requests.get(
+            f"https://www.sofascore.com/api/v1/team/{takim_id}/events/last/0",
+            headers=headers,
+            timeout=10,
+        )
+
+        if r.status_code != 200:
+            return None
+
+        simdi = time.time()
+        adaylar = []
+
+        for event in r.json().get("events", []):
+            if event.get("status", {}).get("type") != "finished":
+                continue
+
+            ts = event.get("startTimestamp")
+
+            if not ts or ts > simdi:
+                continue
+
+            ev = event.get("homeTeam", {}).get("name")
+            dep = event.get("awayTeam", {}).get("name")
+
+            ev_skor = event.get("homeScore", {}).get("current")
+            dep_skor = event.get("awayScore", {}).get("current")
+
+            if not ev or not dep:
+                continue
+
+            if ev_skor is None or dep_skor is None:
+                continue
+
+            adaylar.append({
+                "timestamp": ts,
+                "ev": ev,
+                "deplasman": dep,
+                "ev_skor": ev_skor,
+                "deplasman_skor": dep_skor,
+            })
+
+        if not adaylar:
+            return None
+
+        return max(adaylar, key=lambda x: x["timestamp"])
+
+    except Exception as e:
+        print(f"[SofaScore] Son maç hatası: {e}")
+        return None
+
+
 def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
+    # Genel "son maç" sorguları için tüm organizasyonlardan
+    # en güncel tamamlanmış maçı SofaScore'dan al.
+    mesaj_kf = mesaj.casefold()
+
+    if (
+        "son maç" in mesaj_kf
+        and "süper lig" not in mesaj_kf
+        and "super lig" not in mesaj_kf
+    ):
+        # SofaScore'a tüm cümleyi değil, mesajdan çıkarılan takım adını gönder.
+        # Böylece "Galatasaray son maçını..." gibi doğal cümlelerde
+        # takım araması yanlış sonuçlara kaymaz.
+        takimlar = [
+            "Galatasaray", "Fenerbahçe", "Beşiktaş", "Trabzonspor",
+            "Başakşehir", "Kasımpaşa", "Antalyaspor", "Alanyaspor",
+            "Adana Demirspor", "Gaziantep FK", "Kayserispor",
+            "Konyaspor", "Samsunspor", "Çaykur Rizespor", "Rizespor",
+            "Göztepe", "Eyüpspor", "Gençlerbirliği", "Bodrum FK",
+            "Eintracht Frankfurt", "Sporting Lizbon", "Sporting CP",
+            "Türkiye", "İtalya"
+        ]
+
+        def _norm_son_mac(x):
+            return (
+                str(x or "").casefold()
+                .replace("\u0307", "")
+                .replace("ı", "i").replace("ğ", "g")
+                .replace("ü", "u").replace("ş", "s")
+                .replace("ö", "o").replace("ç", "c")
+            )
+
+        mesaj_norm_son_mac = _norm_son_mac(mesaj)
+        bulunan_takim = []
+
+        for takim_adi in takimlar:
+            pos = mesaj_norm_son_mac.find(_norm_son_mac(takim_adi))
+            if pos >= 0:
+                bulunan_takim.append((pos, takim_adi))
+
+        bulunan_takim.sort(key=lambda x: x[0])
+        takim_sorgusu = bulunan_takim[0][1] if bulunan_takim else mesaj
+
+        sofascore_mac = sofascore_son_mac_getir(takim_sorgusu)
+
+        if sofascore_mac:
+            return (
+                f"{sofascore_mac['ev']} "
+                f"{sofascore_mac['ev_skor']} - "
+                f"{sofascore_mac['deplasman_skor']} "
+                f"{sofascore_mac['deplasman']}"
+            )
+
     """Spor maç sonuçlarını web kaynaklarından güvenilir biçimde çıkarır."""
     import re
 
@@ -4626,8 +4767,9 @@ def sohbet():
                 web_verisi = uefa_sampiyonlar_ligi_getir(mesaj)
 
 # 🌐 Genel spor veri kaynağı — UEFA/TFF/TVF boşsa ESPN
-            # 🏟️ Geçmiş/son maç sonucu sorularında önce çoklu web araması.
-            if gecmis_mac:
+            # 🏟️ Geçmiş/son maç sonucu sorularında çoklu web araması.
+            # 🇹🇷 Süper Lig'de resmi TFF verisi varsa onu ezme.
+            if gecmis_mac and not super_lig_mi:
                 arama_sorgusu = spor_arama_sorgusu(mesaj)
                 web_verisi = web_arastir(
                     arama_sorgusu,
