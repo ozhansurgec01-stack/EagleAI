@@ -1,4 +1,5 @@
 from eagle_merkez_motoru import eagle_merkez_motorunu_kur
+from eagle_akil_motoru import eagle_akil_motorunu_kur
 from eagle_autofix import EagleAutoFixEngine
 from flask import Flask, request, jsonify
 import os
@@ -665,8 +666,16 @@ def bilgi_bankasi_ara(mesaj):
         if terim in mesaj_alt:
             for kategori, maddeler in bilgi.get("python", {}).items():
                 for madde in maddeler:
-                    if terim in madde.lower().replace(" ", ""):
-                        bulunan.append((200, madde))
+                      if isinstance(madde, dict):
+                          madde_metin = str(madde.get("soru", "")) + " " + str(madde.get("cevap", ""))
+                          gosterilecek = madde_metin.strip()
+                      elif isinstance(madde, str):
+                          madde_metin = madde
+                          gosterilecek = madde
+                      else:
+                          continue
+                      if terim in madde_metin.lower().replace(" ", ""):
+                          bulunan.append((200, gosterilecek))
 
             if bulunan:
                 return [madde for _, madde in bulunan[:3]]
@@ -1194,7 +1203,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "intent": "sohbet",
         "guven": "orta",
         "neden": "Özel bir araç gerektiren açık bir istek algılanmadı.",
-        "arac": "web_arastirma",
+        "arac": "eagle_sohbet",
         "islem": "cevapla",
         "dogrulama": False
     }
@@ -1552,7 +1561,16 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "en son", "son durum", "ne oldu"
     ]
 
-    if any(x in k for x in guncel_kelimeleri):
+    # Bağlam çözülmüşse güncel bilgi kontrolünü yalnızca
+    # kullanıcının YENİ devam mesajında yap.
+    guncel_metin = metin
+    baglam_isareti = "Kullanıcının devam mesajı:"
+    if baglam_isareti in metin:
+        guncel_metin = metin.split(baglam_isareti, 1)[1].strip()
+
+    guncel_k = guncel_metin.casefold()
+
+    if any(x in guncel_k for x in guncel_kelimeleri):
         karar.update({
             "intent": "guncel_bilgi",
             "guven": "yüksek",
@@ -1619,6 +1637,13 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             return karar
 
     return karar
+
+
+# 🧠 Eagle genel akıl motoru
+akil_motor = eagle_akil_motorunu_kur(
+    karar_motoru=eagle_karar_motoru,
+    hafiza_yukle=hafiza_yukle
+)
 
 
 def web_arastirma_gerekli(mesaj):
@@ -3644,6 +3669,110 @@ def sohbet_baglam_kaydet(veri):
         encoding="utf-8"
     )
 
+
+def eagle_genel_baglam_coz(mesaj, gecmis=None):
+    """
+    🧠 EagleAI GENEL KONUŞMA BAĞLAMI
+    Belirsiz/devam niteliğindeki mesajı yakın konuşma geçmişindeki
+    konu ile birleştirir.
+
+    Özel takım, şehir, Python konusu vb. hardcode etmez.
+    Açık ve bağımsız yeni sorulara dokunmaz.
+    """
+    metin = str(mesaj or "").strip()
+    if not metin or not gecmis:
+        return metin
+
+    m = metin.casefold().replace("\u0307", "")
+
+    # Açık yeni konu olduğunu düşündüren ifadeler.
+    acik_yeni_konu = [
+        "hava", "hava durumu",
+        "python", "kod", "hata",
+        "borç", "borc",
+        "hafıza", "hafiza",
+        "haber", "güncel", "guncel",
+        "hesapla", "kaç tl", "kac tl"
+    ]
+
+    # Mesaj kendi başına açık bir konu taşıyorsa geçmişi zorla ekleme.
+    if any(x in m for x in acik_yeni_konu):
+        return metin
+
+    # Devam/belirsizlik ifadeleri.
+    devam_ifadeleri = [
+        "peki",
+        "buna", "bunu", "bunun", "bunda",
+        "şuna", "şunu", "şunun",
+        "ona", "onu", "onun",
+        "orada", "orası", "orasi",
+        "aynısı", "aynisi",
+        "aynı", "ayni",
+        "sonra", "sonuç ne", "sonucu ne",
+        "kaç kaç", "kac kac",
+        "ne oldu", "neydi",
+        "hangisi", "hangisiydi",
+        "devam", "peki ya",
+        "bir de", "peki bunun",
+        "peki bu"
+    ]
+
+    if not any(x in m for x in devam_ifadeleri):
+        return metin
+
+    # En yakın anlamlı kullanıcı mesajını bul.
+    adaylar = []
+    for item in reversed(gecmis):
+        if not isinstance(item, dict):
+            continue
+
+        role = str(item.get("role", "")).strip().lower()
+        if role not in {"user", "assistant"}:
+            continue
+
+        icerik = str(
+            item.get("text", item.get("content", ""))
+        ).strip()
+
+        if not icerik:
+            continue
+
+        adaylar.append(icerik)
+
+        # En yakın iki mesaj yeterli; bağlamı gereksiz büyütme.
+        if len(adaylar) >= 2:
+            break
+
+    if not adaylar:
+        return metin
+
+    # En yakın kullanıcı mesajını önceliklendir.
+    onceki_kullanici = None
+    for item in reversed(gecmis):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("role", "")).strip().lower() != "user":
+            continue
+
+        icerik = str(
+            item.get("text", item.get("content", ""))
+        ).strip()
+
+        if icerik:
+            onceki_kullanici = icerik
+            break
+
+    konu = onceki_kullanici or adaylar[0]
+
+    # Aynı mesajın kendisini tekrar ekleme.
+    if konu.casefold().strip() == metin.casefold().strip():
+        return metin
+
+    # Karar motoru ve ilgili araçlar önceki konuyu görebilsin.
+    return f"{konu}\n\nKullanıcının devam mesajı: {metin}"
+
+
+
 def eagle_baglam_yonlendir(mesaj, karar, sohbet_baglam, borc_modulu, gecmis=None):
     """
     🧠 EagleAI konuşma bağlamı yönlendiricisi.
@@ -3877,7 +4006,18 @@ def sohbet():
 
     kalici_hafiza = hafiza_metni()
     autofix_istegi = False
-    karar = eagle_karar_motoru(mesaj, gecmis)
+    # 🧠 GENEL KONUŞMA BAĞLAMI
+    # Belirsiz devam mesajlarını karar motorundan önce yakın geçmişle çöz.
+    mesaj_orijinal = mesaj
+    mesaj = eagle_genel_baglam_coz(mesaj, gecmis)
+    if mesaj != mesaj_orijinal:
+        print(
+            f"🧠 EAGLE BAĞLAM ÇÖZÜLDÜ: {mesaj}",
+            flush=True
+        )
+
+    akil_plani = akil_motor.planla(mesaj, gecmis)
+    karar = akil_plani.get("karar", {})
 
     # 🧠 AKTİF PYTHON KODU TAKİBİ
     aktif_kod = sohbet_baglam.get("aktif_kod", "")
