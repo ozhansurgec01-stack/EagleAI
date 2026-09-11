@@ -1554,11 +1554,13 @@ def eagle_karar_motoru(mesaj, gecmis=None):
 
     # 🌐 GÜNCEL BİLGİ
     guncel_kelimeleri = [
-        "bugün", "bugun", "şimdi", "simdi",
+        "şimdi", "simdi",
         "şu an", "su an", "güncel", "guncel",
         "son dakika", "haber", "araştır", "arastir",
         "internetten", "webde", "web'de",
-        "en son", "son durum", "ne oldu"
+        "en son", "son durum", "ne oldu",
+        "dolar", "euro", "sterlin", "bitcoin", "btc",
+        "ethereum", "eth", "altın", "gram altın"
     ]
 
     # Bağlam çözülmüşse güncel bilgi kontrolünü yalnızca
@@ -1649,7 +1651,6 @@ akil_motor = eagle_akil_motorunu_kur(
 def web_arastirma_gerekli(mesaj):
     """Mesaj güncel internet bilgisi gerektiriyor mu?"""
     kelimeler = [
-        "bugün", "bugunku", "bugünkü",
         "şimdi", "şu an",
         "son dakika",
         "güncel", "guncel",
