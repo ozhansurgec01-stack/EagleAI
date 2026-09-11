@@ -2746,6 +2746,65 @@ def spor_skoru_cikar(metin):
     return list(dict.fromkeys(re.findall(r"\b\d{1,2}\s*-\s*\d{1,2}\b", metin)))
 
 
+
+def spor_web_sayfalarini_oku(mesaj, web_verisi, sayfa_okuyucu):
+    """Arama özetleri yetersizse ilgili web sayfalarını okuyup sonuçlara içerik ekler."""
+    if not web_verisi or not callable(sayfa_okuyucu):
+        return web_verisi or []
+
+    metin_mesaj = str(mesaj or "").casefold()
+    sonuc = []
+
+    # En fazla 4 aday sayfa oku; aynı URL'yi tekrar okuma.
+    adaylar = []
+    for item in web_verisi:
+        if not isinstance(item, dict):
+            continue
+        url = str(item.get("url", "") or "").strip()
+        if not url or url in [x[0] for x in adaylar]:
+            continue
+
+        baslik = str(item.get("title", "") or "")
+        snippet = str(item.get("snippet", "") or "")
+        cevre = (baslik + " " + snippet).casefold()
+
+        puan = 0
+        if "galatasaray" in metin_mesaj and "galatasaray" in cevre:
+            puan += 50
+        if any(x in cevre for x in (
+            "kaç kaç", "kac kac", "maç sonucu", "mac sonucu",
+            "son maç", "son mac", "skor", "bitti"
+        )):
+            puan += 30
+        if any(x in cevre for x in ("sporting", "lizbon")):
+            puan += 20
+        if re.search(r"\b\d{1,2}\s*[-–—:]\s*\d{1,2}\b", cevre):
+            puan += 40
+
+        adaylar.append((puan, url, item))
+
+    adaylar.sort(key=lambda x: x[0], reverse=True)
+
+    for _, url, item in adaylar[:4]:
+        yeni = dict(item)
+        try:
+            icerik = sayfa_okuyucu(url, limit=7000)
+        except Exception:
+            icerik = ""
+
+        if icerik:
+            yeni["content"] = str(icerik)
+            yeni["metin"] = str(icerik)
+        sonuc.append(yeni)
+
+    # Okunamayan/diğer arama sonuçlarını da koru.
+    okunmus = {x.get("url") for x in sonuc}
+    for item in web_verisi:
+        if isinstance(item, dict) and item.get("url") not in okunmus:
+            sonuc.append(item)
+
+    return sonuc
+
 def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
     """Spor maç sonuçlarını web kaynaklarından güvenilir biçimde çıkarır."""
     import re
@@ -2798,9 +2857,11 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
 
             baslik = str(x.get("baslik", "") or "")
             icerik = str(
-                x.get("icerik",
-                x.get("snippet",
-                x.get("metin", ""))) or ""
+                x.get("content") or
+                x.get("metin") or
+                x.get("icerik") or
+                x.get("snippet") or
+                ""
             )
 
             birlesik = f"{baslik} {icerik}".strip()
@@ -2943,6 +3004,50 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
             re.IGNORECASE
         ):
             return f"{takim} {a} - {rakip_adi} {b}"
+
+    # Açık sonuç cümlesi:
+    # "ev sahibi Sporting Lizbon 3-1 kazandı"
+    # "Sporting Lizbon 3-1 kazandı"
+    # "Sporting Lizbon 3 - 1 Galatasaray"
+    # gibi haber metinlerini doğrudan yakala.
+    for rakip_norm, rakip_adi in takim_normlari:
+        if not rakip_norm or rakip_norm == takim_norm:
+            continue
+
+        cevre_norm = norm(cevre)
+
+        # Rakip takımın 3-1 kazandığı açık cümle.
+        desenler = [
+            re.escape(rakip_norm) + r"\s+(\d{1,2})\s*[-–—:]\s*(\d{1,2})\s+kazand",
+            r"ev sahibi\s+" + re.escape(rakip_norm) + r"\s+(\d{1,2})\s*[-–—:]\s*(\d{1,2})\s+kazand",
+        ]
+
+        for desen in desenler:
+            m = re.search(desen, cevre_norm, re.IGNORECASE)
+            if m and takim_norm in cevre_norm:
+                return f"{rakip_adi} {m.group(1)} - {takim} {m.group(2)}"
+
+        # "Sporting Lizbon 3-1 Galatasaray" biçimi.
+        m = re.search(
+            re.escape(rakip_norm) +
+            r"\s+(\d{1,2})\s*[-–—:]\s*(\d{1,2})\s+" +
+            re.escape(takim_norm),
+            cevre_norm,
+            re.IGNORECASE
+        )
+        if m:
+            return f"{rakip_adi} {m.group(1)} - {takim} {m.group(2)}"
+
+        # "Galatasaray 1-3 Sporting Lizbon" biçimi.
+        m = re.search(
+            re.escape(takim_norm) +
+            r"\s+(\d{1,2})\s*[-–—:]\s*(\d{1,2})\s+" +
+            re.escape(rakip_norm),
+            cevre_norm,
+            re.IGNORECASE
+        )
+        if m:
+            return f"{takim} {m.group(1)} - {rakip_adi} {m.group(2)}"
 
     # Rakip çıkarılamazsa en azından takımın skorunu döndürme;
     # merkez motorun tek sayı cevabına düşmesini engelle.
@@ -4403,6 +4508,12 @@ def sohbet():
 
     # 🏟️ MAÇ SONUCU — doğrulanmış skoru doğrudan döndür
     if karar.get("intent") == "spor":
+        web_verisi = spor_web_sayfalarini_oku(
+            mesaj,
+            web_verisi,
+            web_sayfa_oku
+        )
+
         direkt_skor = spor_skoru_direkt_cevapla(
             mesaj,
             web_metni,

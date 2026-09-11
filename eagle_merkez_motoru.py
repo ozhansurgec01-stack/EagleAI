@@ -542,6 +542,13 @@ class EagleMerkezMotoru:
         # 2) Kullanıcının istediği birimi belirle.
         # -------------------------------------------------
         mesaj_norm = cls.normalize(mesaj)
+        if re.search(
+            r"\bmaç\b|\bmac\b|\bskor\b|\bson maç\b|\bson mac\b|"
+            r"\bmaç sonucu\b|\bmac sonucu\b|\bkaç kaç\b|\bkac kac\b",
+            mesaj_norm,
+            flags=re.IGNORECASE
+        ):
+            return None, 0.0
 
           # -------------------------------------------------
         # 2.1) Kur sorularında doğrudan "1 PARA = DEĞER TL"
@@ -1687,7 +1694,7 @@ class EagleMerkezMotoru:
             )
 
         # 6. Kısa sayısal/güncel cevap adayı.
-        if self.deger_sorusu_mu(mesaj):
+        if karar.get("intent") != "spor" and self.deger_sorusu_mu(mesaj):
             cevap, guven = self.net_sayisal_cevap(
                 mesaj,
                 veriler
