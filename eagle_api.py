@@ -3568,10 +3568,23 @@ def ana():
 
 @app.get("/api/durum")
 def durum():
+    import subprocess
+
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True
+        ).strip()
+    except Exception:
+        commit = "bilinmiyor"
+
     return jsonify({
         "ok": True,
         "assistant": "Eagle-AI",
-        "memory_count": len(hafiza_yukle())
+        "memory_count": len(hafiza_yukle()),
+        "build_marker": "SPORTS_DIAGNOSTIC_20260911",
+        "git_commit": commit
     })
 
 
