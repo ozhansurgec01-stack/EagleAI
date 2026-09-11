@@ -600,7 +600,7 @@ def bilgi_bankasi_ara(mesaj):
             soru_norm = re.sub(r"\s+", " ", soru_norm).strip()
             metin_norm = re.sub(r"\s+", " ", metin_norm).strip()
 
-            if soru_norm == metin_norm or soru_norm in metin_norm or metin_norm in soru_norm:
+            if soru_norm == metin_norm:
                 return [cevap]
 
     # ➗ Matematik bilgi bankası için özel arama
@@ -649,6 +649,52 @@ def bilgi_bankasi_ara(mesaj):
             if parcalar:
                 return parcalar[:3]
 
+    # 🎯 Yeni Python konularında tam soru önceliği.
+    # İlgili başka kayıtlar yerine doğrudan sorulan kavramın kaydını seçer.
+    ozgun_python_sorular = {
+        "datetime.now()": ["datetime.now() ne işe yarar?"],
+        "timedelta": ["timedelta nedir?"],
+        "math.sqrt()": ["math.sqrt() ne işe yarar?"],
+        "super()": ["super() ne işe yarar?"],
+        "venv": ["Python venv nedir?"],
+        "pip install": ["pip install ne işe yarar?"],
+        "Python paketi": ["Python paketi nedir?"],
+        "iterator": ["Iterator nedir?"],
+        "generator": ["Generator nedir?"],
+        "yield": ["yield ne işe yarar?"],
+        "decorator": ["Python decorator nedir?"],
+        "async await": ["async/await nedir?"],
+    }
+
+    mesaj_norm = re.sub(r"[^a-z0-9çğıöşü\\s]", " ", metin.lower())
+    mesaj_norm = re.sub(r"\\s+", " ", mesaj_norm).strip()
+
+    for terim, sorular in ozgun_python_sorular.items():
+        terim_norm = re.sub(r"[^a-z0-9çğıöşü\\s]", " ", terim.lower())
+        terim_norm = re.sub(r"\\s+", " ", terim_norm).strip()
+        if terim_norm not in mesaj_norm:
+            continue
+
+        for kategori, maddeler in bilgi.get("python", {}).items():
+            if not isinstance(maddeler, list):
+                continue
+            for madde in maddeler:
+                if not isinstance(madde, dict):
+                    continue
+                soru = str(madde.get("soru", "")).strip()
+                cevap = str(madde.get("cevap", "")).strip()
+                if not soru or not cevap:
+                    continue
+
+                soru_norm = re.sub(r"[^a-z0-9çğıöşü\\s]", " ", soru.lower())
+                soru_norm = re.sub(r"\\s+", " ", soru_norm).strip()
+
+                for hedef_soru in sorular:
+                    hedef_norm = re.sub(r"[^a-z0-9çğıöşü\\s]", " ", hedef_soru.lower())
+                    hedef_norm = re.sub(r"\\s+", " ", hedef_norm).strip()
+                    if soru_norm == hedef_norm:
+                        return [cevap]
+
     # 🎯 Özel Python terimleri için doğrudan eşleşme
     # Genel konu eşleşmesinden önce çalışır; yanlış/ilgisiz sonuçları önler.
     ozel_terimler = (
@@ -657,7 +703,9 @@ def bilgi_bankasi_ara(mesaj):
         "path.name", "path.suffix", "f-string", "find()", "count()",
         "isdigit()", "isalpha()", "isalnum()", "capitalize()", "title()",
         "append()", "extend()", "insert()", "remove()", "pop()", "clear()",
-        "reverse()", "keys()", "values()", "items()", "get()", "update()", "isinstance", "isinstance()", "break", "continue"
+        "reverse()", "keys()", "values()", "items()", "get()", "update()", "isinstance", "isinstance()", "break", "continue",
+        "super()", "datetime", "datetime.now()", "timedelta", "math.sqrt()", "venv", "pip", "pip install",
+        "paket", "iterator", "iter()", "next()", "generator", "yield", "decorator", "async", "await"
     )
 
     mesaj_alt = metin.replace(" ", "").lower()
