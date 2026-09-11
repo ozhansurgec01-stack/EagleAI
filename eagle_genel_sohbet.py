@@ -44,7 +44,8 @@ def genel_sohbet(mesaj):
         "ne pisirsem",
         "ne yemek yapsam",
         "ne yemek yapayım",
-        "ne yemek yapayim"
+        "ne yemek yapayim",
+        "ne yemek yapabilirim"
     )):
         return (
             "Bugün için birkaç fikir: 🍝 makarna, 🍗 fırında tavuk, "

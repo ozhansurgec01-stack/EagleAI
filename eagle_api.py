@@ -1,6 +1,7 @@
 from eagle_merkez_motoru import eagle_merkez_motorunu_kur
 from eagle_akil_motoru import eagle_akil_motorunu_kur
 from eagle_autofix import EagleAutoFixEngine
+from eagle_genel_sohbet import genel_sohbet
 from flask import Flask, request, jsonify
 import os
 
@@ -496,6 +497,9 @@ def bilgi_bankasi_yukle():
 def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").replace("İ", "i").lower()
 
+    # Yaygın Python yazım hatalarını normalize et
+    metin = re.sub(r"\bpyhton\b", "python", metin)
+
     konu_eslesmeleri = {
         "comprehension": ["comprehension", "liste comprehension", "dictionary comprehension", "set comprehension"],
         "lambda": ["lambda", "lambda fonksiyonu", "lambda fonksiyonları", "lambda fonksiyonlari", "anonim fonksiyon"],
@@ -710,6 +714,10 @@ def bilgi_bankasi_ara(mesaj):
 
     mesaj_alt = metin.replace(" ", "").lower()
 
+    # Özel ve daha uzun terimler önce eşleşsin.
+    # Örn. datetime.now() -> datetime'den önce değerlendirilir.
+    ozel_terimler = tuple(sorted(ozel_terimler, key=len, reverse=True))
+
     for terim in ozel_terimler:
         if terim in mesaj_alt:
             for kategori, maddeler in bilgi.get("python", {}).items():
@@ -723,6 +731,9 @@ def bilgi_bankasi_ara(mesaj):
                       else:
                           continue
                       if terim in madde_metin.lower().replace(" ", ""):
+                          # datetime sorgusunda datetime.now() kayıtlarını dahil etme.
+                          if terim == "datetime" and "datetime.now()" in madde_metin.lower():
+                              continue
                           bulunan.append((200, gosterilecek))
 
             if bulunan:
@@ -5068,26 +5079,9 @@ def sohbet():
             "memory_count": len(hafiza_yukle())
         })
 
-    # 🗣️ Basit sohbetleri Eagle doğrudan cevaplasın
+    # 🗣️ Genel sohbet modülü
     if karar.get("arac") == "eagle_sohbet":
-        k = mesaj.lower()
-
-        if "kimsin" in k or "sen kimsin" in k or "senin adın" in k or "senin adin" in k:
-            cevap = "🦅 Ben EagleAI. Hızlı bilgi, hesaplama, hava durumu, spor ve borç takibi gibi işlerde kendi araçlarımı kullanırım."
-        elif "ne yapabiliyorsun" in k or "ne yapabilirsin" in k:
-            cevap = "🦅 Ben EagleAI. Matematik, hava durumu, spor, borç takibi ve güncel bilgi araştırmalarında yardımcı olabilirim."
-        elif "nasılsın" in k or "nasilsin" in k:
-            cevap = "🦅 İyiyim, teşekkürler! Hazırım. 😄"
-        elif "teşekkür ederim" in k or "tesekkur ederim" in k or "sağ ol" in k or "sag ol" in k:
-            cevap = "Rica ederim! 🦅"
-        elif "günaydın" in k or "gunaydin" in k:
-            cevap = "Günaydın! 🦅 Bugün de hazırız."
-        elif "iyi akşamlar" in k or "iyi aksamlar" in k:
-            cevap = "İyi akşamlar! 🦅"
-        elif "iyi geceler" in k:
-            cevap = "İyi geceler! 🦅"
-        else:
-            cevap = "Merhaba! 🦅 Nasıl yardımcı olabilirim?"
+        cevap = genel_sohbet(mesaj)
 
         return jsonify({
             "ok": True,
