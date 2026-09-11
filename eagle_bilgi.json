@@ -129,6 +129,45 @@
       {
         "soru": "Python datetime nedir?",
         "cevap": "Tarih ve saat değerleriyle çalışmak için kullanılan standart modüldür."
+      },
+      "Python'da kalıtım, bir sınıfın başka bir sınıftaki özellik ve metotları devralmasını sağlar.",
+      "Alt sınıf, üst sınıftan aldığı metotları gerektiğinde kendi davranışına göre yeniden tanımlayabilir.",
+      "super() üst sınıfın metotlarına veya özelliklerine erişmek için kullanılabilir.",
+      "Python'da datetime modülü tarih ve saat değerleriyle çalışmak için kullanılır.",
+      "datetime.now() mevcut tarih ve saat bilgisini almak için kullanılabilir.",
+      "timedelta iki tarih veya saat arasında süre hesaplamak ve bir tarihe süre ekleyip çıkarmak için kullanılır.",
+      "math modülü karekök, üs, yuvarlama ve çeşitli matematiksel işlemler için hazır fonksiyonlar sağlar.",
+      "math.sqrt() bir sayının karekökünü hesaplamak için kullanılabilir.",
+      "Python'da sanal ortam (venv), bir projenin bağımlılıklarını diğer projelerden ayrı tutmaya yardımcı olur.",
+      "python -m venv komutu yeni bir Python sanal ortamı oluşturmak için kullanılabilir.",
+      "pip, Python paketlerini yüklemek, güncellemek ve kaldırmak için kullanılan paket yöneticisidir.",
+      "pip install paket_adi komutu bir Python paketini yüklemek için kullanılabilir.",
+      "Python'da import modül veya paket içindeki kodları programa dahil etmek için kullanılır.",
+      "from modül import öğe sözdizimi bir modül içindeki belirli bir öğeyi doğrudan içe aktarmayı sağlar.",
+      "Python paketi, birden fazla modülü düzenli bir yapı altında bir araya getirmeye yardımcı olur.",
+      {
+        "soru": "super() ne işe yarar?",
+        "cevap": "super() üst sınıfın metotlarına veya özelliklerine erişmek için kullanılabilir."
+      },
+      {
+        "soru": "timedelta nedir?",
+        "cevap": "timedelta iki tarih veya saat arasında süre hesaplamak ve bir tarihe süre ekleyip çıkarmak için kullanılır."
+      },
+      {
+        "soru": "math.sqrt() ne işe yarar?",
+        "cevap": "math.sqrt() bir sayının karekökünü hesaplamak için kullanılabilir."
+      },
+      {
+        "soru": "Python venv nedir?",
+        "cevap": "Python'da sanal ortam (venv), bir projenin bağımlılıklarını diğer projelerden ayrı tutmaya yardımcı olur."
+      },
+      {
+        "soru": "pip install ne işe yarar?",
+        "cevap": "pip install, Python paketlerini yüklemek için kullanılır. Örneğin pip install requests komutu requests paketini kurar."
+      },
+      {
+        "soru": "Python paketi nedir?",
+        "cevap": "Python paketi, birden fazla Python modülünü düzenli bir yapı içinde bir araya getiren klasör veya dağıtılabilir yazılım birimidir."
       }
     ],
     "operatörler": [
@@ -212,7 +251,17 @@
       {
         "soru": "Python async await nedir?",
         "cevap": "Asenkron programlama için kullanılır; bekleme gerektiren işlemlerde programın başka işler yapmasına olanak sağlar."
-      }
+      },
+      "Iterator, elemanları birer birer üreten ve üzerinde next() ile ilerlenebilen Python nesnesidir.",
+      "iter() bir iterable nesneden iterator oluşturmak için kullanılabilir.",
+      "next() bir iterator içindeki sonraki elemanı almak için kullanılır.",
+      "Generator, değerleri tek seferde belleğe almak yerine gerektiğinde üreten özel bir iterable yapıdır.",
+      "Python'da yield kullanılan bir fonksiyon generator oluşturur.",
+      "Decorator, bir fonksiyonun kodunu doğrudan değiştirmeden davranışına ek özellik kazandırmak için kullanılır.",
+      "Decorator oluşturmak için genellikle bir fonksiyonu başka bir fonksiyonla saran yapı kullanılır.",
+      "async bir fonksiyonun asenkron olarak tanımlanmasını sağlar.",
+      "await bir async fonksiyon içinde başka bir asenkron işlemin sonucunu beklemek için kullanılır.",
+      "async ve await özellikle bekleme süresi bulunan işlemleri daha verimli yönetmek için kullanılabilir."
     ],
     "kosullar": [
       "elif, if koşulu sağlanmadığında başka bir koşulu kontrol etmek için kullanılır.",
