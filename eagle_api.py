@@ -666,12 +666,12 @@ def bilgi_bankasi_ara(mesaj):
         "async await": ["async/await nedir?"],
     }
 
-    mesaj_norm = re.sub(r"[^a-z0-9çğıöşü\\s]", " ", metin.lower())
-    mesaj_norm = re.sub(r"\\s+", " ", mesaj_norm).strip()
+    mesaj_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", metin.lower())
+    mesaj_norm = re.sub(r"\s+", " ", mesaj_norm).strip()
 
     for terim, sorular in ozgun_python_sorular.items():
-        terim_norm = re.sub(r"[^a-z0-9çğıöşü\\s]", " ", terim.lower())
-        terim_norm = re.sub(r"\\s+", " ", terim_norm).strip()
+        terim_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", terim.lower())
+        terim_norm = re.sub(r"\s+", " ", terim_norm).strip()
         if terim_norm not in mesaj_norm:
             continue
 
@@ -686,12 +686,12 @@ def bilgi_bankasi_ara(mesaj):
                 if not soru or not cevap:
                     continue
 
-                soru_norm = re.sub(r"[^a-z0-9çğıöşü\\s]", " ", soru.lower())
-                soru_norm = re.sub(r"\\s+", " ", soru_norm).strip()
+                soru_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", soru.lower())
+                soru_norm = re.sub(r"\s+", " ", soru_norm).strip()
 
                 for hedef_soru in sorular:
-                    hedef_norm = re.sub(r"[^a-z0-9çğıöşü\\s]", " ", hedef_soru.lower())
-                    hedef_norm = re.sub(r"\\s+", " ", hedef_norm).strip()
+                    hedef_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", hedef_soru.lower())
+                    hedef_norm = re.sub(r"\s+", " ", hedef_norm).strip()
                     if soru_norm == hedef_norm:
                         return [cevap]
 
