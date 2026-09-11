@@ -1055,6 +1055,7 @@ def spor_arama_sorgusu(mesaj):
         "dün", "dünkü", "dünün",
         "dun", "dunku", "dunun",
         "geçen maç", "gecen mac",
+        "son maç", "son mac", "son maçı", "son maci",
         "sonuç", "sonuc", "sonuçları", "sonuclari",
         "skor", "skorları", "skorlari",
         "kaç kaç", "kac kac",
@@ -1152,6 +1153,7 @@ def spor_arama_sorgusu(mesaj):
     sonuc_sorusu = any(k in mesaj_kucuk for k in [
         "kaç kaç", "kac kac", "kaç kaç bitti", "kac kac bitti",
         "maç sonucu", "mac sonucu",
+"son maç", "son mac", "son maçı", "son maci",
 "son maçını", "son macini",
 "son maçında", "son macinda",
 "son oynadığı maç", "son oynadigi mac",
@@ -2832,20 +2834,42 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
 
     mesaj_norm = norm(mesaj)
 
-    # Kullanıcının sorduğu takımı bul.
-    bulunan = []
-    for takim in takimlar:
-        m = re.search(re.escape(norm(takim)), mesaj_norm)
-        if m:
-            bulunan.append((m.start(), takim))
+    # Önce takım adını kullanıcı mesajından dinamik olarak çıkar.
+    # Örn: "Beşiktaş futbol takımının son maçı..."
+    takim = ""
+    takim_norm = ""
 
-    bulunan.sort(key=lambda x: x[0])
+    dinamik_takim = re.search(
+        r"^(.+?)\s+(?:futbol\s+)?takımının\b",
+        mesaj.strip(),
+        re.IGNORECASE
+    )
 
-    if not bulunan:
+    if dinamik_takim:
+        takim = dinamik_takim.group(1).strip()
+        takim_norm = norm(takim)
+
+    # Diğer ifade biçimleri için mevcut takım eşleştirmesini koru.
+    if not takim_norm:
+        bulunan = []
+
+        for takim_adi in takimlar:
+            m = re.search(
+                re.escape(norm(takim_adi)),
+                mesaj_norm
+            )
+
+            if m:
+                bulunan.append((m.start(), takim_adi))
+
+        bulunan.sort(key=lambda x: x[0])
+
+        if bulunan:
+            takim = bulunan[0][1]
+            takim_norm = norm(takim)
+
+    if not takim_norm:
         return ""
-
-    takim = bulunan[0][1]
-    takim_norm = norm(takim)
 
     # Web kaynaklarını gerçekten kullan.
     kaynaklar = []
@@ -2950,6 +2974,97 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
                 puan += 20
 
             adaylar.append((puan, a, b, cevre))
+
+    # Mackolik benzeri fikstür satırlarını doğrudan çöz.
+    # Örnek:
+    # "05.09 2026 1 Fenerbahçe Fenerbahçe - 2 Beşiktaş Beşiktaş"
+    #
+    # Takım isimleri sabit listeden değil, gerçek kaynak metninden çıkarılır.
+    fikstur_adaylari = []
+
+    for kaynak in kaynaklar:
+        kaynak_norm = norm(kaynak)
+
+        if takim_norm not in kaynak_norm:
+            continue
+
+        for m in re.finditer(
+            r"(\d{2}\.\d{2}\s+\d{4})\s+"
+            r"(\d{1,2})\s+(.+?)\s+-\s+"
+            r"(\d{1,2})\s+(.+?)(?=\s+\d{2}\.\d{2}\s+\d{4}|$)",
+            kaynak
+        ):
+            tarih, ev_skor, ev_kisim, depl_skor, depl_kisim = m.groups()
+
+            ev_kisim = re.sub(r"\s+", " ", ev_kisim).strip()
+            depl_kisim = re.sub(r"\s+", " ", depl_kisim).strip()
+
+            # Kaynaklarda takım adı bazen iki kez art arda yazılıyor.
+            def takim_kismini_sadelestir(deger):
+                parcalar = deger.split()
+
+                if len(parcalar) >= 2:
+                    for orta in range(1, len(parcalar)):
+                        sol = " ".join(parcalar[:orta])
+                        sag = " ".join(parcalar[orta:])
+
+                        if norm(sol) == norm(sag):
+                            return sol
+
+                return deger
+
+            ev = takim_kismini_sadelestir(ev_kisim)
+            depl = takim_kismini_sadelestir(depl_kisim)
+
+            if norm(ev) != takim_norm and norm(depl) != takim_norm:
+                continue
+
+            # İleri tarihli fikstürleri alma.
+            try:
+                from datetime import datetime
+
+                simdi = datetime.now()
+                tarih_dt = datetime.strptime(tarih, "%d.%m %Y")
+                tarih_dt = tarih_dt.replace(
+                    year=simdi.year,
+                    hour=0,
+                    minute=0,
+                    second=0,
+                    microsecond=0
+                )
+
+                # Yıl geçişi durumunda tarihi önceki yıla al.
+                if tarih_dt > simdi:
+                    tarih_dt = tarih_dt.replace(
+                        year=simdi.year - 1
+                    )
+
+                gecmis_saniye = (
+                    simdi - tarih_dt
+                ).total_seconds()
+
+                if gecmis_saniye < 0:
+                    continue
+
+            except Exception:
+                gecmis_saniye = 999999999
+
+            fikstur_adaylari.append(
+                (
+                    gecmis_saniye,
+                    ev,
+                    ev_skor,
+                    depl_skor,
+                    depl
+                )
+            )
+
+    if fikstur_adaylari:
+        fikstur_adaylari.sort(key=lambda x: x[0])
+
+        _, ev, ev_skor, depl_skor, depl = fikstur_adaylari[0]
+
+        return f"{ev} {ev_skor} - {depl} {depl_skor}"
 
     if not adaylar:
         return ""
