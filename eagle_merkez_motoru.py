@@ -1271,6 +1271,301 @@ class EagleMerkezMotoru:
             "farkli_domain_sayisi": len(domainler),
         }
 
+    @classmethod
+    def genel_altin_cevabi(cls, mesaj, veriler, web_arayici=None, sayfa_okuyucu=None):
+        """İnternette bulunan güncel kaynakların sayfalarından toplu altın fiyatı çıkarır."""
+        metin = cls.normalize(str(mesaj or ""))
+
+        metin_ascii = (
+            metin
+            .replace("ı", "i")
+            .replace("ş", "s")
+            .replace("ç", "c")
+            .replace("ğ", "g")
+            .replace("ö", "o")
+            .replace("ü", "u")
+        )
+
+        if not any(x in metin_ascii for x in [
+            "altin", "gram altin", "ceyrek altin",
+            "yarim altin", "tam altin", "cumhuriyet altini",
+            "ata altin", "22 ayar"
+        ]):
+            return "", 0.0
+
+        urunler = [
+            ("Gram Altın", [r"gram\s+altin"]),
+            ("Çeyrek Altın", [r"ceyrek\s+altin"]),
+            ("Yarım Altın", [r"yarim\s+altin"]),
+            ("Tam Altın", [r"tam\s+altin"]),
+            ("Cumhuriyet Altını", [r"cumhuriyet\s+altini"]),
+            ("Ata Altın", [r"ata\s+altin"]),
+            ("22 Ayar Bilezik", [r"22\s+ayar(?:\s+bilezik)?"]),
+        ]
+
+        sayi_re = re.compile(
+            r"\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,4})?"
+            r"|\d+(?:,\d{1,4})?"
+        )
+
+        def sayiya_cevir(deger):
+            try:
+                x = str(deger).replace(" ", "").strip()
+                if "," in x and "." in x:
+                    if x.rfind(",") > x.rfind("."):
+                        x = x.replace(".", "").replace(",", ".")
+                    else:
+                        x = x.replace(",", "")
+                elif "," in x:
+                    x = x.replace(".", "").replace(",", ".")
+                elif x.count(".") > 1:
+                    x = x.replace(".", "")
+                return float(x)
+            except Exception:
+                return None
+
+        def alan_fiyati(bolge, etiket):
+            """
+            Ürün adından bağımsız olarak açık ALIŞ/SATIŞ etiketlerinin
+            hemen arkasındaki gerçek fiyatı bulur.
+            """
+            es = list(re.finditer(r"\b" + etiket + r"\b", bolge, re.I))
+            if not es:
+                return None
+
+            for m in es:
+                parca = bolge[m.end():m.end() + 100]
+                for sm in sayi_re.findall(parca):
+                    v = sayiya_cevir(sm)
+                    if v is not None and 100 < v < 100000:
+                        return v
+            return None
+
+        kaynaklar = list(veriler or [])
+
+        # Arama sonucu azsa aynı merkezi web aramasını kullan.
+        if web_arayici and len(kaynaklar) < 4:
+            try:
+                ek = web_arayici(
+                    "altın fiyatları bugün gram altın çeyrek altın yarım altın "
+                    "tam altın cumhuriyet altını ata altın 22 ayar bilezik alış satış",
+                    limit=8
+                )
+                if ek:
+                    kaynaklar.extend(ek)
+            except Exception:
+                pass
+
+        # URL bazında benzersiz kaynaklar.
+        benzersiz = {}
+        for veri in kaynaklar:
+            url = str(veri.get("url", "")).strip()
+            if url and url not in benzersiz:
+                benzersiz[url] = veri
+
+        kaynaklar = list(benzersiz.values())
+
+        # ÖNEMLİ:
+        # Arama snippet'inde fiyat yoksa, bulunan URL'nin gerçek sayfasını oku.
+        if sayfa_okuyucu:
+            for veri in kaynaklar[:8]:
+                url = str(veri.get("url", "")).strip()
+                if not url:
+                    continue
+                try:
+                    sayfa = sayfa_okuyucu(url)
+                    if sayfa:
+                        veri["text"] = str(sayfa)
+                except Exception:
+                    continue
+
+        bulunan = {}
+
+        # -------------------------------------------------
+        # GERÇEK HTML ALTIN TABLOSU
+        # Arama sonucunda gelen doğrulanmış HTML tablolarını
+        # kullanır. Fiyat tek kaynaktan kabul edilmez.
+        # -------------------------------------------------
+        tablo_kayitlari = []
+
+        for veri in kaynaklar:
+            url = str(veri.get("url", "")).strip()
+
+            if not url:
+                continue
+
+            # Şu an HTML tablo yapısı doğrulanmış kaynaklar.
+            if not any(
+                alan in url.casefold()
+                for alan in [
+                    "altinveri.com",
+                    "ahaber.com.tr/finans/altin",
+                ]
+            ):
+                continue
+
+            try:
+                kayitlar = altin_tablo_oku(url)
+
+                if kayitlar:
+                    tablo_kayitlari.extend(kayitlar)
+
+            except Exception:
+                continue
+
+        # Ürün + URL bazında tek kayıt tut.
+        tablo_urunleri = {}
+
+        for kayit in tablo_kayitlari:
+            urun = kayit.get("urun")
+            url = kayit.get("url")
+
+            if not urun or not url:
+                continue
+
+            tablo_urunleri.setdefault(urun, [])
+
+            if not any(x.get("url") == url for x in tablo_urunleri[urun]):
+                tablo_urunleri[urun].append(kayit)
+
+        # AltınVeri fiyatını yalnızca başka bir gerçek kaynak
+        # aynı ürünü doğruluyorsa kullan.
+        for urun, kayitlar in tablo_urunleri.items():
+            altinveri = next(
+                (
+                    x for x in kayitlar
+                    if "altinveri.com" in str(x.get("url", "")).casefold()
+                ),
+                None
+            )
+
+            if not altinveri:
+                continue
+
+            alis = altinveri.get("alis")
+            satis = altinveri.get("satis")
+
+            if alis is None or satis is None:
+                continue
+
+            # Aynı ürün için farklı bir gerçek URL olmalı.
+            dogrulama = [
+                x for x in kayitlar
+                if x.get("url")
+                and x.get("url") != altinveri.get("url")
+                and x.get("alis") is not None
+                and x.get("satis") is not None
+            ]
+
+            if not dogrulama:
+                continue
+
+            bulunan[urun] = (
+                alis,
+                satis,
+                len(dogrulama) + 1
+            )
+
+        # Özel tablo yolu yalnızca doğrulanmış ürünleri ekler.
+        # Mevcut parser aşağıda aynen devam eder.
+
+        fiyat_re = re.compile(
+            r"(\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,4})?|\d+(?:,\d{1,4})?)"
+            r"\s*TL"
+        )
+
+        for urun, desenler in urunler:
+            kaynak_eslesmeleri = []
+
+            for veri in kaynaklar:
+                  kaynak_metni = " ".join([
+                      str(veri.get("title", "")),
+                      str(veri.get("snippet", "")),
+                      str(veri.get("text", "")),
+                      str(veri.get("content", "")),
+                  ])
+
+                  norm = cls.normalize(kaynak_metni)
+                  norm = (
+                      norm.replace("ı", "i")
+                          .replace("ş", "s")
+                          .replace("ç", "c")
+                          .replace("ğ", "g")
+                          .replace("ö", "o")
+                          .replace("ü", "u")
+                  )
+
+                  for desen in desenler:
+                      eslesmeler = list(re.finditer(desen, norm, re.I))
+                      if not eslesmeler:
+                          continue
+
+                      bulundu_kaynak = False
+
+                      for eslesme in reversed(eslesmeler[-10:]):
+                          bolge = norm[eslesme.end():eslesme.end() + 300]
+
+                          fiyatlar = []
+                          for fm in fiyat_re.finditer(bolge):
+                              v = sayiya_cevir(fm.group(1))
+                              if v is not None and 100 < v < 100000:
+                                  fiyatlar.append(v)
+
+                          # Altın ürün satırlarında alış/satış için en az iki
+                          # gerçek TL değeri bulunmalı.
+                          if len(fiyatlar) >= 2:
+                              kaynak_eslesmeleri.append({
+                                  "url": str(veri.get("url", "")),
+                                  "alis": fiyatlar[-4] if len(fiyatlar) >= 4 else fiyatlar[0],
+                                  "satis": fiyatlar[-2] if len(fiyatlar) >= 4 else fiyatlar[1],
+                              })
+                              bulundu_kaynak = True
+                              break
+
+                      if bulundu_kaynak:
+                          break
+
+            tek = {}
+            for x in kaynak_eslesmeleri:
+                if x["url"] and x["url"] not in tek:
+                    tek[x["url"]] = x
+
+            kaynak_eslesmeleri = list(tek.values())
+
+            if len(kaynak_eslesmeleri) >= 2 and urun not in bulunan:
+                secilen = kaynak_eslesmeleri[0]
+                bulunan[urun] = (
+                    secilen["alis"],
+                    secilen["satis"],
+                    len(kaynak_eslesmeleri)
+                  )
+
+          # En az 3 farklı altın türü gerçek sayfalardan çıkarılmadıysa
+        # generic sayı motoruna bırak.
+        if len(bulunan) < 3:
+            return "", 0.0
+
+        satirlar = ["🟡 **ALTIN FİYATLARI**", ""]
+
+        for urun, (alis, satis, kaynak_sayisi) in bulunan.items():
+            satirlar.append(f"🟠 **{urun}**")
+            satirlar.append(
+                f"🟢 Alış: {alis:,.2f} TL"
+                .replace(",", "X").replace(".", ",").replace("X", ".")
+            )
+            satirlar.append(
+                f"🔵 Satış: {satis:,.2f} TL"
+                .replace(",", "X").replace(".", ",").replace("X", ".")
+            )
+            satirlar.append("")
+
+        guven = min(
+            0.95,
+            0.78 + (min(len(bulunan), 7) * 0.025)
+        )
+
+        return "\n".join(satirlar).strip(), guven
+
     def calistir(
         self,
         mesaj,
@@ -1370,7 +1665,28 @@ class EagleMerkezMotoru:
                 )
             )
 
-        # 5. Kısa sayısal/güncel cevap adayı.
+        # 5. Toplu altın fiyatını tekil sayı çıkarımından önce ele.
+        altin_cevap, altin_guven = self.genel_altin_cevabi(
+            mesaj,
+            veriler,
+            web_arayici=web_arayici,
+            sayfa_okuyucu=sayfa_okuyucu
+        )
+
+        if altin_cevap and altin_guven >= 0.75:
+            return EagleMerkezSonuc(
+                ok=True,
+                cevap=altin_cevap,
+                guven=altin_guven,
+                kaynak_sayisi=(
+                    kaynak_ozet["kaynak_sayisi"]
+                ),
+                gemini_gerekli=False,
+                kaynak_goster=False,
+                neden="Birden fazla web kaynağından toplu altın fiyatları çıkarıldı."
+            )
+
+        # 6. Kısa sayısal/güncel cevap adayı.
         if self.deger_sorusu_mu(mesaj):
             cevap, guven = self.net_sayisal_cevap(
                 mesaj,
@@ -1512,3 +1828,161 @@ class EagleMerkezMotoru:
 
 def eagle_merkez_motorunu_kur():
     return EagleMerkezMotoru()
+
+
+def altin_tablo_oku(url: str) -> list[dict]:
+    """
+    Altın kaynaklarının HTML <tr> satırlarını doğrudan okur.
+    web_sayfa_oku() fonksiyonuna dokunmaz.
+    Saat, yüzde ve benzeri değerleri fiyat olarak almamaya çalışır.
+    """
+    import re
+    import requests
+    from bs4 import BeautifulSoup
+
+    if not url or not url.startswith(("http://", "https://")):
+        return []
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 15) "
+            "AppleWebKit/537.36 Chrome/140.0.0.0 Mobile Safari/537.36"
+        ),
+        "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
+    }
+
+    try:
+        cevap = requests.get(url, headers=headers, timeout=12)
+
+        if cevap.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(cevap.text, "html.parser")
+
+        urunler = [
+            (r"\bgram\s+alt[ıi]n\b", "Gram Altın"),
+            (r"\b[çc]eyrek\s+alt[ıi]n\b", "Çeyrek Altın"),
+            (r"\byar[ıi]m\s+alt[ıi]n\b", "Yarım Altın"),
+            (r"\btam\s+alt[ıi]n\b", "Tam Altın"),
+            (r"\bcumhuriyet\s+alt[ıi]n[ıi]\b", "Cumhuriyet Altını"),
+            (r"\bata\s+alt[ıi]n\b", "Ata Altın"),
+            (r"\b22\s+ayar\s+bilezik\b", "22 Ayar Bilezik"),
+            (r"\b22\s+ayar\s+alt[ıi]n\b", "22 Ayar Bilezik"),
+        ]
+
+        def sayiya_cevir(deger):
+            """
+            Türkçe:
+                6.725,36 -> 6725.36
+            Ondalık nokta:
+                6725.36 -> 6725.36
+            """
+            try:
+                s = str(deger).strip().replace(" ", "")
+
+                if "," in s and "." in s:
+                    # 6.725,36
+                    if s.rfind(",") > s.rfind("."):
+                        s = s.replace(".", "").replace(",", ".")
+                    # 6,725.36
+                    else:
+                        s = s.replace(",", "")
+                elif "," in s:
+                    # 6725,36
+                    s = s.replace(",", ".")
+                elif s.count(".") > 1:
+                    # Binlik noktalar
+                    s = s.replace(".", "")
+
+                return float(s)
+
+            except Exception:
+                return None
+
+        # Sayı formatları:
+        # 6.725,36
+        # 6725,36
+        # 6725.36
+        # 6,725.36
+        sayi_re = re.compile(
+            r"\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,4})?"
+            r"|\d+(?:[.,]\d{1,4})?"
+        )
+
+        sonuclar = []
+
+        for tr in soup.find_all("tr"):
+            hucreler = [
+                " ".join(td.stripped_strings)
+                for td in tr.find_all(["td", "th"])
+            ]
+
+            if not hucreler:
+                continue
+
+            satir = " ".join(hucreler)
+            satir_norm = satir.casefold()
+
+            urun_adi = None
+
+            for desen, ad in urunler:
+                if re.search(desen, satir_norm, re.I):
+                    urun_adi = ad
+                    break
+
+            if not urun_adi:
+                continue
+
+            # Hücre bazlı inceleme:
+            # Böylece saat / yüzde gibi değerleri daha kolay dışarıda bırakıyoruz.
+            fiyatlar = []
+
+            for hucre in hucreler:
+                temiz = hucre.strip()
+
+                # Saatleri doğrudan ele.
+                if re.fullmatch(r"\d{1,2}:\d{2}:\d{2}", temiz):
+                    continue
+
+                # Yüzde içeren hücreyi ele.
+                if "%" in temiz:
+                    continue
+
+                for eslesme in sayi_re.findall(temiz):
+                    deger = sayiya_cevir(eslesme)
+
+                    if deger is None:
+                        continue
+
+                    # Altın fiyatı için güvenli aralık.
+                    if 500 <= deger <= 100000:
+                        fiyatlar.append(deger)
+
+            # Aynı sayıların tekrarlarını temizle.
+            benzersiz = []
+
+            for fiyat in fiyatlar:
+                if not any(abs(fiyat - x) < 0.0001 for x in benzersiz):
+                    benzersiz.append(fiyat)
+
+            if len(benzersiz) < 2:
+                continue
+
+            # İlk iki gerçek fiyatı kullan.
+            # Buraya henüz genel parser bağlantısı yapılmıyor.
+            alis = benzersiz[0]
+            satis = benzersiz[1]
+
+            sonuclar.append({
+                "urun": urun_adi,
+                "alis": alis,
+                "satis": satis,
+                "url": url,
+                "ham": satir[:500]
+            })
+
+        return sonuclar
+
+    except Exception as e:
+        print(f"⚠️ altin_tablo_oku hata: {e}", flush=True)
+        return []
