@@ -2627,6 +2627,8 @@ def web_arastir(sorgu, limit=6):
                 "https://www.bing.com/search?q="
                 + quote(sorgu)
                 + "&setlang=tr-TR"
+                + "&count=20"
+                + "&first=0"
             )
 
             cevap = requests.get(
