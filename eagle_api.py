@@ -737,6 +737,7 @@ def bilgi_bankasi_ara(mesaj):
         "timedelta", "venv", "pip install", "pip",
         "paket", "iterator", "iter()", "next()", "generator",
         "yield", "decorator", "async", "await",
+        "copy()", "copy",
         "comprehension", "list comprehension", "dictionary comprehension",
         "set comprehension", "filter()", "filter", "map()", "map",
         "lambda"
@@ -1664,7 +1665,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         ("python" in k or "python'da" in k or "pythonda" in k)
         and any(x in k for x in [
             "nedir", "ne demek", "nasıl", "nasil", "nasıl kullanılır",
-            "nasil kullanilir", "ne işe yarar", "ne ise yarar",
+            "nasil kullanilir", "ne işe yarar", "ne ise yarar", "ne olur",
             "açıkla", "acikla", "örnek", "ornek"
         ])
         and not any(x in k for x in [
@@ -5243,7 +5244,7 @@ def sohbet():
 
     # 🧠 Eagle teknik bilgi bankası — doğrudan cevap
     bilgi_sonuclari = []
-    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api", "guvenli_hesaplama") and not autofix_istegi:
+    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api", "guvenli_hesaplama", "kod_analiz") and not autofix_istegi:
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
     if bilgi_sonuclari:
