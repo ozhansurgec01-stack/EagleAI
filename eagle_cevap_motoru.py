@@ -269,7 +269,7 @@ def _devam_uret(mesaj, onceki_kullanici, son_eagle):
 def _soru_uret(mesaj, onceki_kullanici):
     metin = mesaj.casefold()
 
-    if any(
+    hal_hatir = any(
         ifade in metin
         for ifade in (
             "nasılsın",
@@ -278,20 +278,38 @@ def _soru_uret(mesaj, onceki_kullanici):
             "nasıl gidiyor",
             "nasil gidiyor",
         )
-    ):
+    )
+
+    ne_yapiyor = any(
+        ifade in metin
+        for ifade in (
+            "ne yapıyorsun",
+            "ne yapiyorsun",
+            "bugün neler yaptın",
+            "bugun neler yaptin",
+            "bugün ne yaptın",
+            "bugun ne yaptin",
+        )
+    )
+
+    if hal_hatir and ne_yapiyor:
+        return (
+            "🦅 İyiyim Özhan, buradayım. 😊 "
+            "Bugün de seninle konuşuyor, sorularını yanıtlıyor ve yardımcı olmaya çalışıyorum. "
+            "Senin günün nasıl geçti?"
+        )
+
+    if hal_hatir:
         return (
             "🦅 İyiyim Özhan, buradayım. "
             "Seninle konuşmaya ve yardımcı olmaya hazırım. 😊"
         )
 
-    if any(
-        ifade in metin
-        for ifade in (
-            "ne yapıyorsun",
-            "ne yapiyorsun",
+    if ne_yapiyor:
+        return (
+            "🦅 Şu an seninle konuşuyorum. "
+            "Sorularını yanıtlıyor ve sana yardımcı olmaya çalışıyorum. 😊"
         )
-    ):
-        return "🦅 Şu an seninle konuşuyorum. Ne hakkında devam edelim?"
 
     if onceki_kullanici:
         return (
