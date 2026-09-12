@@ -353,6 +353,10 @@
       {
         "soru": "Python map ve filter nedir?",
         "cevap": "map elemanlara fonksiyon uygular, filter koşulu sağlayan elemanları seçer."
+      },
+      {
+        "soru": "Python'da b = a ile b = a.copy() arasındaki fark nedir?",
+        "cevap": "b = a yapıldığında b ve a aynı liste nesnesini gösterir. Bu nedenle b.append(4) yapılırsa a da değişir ve a is b True olur. b = a.copy() yapıldığında ise listenin ayrı bir kopyası oluşturulur. Böylece b.append(4) yalnızca b'yi değiştirir ve a is b False olur."
       }
     ],
     "sozlukler": [

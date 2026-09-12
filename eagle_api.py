@@ -673,6 +673,20 @@ def bilgi_bankasi_ara(mesaj):
     mesaj_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", metin.lower())
     mesaj_norm = re.sub(r"\s+", " ", mesaj_norm).strip()
 
+    # 🎯 super() için doğrudan kavram eşleşmesi.
+    # Genel "değişken" vb. kayıtların super() sorusunu gölgelemesini önler.
+    if "super" in mesaj_norm and "ne işe yarar" in mesaj_norm:
+        for maddeler in bilgi.get("python", {}).values():
+            if not isinstance(maddeler, list):
+                continue
+            for madde in maddeler:
+                if not isinstance(madde, dict):
+                    continue
+                soru = str(madde.get("soru", "")).strip().lower()
+                cevap = str(madde.get("cevap", "")).strip()
+                if soru == "super() ne işe yarar?" and cevap:
+                    return [cevap]
+
     for terim, sorular in ozgun_python_sorular.items():
         terim_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", terim.lower())
         terim_norm = re.sub(r"\s+", " ", terim_norm).strip()
@@ -696,48 +710,213 @@ def bilgi_bankasi_ara(mesaj):
                 for hedef_soru in sorular:
                     hedef_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", hedef_soru.lower())
                     hedef_norm = re.sub(r"\s+", " ", hedef_norm).strip()
-                    if soru_norm == hedef_norm:
+                    # Özel kayıt yalnızca hedef soru ifadesi gerçekten
+                    # mesajın içinde geçiyorsa doğrudan seçilir.
+                    # Terim başka bir sorunun bağlamında geçiyorsa
+                    # aşağıdaki çoklu kavram motoruna bırakılır.
+                    if hedef_norm in mesaj_norm:
                         return [cevap]
 
-    # 🎯 Özel Python terimleri için doğrudan eşleşme
-    # Genel konu eşleşmesinden önce çalışır; yanlış/ilgisiz sonuçları önler.
+    # 🎯 Özel Python terimleri için akıllı eşleştirme
+    # Bir soruda geçen yardımcı bir terimin ana konuyu gölgelemesini önler.
+    # Çoklu kavramlar, olumsuz ifadeler ve soru içindeki güçlü bağlam
+    # birlikte değerlendirilir.
+
     ozel_terimler = (
+        "super().__init__()", "super().__init__",
+        "datetime.now()", "math.sqrt()",
         "os.getcwd()", "os.listdir()", "os.mkdir()", "os.makedirs()",
         "os.remove()", "os.path.exists()", "path.exists()", "path.mkdir()",
-        "path.name", "path.suffix", "f-string", "find()", "count()",
-        "isdigit()", "isalpha()", "isalnum()", "capitalize()", "title()",
+        "path.name", "path.suffix", "f-string",
+        "find()", "count()", "isdigit()", "isalpha()", "isalnum()",
+        "capitalize()", "title()",
         "append()", "extend()", "insert()", "remove()", "pop()", "clear()",
-        "reverse()", "keys()", "values()", "items()", "get()", "update()", "isinstance", "isinstance()", "break", "continue",
-        "super()", "datetime", "datetime.now()", "timedelta", "math.sqrt()", "venv", "pip", "pip install",
-        "paket", "iterator", "iter()", "next()", "generator", "yield", "decorator", "async", "await"
+        "copy()", "copy", "reverse()", "keys()", "values()", "items()",
+        "get()", "update()", "isinstance()", "isinstance",
+        "break", "continue", "super()", "__init__",
+        "timedelta", "venv", "pip install", "pip",
+        "paket", "iterator", "iter()", "next()", "generator",
+        "yield", "decorator", "async", "await",
+        "comprehension", "list comprehension", "dictionary comprehension",
+        "set comprehension", "filter()", "filter", "map()", "map",
+        "lambda"
     )
 
-    mesaj_alt = metin.replace(" ", "").lower()
-
-    # Özel ve daha uzun terimler önce eşleşsin.
-    # Örn. datetime.now() -> datetime'den önce değerlendirilir.
+    mesaj_alt = metin.lower().replace(" ", "")
     ozel_terimler = tuple(sorted(ozel_terimler, key=len, reverse=True))
 
-    for terim in ozel_terimler:
-        if terim in mesaj_alt:
-            for kategori, maddeler in bilgi.get("python", {}).items():
-                for madde in maddeler:
-                      if isinstance(madde, dict):
-                          madde_metin = str(madde.get("soru", "")) + " " + str(madde.get("cevap", ""))
-                          gosterilecek = madde_metin.strip()
-                      elif isinstance(madde, str):
-                          madde_metin = madde
-                          gosterilecek = madde
-                      else:
-                          continue
-                      if terim in madde_metin.lower().replace(" ", ""):
-                          # datetime sorgusunda datetime.now() kayıtlarını dahil etme.
-                          if terim == "datetime" and "datetime.now()" in madde_metin.lower():
-                              continue
-                          bulunan.append((200, gosterilecek))
+    eslesen_terimler = [
+        terim for terim in ozel_terimler
+        if terim.lower().replace(" ", "") in mesaj_alt
+    ]
 
-            if bulunan:
-                return [madde for _, madde in bulunan[:3]]
+    if eslesen_terimler:
+        adaylar = []
+
+        # Olumsuz/kaçınma ifadeleri.
+        # Örn. "filter() kullanmadan" sorusunda filter kaydı ana cevap olmamalı.
+        filter_yasak = bool(re.search(
+            r"filter\(\)?[^.!?]{0,30}\b(kullanmadan|kullanma|olmadan|yerine)\b"
+            r"|\b(kullanmadan|kullanma|olmadan|yerine)\b[^.!?]{0,30}filter\(\)?",
+            metin
+        ))
+
+        # Çoklu kavramlar için güçlü bağlam çiftleri.
+        coklu_kavramlar = [
+            ("super()", "__init__"),
+            ("super().__init__", "__init__"),
+            ("comprehension", "liste"),
+            ("list comprehension", "liste"),
+            ("copy()", "append()"),
+            ("copy", "append()"),
+            ("isinstance", "liste"),
+            ("fonksiyon", "append()"),
+        ]
+
+        for kategori, maddeler in bilgi.get("python", {}).items():
+            if not isinstance(maddeler, list):
+                continue
+
+            for madde in maddeler:
+                if isinstance(madde, dict):
+                    soru_metin = str(madde.get("soru", ""))
+                    cevap_metin = str(madde.get("cevap", ""))
+                    gosterilecek = cevap_metin.strip()
+                elif isinstance(madde, str):
+                    soru_metin = madde
+                    cevap_metin = ""
+                    gosterilecek = madde.strip()
+                else:
+                    continue
+
+                if not gosterilecek:
+                    continue
+
+                soru_alt = soru_metin.lower().replace(" ", "")
+                cevap_alt = cevap_metin.lower().replace(" ", "")
+                madde_alt = (soru_metin + " " + cevap_metin).lower()
+
+                # datetime sorgusunda datetime.now() kaydını yanlışlıkla
+                # genel datetime sorusuna seçtirme.
+                if (
+                    "datetime" in eslesen_terimler
+                    and "datetime.now()" in madde_alt
+                    and "datetime.now()" not in mesaj_alt
+                ):
+                    continue
+
+                soru_eslesen = sum(
+                    1 for terim in eslesen_terimler
+                    if terim.lower().replace(" ", "") in soru_alt
+                )
+
+                cevap_eslesen = sum(
+                    1 for terim in eslesen_terimler
+                    if terim.lower().replace(" ", "") in cevap_alt
+                )
+
+                # Bazı yardımcı terimler soru içinde özellikle
+                # kullanılmamak üzere geçebilir. Örneğin:
+                # "filter() kullanmadan yeni listeye seçmek"
+                # sorusu doğrudan list comprehension konusunu anlatır.
+                anlam_eslesmesi = (
+                    filter_yasak
+                    and "comprehension" in madde_alt
+                    and (
+                        "yeni liste" in metin
+                        or "listeye" in metin
+                        or "seçerim" in metin
+                        or "seçmek" in metin
+                    )
+                )
+
+                if not soru_eslesen and not cevap_eslesen and not anlam_eslesmesi:
+                    continue
+
+                # Soru başlığındaki terim, cevaptaki terimden çok daha değerlidir.
+                puan = (soru_eslesen * 320) + (cevap_eslesen * 12)
+
+                # Sorunun gerçek metnindeki anlamlı kelimeleri de dikkate al.
+                soru_kelimeleri = set(
+                    re.findall(r"[a-z0-9çğıöşü]+", metin)
+                )
+                kayit_kelimeleri = set(
+                    re.findall(r"[a-z0-9çğıöşü]+", soru_metin.lower())
+                )
+
+                ortak = soru_kelimeleri & kayit_kelimeleri
+                puan += min(len(ortak), 8) * 35
+
+                # Birleşik kavramlar tek terimden daha güçlüdür.
+                for a, b in coklu_kavramlar:
+                    a_norm = a.lower().replace(" ", "")
+                    b_norm = b.lower().replace(" ", "")
+
+                    if a_norm in mesaj_alt and b_norm in mesaj_alt:
+                        kayit_a = a_norm in soru_alt
+                        kayit_b = b_norm in soru_alt
+
+                        if kayit_a and kayit_b:
+                            puan += 900
+                        elif kayit_a or kayit_b:
+                            puan += 100
+
+                # "filter kullanmadan" gibi açık yasaklarda filter kaydını düşür.
+                if filter_yasak and "filter" in soru_alt:
+                    puan -= 1500
+
+                # filter() özellikle kullanılmayacaksa,
+                # filter öneren kayıtları güçlü şekilde geri plana at.
+                if filter_yasak:
+                    if "filter()" in cevap_alt or "filter(" in cevap_alt:
+                        puan -= 2500
+
+                # "filter kullanmadan yeni listeye seçme" ifadesi,
+                # list comprehension kaydına güçlü bir anlam işaretidir.
+                if filter_yasak and "comprehension" in madde_alt:
+                    puan += 1800
+
+                    if (
+                        "yeni liste" in metin
+                        or "listeye" in metin
+                        or "seçerim" in metin
+                        or "seçmek" in metin
+                    ):
+                        puan += 1200
+
+                # super() + __init__ birlikte soruluyorsa __init__ bağlamını güçlendir.
+                if "__init__" in mesaj_alt and "super()" in mesaj_alt:
+                    if "__init__" in soru_alt:
+                        puan += 900
+                    if "super()" in soru_alt:
+                        puan += 250
+
+                # append() sorunun yardımcı detayıysa cevaptaki append
+                # copy() gibi ana konuyu gölgelememeli.
+                if "copy" in soru_alt and "append()" in cevap_alt:
+                    puan += 500
+
+                adaylar.append((puan, gosterilecek, soru_metin))
+
+        if adaylar:
+            adaylar.sort(key=lambda x: x[0], reverse=True)
+
+            sonuc = []
+            gorulen = set()
+
+            for _, madde, _ in adaylar:
+                anahtar = madde.lower().strip()
+                if anahtar in gorulen:
+                    continue
+
+                gorulen.add(anahtar)
+                sonuc.append(madde)
+
+                if len(sonuc) >= 3:
+                    break
+
+            if sonuc:
+                return sonuc
 
     def normalize(kelime):
         kelime = kelime.lower()
@@ -1485,7 +1664,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         ("python" in k or "python'da" in k or "pythonda" in k)
         and any(x in k for x in [
             "nedir", "ne demek", "nasıl", "nasil", "nasıl kullanılır",
-            "nasil kullanilir", "ne işe yarar", "ne ise yarar",
+            "nasil kullanilir", "ne işe yarar", "ne ise yarar", "ne olur",
             "açıkla", "acikla", "örnek", "ornek"
         ])
         and not any(x in k for x in [
