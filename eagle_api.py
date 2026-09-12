@@ -737,7 +737,6 @@ def bilgi_bankasi_ara(mesaj):
         "timedelta", "venv", "pip install", "pip",
         "paket", "iterator", "iter()", "next()", "generator",
         "yield", "decorator", "async", "await",
-        "copy()", "copy",
         "comprehension", "list comprehension", "dictionary comprehension",
         "set comprehension", "filter()", "filter", "map()", "map",
         "lambda"
