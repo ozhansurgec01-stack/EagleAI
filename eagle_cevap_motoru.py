@@ -74,7 +74,7 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None)
         return _devam_uret(metin, son_kullanici, son_eagle)
 
     # Normal soru.
-    if "?" in metin:
+    if "?" in metin or _soru_gibi_mi(kucuk):
         return _soru_uret(metin, son_kullanici)
 
     # Hafıza varsa ama cevabı gereksiz yere hafızaya bağlama.
@@ -88,6 +88,22 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None)
         return "🦅 Buradayım. Nasıl gidiyor?"
 
     return f"🦅 Anladım. {metin}"
+
+
+def _soru_gibi_mi(metin):
+    soru_kokleri = (
+        "nasılsın",
+        "nasilsin",
+        "iyi misin",
+        "iyi mi",
+        "ne düşünüyorsun",
+        "ne dusunuyorsun",
+        "ne yapıyorsun",
+        "ne yapiyorsun",
+        "nasıl gidiyor",
+        "nasil gidiyor",
+    )
+    return any(kok in metin for kok in soru_kokleri)
 
 
 def _gorus_istiyor_mu(metin):
@@ -251,6 +267,32 @@ def _devam_uret(mesaj, onceki_kullanici, son_eagle):
 
 
 def _soru_uret(mesaj, onceki_kullanici):
+    metin = mesaj.casefold()
+
+    if any(
+        ifade in metin
+        for ifade in (
+            "nasılsın",
+            "nasilsin",
+            "iyi misin",
+            "nasıl gidiyor",
+            "nasil gidiyor",
+        )
+    ):
+        return (
+            "🦅 İyiyim Özhan, buradayım. "
+            "Seninle konuşmaya ve yardımcı olmaya hazırım. 😊"
+        )
+
+    if any(
+        ifade in metin
+        for ifade in (
+            "ne yapıyorsun",
+            "ne yapiyorsun",
+        )
+    ):
+        return "🦅 Şu an seninle konuşuyorum. Ne hakkında devam edelim?"
+
     if onceki_kullanici:
         return (
             "🦅 Tabii. Bunu konuştuğumuz konuyla birlikte değerlendirebiliriz. "
@@ -258,3 +300,5 @@ def _soru_uret(mesaj, onceki_kullanici):
         )
 
     return "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin."
+
+
