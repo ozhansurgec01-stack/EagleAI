@@ -28,6 +28,29 @@ def genel_sohbet(mesaj):
             "yardımcı olabilirim. Ayrıca günlük konularda fikir de üretebilirim."
         )
 
+    # 🦅 Doğal sohbet
+    if any(x in metin for x in (
+        "sen ne yapıyorsun",
+        "ne yapıyorsun",
+        "şimdi ne yapıyorsun",
+        "simdi ne yapiyorsun",
+    )):
+        return "Buradayım Özhan 😄 Seninle sohbet ediyorum. Ne konuşalım?"
+
+    if any(x in metin for x in (
+        "ben yokken ne yaptın",
+        "ben yokken neler yaptın",
+        "ben yokken ne yaptın sen",
+        "ben yokken neler yaptın sen",
+    )):
+        return "Ben kendi başıma bir şeyler yapıp beklemiyorum 😄 Sen yazdığında kaldığımız yerden devam ediyorum."
+
+    if "burada mısın" in metin or "burada misin" in metin:
+        return "Buradayım 😄 Hazırım."
+
+    if "beni bekliyor musun" in metin or "beni bekledin mi" in metin:
+        return "Sen yazdığında buradayım 😄"
+
     # Nasılsın
     if "nasılsın" in metin or "nasilsin" in metin:
         return "İyiyim 😄 Hazırım, ne konuşalım?"
