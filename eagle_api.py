@@ -4389,14 +4389,14 @@ def sohbet():
     # 🧠 GENEL KONUŞMA BAĞLAMI
     # Belirsiz devam mesajlarını karar motorundan önce yakın geçmişle çöz.
     mesaj_orijinal = mesaj
-    mesaj = eagle_genel_baglam_coz(mesaj, gecmis)
-    if mesaj != mesaj_orijinal:
+    mesaj_karar = eagle_genel_baglam_coz(mesaj, gecmis)
+    if mesaj_karar != mesaj_orijinal:
         print(
-            f"🧠 EAGLE BAĞLAM ÇÖZÜLDÜ: {mesaj}",
+            f"🧠 EAGLE BAĞLAM ÇÖZÜLDÜ: {mesaj_karar}",
             flush=True
         )
 
-    akil_plani = akil_motor.planla(mesaj, gecmis)
+    akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
 
     # 🧠 AKTİF PYTHON KODU TAKİBİ
@@ -5260,7 +5260,12 @@ def sohbet():
 
     # 🗣️ Genel sohbet modülü
     if karar.get("arac") == "eagle_sohbet":
-        cevap = genel_sohbet(mesaj)
+        cevap = genel_sohbet(
+        mesaj,
+        gecmis=gecmis,
+        hafiza=kalici_hafiza,
+        karar=karar
+    )
 
         return jsonify({
             "ok": True,
