@@ -2011,6 +2011,16 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             })
             return karar
 
+    if web_arastirma_gerekli(metin):
+        karar.update({
+            "intent": "guncel_bilgi",
+            "guven": "yüksek",
+            "neden": "İnternet araştırması gerektiren istek algılandı.",
+            "arac": "web_arastirma",
+            "ogrenme_adayi": True
+        })
+        return karar
+
     return karar
 
 
@@ -2037,7 +2047,9 @@ def web_arastirma_gerekli(mesaj):
         "ne oldu",
         "araştır", "arastir",
         "araştırır mısın",
-        "bul", "bulur musun"
+        "bul", "bulur musun",
+        "nedir", "ne demek", "ne işe yarar", "ne ise yarar",
+        "açıkla", "acikla", "nasıl çalışır", "nasil calisir"
     ]
 
     mesaj_kucuk = mesaj.lower()
@@ -5379,6 +5391,9 @@ def sohbet():
         print(f"🌐 WEB SORGU: {arama_sorgusu!r}", flush=True)
         web_verisi = web_arastir(arama_sorgusu)
         print(f"🌐 WEB SONUÇ: {len(web_verisi)}", flush=True)
+
+        if web_verisi and eagle_webden_ogren(mesaj, web_verisi):
+            print("🧠 WEB BİLGİSİ ÖĞRENME HAFIZASINA KAYDEDİLDİ", flush=True)
 
 
 
