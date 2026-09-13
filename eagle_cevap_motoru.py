@@ -276,10 +276,10 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None,
         if hafiza_sonuc:
             return f"🦅 Hafızamda bununla ilgili şu bilgiyi buldum: {hafiza_sonuc}"
 
-    # Geçmiş başarılı sohbetler.
-    sohbet_sonuc = _sohbet_hafizasindan_cek(kucuk)
-    if sohbet_sonuc:
-        return f"🦅 Daha önceki sohbet hafızamdan bulduğum cevap: {sohbet_sonuc}"
+        # Kişisel hafızada bulunamazsa geçmiş başarılı sohbetlere bak.
+        sohbet_sonuc = _sohbet_hafizasindan_cek(kucuk)
+        if sohbet_sonuc:
+            return f"🦅 Daha önceki sohbet hafızamdan bulduğum cevap: {sohbet_sonuc}"
 
     # Bilgi bankası.
     bilgi_sonuc = _bilgi_bankasindan_cek(kucuk)
