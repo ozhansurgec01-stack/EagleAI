@@ -639,9 +639,6 @@ def _soru_uret(mesaj, onceki_kullanici):
         )
 
     if onceki_kullanici:
-        return (
-            "🦅 Tabii. Bunu konuştuğumuz konuyla birlikte değerlendirebiliriz. "
-            "Önceki söylediklerini de dikkate alıyorum."
-        )
+        return "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin."
 
     return "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin."
