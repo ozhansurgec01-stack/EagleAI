@@ -26,28 +26,8 @@
       "konu": "otomasyon_testi"
     },
     {
-      "soru": "Kartal morbulut 7391 hakkında ne biliyorsun?",
+      "soru": "Test kullanıcısının favori sayısı neydi?",
       "cevap": "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin.",
-      "konu": "genel_sohbet"
-    },
-    {
-      "soru": "Kartal morbulut 7391 hakkında ne biliyorsun?",
-      "cevap": "🦅 Daha önceki sohbet hafızamdan bulduğum cevap: 🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin.",
-      "konu": "genel_sohbet"
-    },
-    {
-      "soru": "Kartal canlı test kodum neydi?",
-      "cevap": "🦅 Hafızamda bununla ilgili şu bilgiyi buldum: Kartal canlı test kodum 5824",
-      "konu": "genel_sohbet"
-    },
-    {
-      "soru": "Test kullanıcısının favori sayısı neydi?",
-      "cevap": "🦅 Hafızamda bununla ilgili şu bilgiyi buldum: Kartal canlı test kodum 5824",
-      "konu": "genel_sohbet"
-    },
-    {
-      "soru": "Test kullanıcısının favori sayısı neydi?",
-      "cevap": "🦅 Hafızamda bununla ilgili şu bilgiyi buldum: Test kullanıcısının favori sayısı 427",
       "konu": "genel_sohbet"
     },
     {
@@ -56,13 +36,8 @@
       "konu": "genel_sohbet"
     },
     {
-      "soru": "Merhaba Eagle, bugün nasılsın?",
-      "cevap": "🦅 Daha önceki sohbet hafızamdan bulduğum cevap: 🦅 İyiyim Özhan, buradayım. Seninle konuşmaya ve yardımcı olmaya hazırım. 😊",
-      "konu": "genel_sohbet"
-    },
-    {
-      "soru": "Test kullanıcısının favori sayısı neydi?",
-      "cevap": "🦅 Hafızamda bununla ilgili şu bilgiyi buldum: Test kullanıcısının favori sayısı 427",
+      "soru": "EagleMusic projem neydi?",
+      "cevap": "🦅 Hafızamda bununla ilgili şu bilgiyi buldum: EagleMusic benim Android müzik çalar projem.",
       "konu": "genel_sohbet"
     }
   ]
