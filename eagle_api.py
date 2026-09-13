@@ -5349,6 +5349,32 @@ def sohbet():
             web_verisi = web_arastir(arama_sorgusu)
 
     elif karar.get("arac") == "web_arastirma":
+        # 🧠 Öğrenme hafızası: güncel olmayan genel konuda önce mevcut bilgiyi kullan
+        mesaj_kucuk = mesaj.casefold()
+        guncel_isaretleri = [
+            "şimdi", "şu an", "son dakika", "güncel", "guncel",
+            "haber", "haberler", "maç", "mac", "skor", "puan durumu",
+            "bitcoin", "btc", "ethereum", "eth",
+            "altın", "gram altın", "dolar", "euro", "sterlin",
+            "en son", "son durum", "ne oldu"
+        ]
+
+        if not any(x in mesaj_kucuk for x in guncel_isaretleri):
+            ogrenilmis = eagle_ogrenme_ara(mesaj)
+            if ogrenilmis and ogrenilmis.get("bilgi"):
+                print("🧠 ÖĞRENME HAFIZASI KULLANILDI — WEB ATLANDI", flush=True)
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🧠 EAGLE ÖĞRENME HAFIZASI\n\n"
+                        + str(ogrenilmis.get("bilgi"))
+                    ),
+                    "eagle_direct": True,
+                    "learned_memory": True,
+                    "web_search": False,
+                    "memory_count": len(hafiza_yukle())
+                })
+
         arama_sorgusu = doviz_arama_sorgusu(mesaj)
         print(f"🌐 WEB SORGU: {arama_sorgusu!r}", flush=True)
         web_verisi = web_arastir(arama_sorgusu)
