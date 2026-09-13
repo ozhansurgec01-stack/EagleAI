@@ -437,7 +437,18 @@ def hafiza_yukle():
             )
 
             if isinstance(veri, list):
-                return veri
+                return {
+                    "kullanici": veri,
+                    "eagle_ogrenme": [],
+                    "sohbet": []
+                }
+
+            if isinstance(veri, dict):
+                return {
+                    "kullanici": veri.get("kullanici", []),
+                    "eagle_ogrenme": veri.get("eagle_ogrenme", []),
+                    "sohbet": veri.get("sohbet", [])
+                }
 
     except Exception as e:
         print("⚠️ Hafıza okunamadı:", e)
@@ -470,13 +481,118 @@ def hafiza_ekle(bilgi):
     if bilgi in hafiza:
         return False
 
-    hafiza.append(bilgi)
+    # Yeni bilgiler kullanıcı hafızasına kaydedilir.
+    veri = json.loads(MEMORY_FILE.read_text(encoding="utf-8")) if MEMORY_FILE.exists() else {}
+    if not isinstance(veri, dict):
+        veri = {
+            "kullanici": hafiza,
+            "eagle_ogrenme": [],
+            "sohbet": []
+        }
 
-    # En fazla 100 kalıcı bilgi
-    if len(hafiza) > 100:
-        hafiza = hafiza[-100:]
+    kullanici = veri.setdefault("kullanici", [])
 
-    hafiza_kaydet(hafiza)
+    if bilgi in kullanici:
+        return False
+
+    kullanici.append(bilgi)
+
+    if len(kullanici) > 100:
+        veri["kullanici"] = kullanici[-100:]
+
+    hafiza_kaydet(veri)
+    return True
+
+
+def sohbet_hafizaya_ekle(soru, cevap, konu="", kaynak=None):
+    soru = str(soru).strip()
+    cevap = str(cevap).strip()
+    konu = str(konu).strip()
+
+    if not soru or not cevap:
+        return False
+
+    veri = hafiza_yukle()
+    sohbet = veri.setdefault("sohbet", [])
+
+    kayit = {
+        "soru": soru,
+        "cevap": cevap
+    }
+
+    if konu:
+        kayit["konu"] = konu
+
+    if kaynak:
+        kayit["kaynak"] = str(kaynak).strip()
+
+    sohbet.append(kayit)
+
+    if len(sohbet) > 500:
+        veri["sohbet"] = sohbet[-500:]
+
+    hafiza_kaydet(veri)
+    return True
+
+
+def eagle_ogrenme_ekle(konu, bilgi, kaynak=None):
+    konu = str(konu).strip()
+    bilgi = str(bilgi).strip()
+
+    if not konu or not bilgi:
+        return False
+
+    veri = hafiza_yukle()
+    ogrenme = veri.setdefault("eagle_ogrenme", [])
+
+    for kayit in ogrenme:
+        if (
+            isinstance(kayit, dict)
+            and str(kayit.get("konu", "")).strip().casefold() == konu.casefold()
+            and str(kayit.get("bilgi", "")).strip().casefold() == bilgi.casefold()
+        ):
+            return False
+
+    kayit = {
+        "konu": konu,
+        "bilgi": bilgi
+    }
+
+    if kaynak:
+        kayit["kaynak"] = str(kaynak).strip()
+
+    ogrenme.append(kayit)
+
+    if len(ogrenme) > 500:
+        veri["eagle_ogrenme"] = ogrenme[-500:]
+
+    hafiza_kaydet(veri)
+    return True
+
+
+def hafiza_sil(bilgi):
+    bilgi = str(bilgi).strip()
+
+    if not bilgi:
+        return False
+
+    veri = json.loads(MEMORY_FILE.read_text(encoding="utf-8")) if MEMORY_FILE.exists() else {}
+
+    if isinstance(veri, list):
+        veri = {
+            "kullanici": veri,
+            "eagle_ogrenme": [],
+            "sohbet": []
+        }
+
+    kullanici = veri.setdefault("kullanici", [])
+    yeni_hafiza = [x for x in kullanici if str(x).strip() != bilgi]
+
+    if len(yeni_hafiza) == len(kullanici):
+        return False
+
+    veri["kullanici"] = yeni_hafiza
+    hafiza_kaydet(veri)
     return True
 
 
@@ -4375,14 +4491,45 @@ def sohbet():
         }), 400
 
     hatirla_desenleri = ["hatırla:", "hatirla:", "unutma:"]
+    sil_desenleri = ["hafızadan sil:", "hafizadan sil:", "hafızadan çıkar:", "hafizadan cikar:"]
     mesaj_kucuk = mesaj.lower()
+
+    silindi = False
+    for desen in sil_desenleri:
+        if mesaj_kucuk.startswith(desen):
+            bilgi = mesaj[len(desen):].strip()
+            if bilgi:
+                silindi = hafiza_sil(bilgi)
+            break
+
+    if sil_desenleri and any(mesaj_kucuk.startswith(d) for d in sil_desenleri):
+        kalici_hafiza = hafiza_metni()
+        return jsonify({
+            "ok": True,
+            "answer": (
+                "🦅 Hafızadan sildim."
+                if silindi
+                else "🦅 Bu bilgi hafızamda bulunamadı."
+            ),
+            "eagle_direct": True,
+            "memory_count": len(kalici_hafiza)
+        })
 
     for desen in hatirla_desenleri:
         if mesaj_kucuk.startswith(desen):
             bilgi = mesaj[len(desen):].strip()
-            if bilgi:
-                hafiza_ekle(bilgi)
-            break
+            eklendi = hafiza_ekle(bilgi) if bilgi else False
+            kalici_hafiza = hafiza_metni()
+            return jsonify({
+                "ok": True,
+                "answer": (
+                    "🦅 Hafızama ekledim."
+                    if eklendi
+                    else "🦅 Bu bilgi zaten hafızamda."
+                ),
+                "eagle_direct": True,
+                "memory_count": len(kalici_hafiza)
+            })
 
     kalici_hafiza = hafiza_metni()
     autofix_istegi = False
@@ -5261,11 +5408,16 @@ def sohbet():
     # 🗣️ Genel sohbet modülü
     if karar.get("arac") == "eagle_sohbet":
         cevap = genel_sohbet(
-        mesaj,
-        gecmis=gecmis,
-        hafiza=kalici_hafiza,
-        karar=karar
-    )
+            mesaj,
+            gecmis=gecmis,
+            hafiza=kalici_hafiza,
+            karar=karar,
+            baglam=akil_plani.get("baglam", {}).get("son_mesaj", "")
+        )
+
+        # Başarılı genel sohbeti kalıcı sohbet hafızasına kaydet.
+        if cevap and str(cevap).strip():
+            sohbet_hafizaya_ekle(mesaj, cevap, konu="genel_sohbet")
 
         return jsonify({
             "ok": True,

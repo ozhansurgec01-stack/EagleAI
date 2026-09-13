@@ -1,4 +1,39 @@
-[
-  "EagleMusic benim Android müzik çalar projem.",
-  "kedimin adı Zeytin"
-]
+{
+  "kullanici": [
+    "EagleMusic benim Android müzik çalar projem."
+  ],
+  "eagle_ogrenme": [
+    {
+      "konu": "Python isinstance",
+      "bilgi": "isinstance() bir nesnenin belirtilen türden olup olmadığını kontrol eder.",
+      "kaynak": "yerel_test"
+    }
+  ],
+  "sohbet": [
+    {
+      "soru": "Python isinstance nedir?",
+      "cevap": "isinstance() bir nesnenin belirtilen türden olup olmadığını kontrol eder.",
+      "konu": "Python"
+    },
+    {
+      "soru": "Kartalın gizli test kodu nedir?",
+      "cevap": "KARTAL-TEST-8472",
+      "konu": "hafiza_testi"
+    },
+    {
+      "soru": "Kartal hafıza otomasyon testi nedir?",
+      "cevap": "Otomatik sohbet hafızası çalışıyor.",
+      "konu": "otomasyon_testi"
+    },
+    {
+      "soru": "Kartal morbulut 7391 hakkında ne biliyorsun?",
+      "cevap": "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin.",
+      "konu": "genel_sohbet"
+    },
+    {
+      "soru": "Kartal morbulut 7391 hakkında ne biliyorsun?",
+      "cevap": "🦅 Daha önceki sohbet hafızamdan bulduğum cevap: 🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin.",
+      "konu": "genel_sohbet"
+    }
+  ]
+}

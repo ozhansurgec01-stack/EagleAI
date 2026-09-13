@@ -108,17 +108,25 @@ class EagleAkilMotoru:
         if not self.son_mesaj:
             return karar
 
-        if not self.devam_sorusu_mu(mesaj):
+        # Açık bir devam ifadesi varsa veya hem mevcut hem önceki
+        # karar genel sohbet akışındaysa bağlamı koru.
+        # Bağımsız bilgi/araç soruları eski sohbet tarafından ezilmez.
+        ayni_sohbet_akisi = (
+            karar.arac == "eagle_sohbet"
+            and self.son_arac == "eagle_sohbet"
+        )
+
+        if not self.devam_sorusu_mu(mesaj) and not ayni_sohbet_akisi:
             return karar
 
         # Önceki istek belirgin bir araç/konu taşıyorsa
-        # devam sorusunu o bağlama bağla.
+        # devam mesajını o bağlama bağla.
         if self.son_intent and self.son_arac:
             karar.intent = self.son_intent
             karar.arac = self.son_arac
             karar.baglam_kullanildi = True
             karar.neden = (
-                "Devam sorusu önceki konuşma bağlamıyla "
+                "Konuşma bağlamı önceki sohbet akışıyla "
                 "ilişkilendirildi."
             )
 
