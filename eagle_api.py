@@ -5576,6 +5576,21 @@ def sohbet():
             "memory_count": len(hafiza_yukle())
         })
 
+    # 🧠 Eagle öğrenme hafızası — bilgi bankasında yoksa öğrenilmiş bilgiyi kullan
+    ogrenilmis = eagle_ogrenme_ara(mesaj)
+    if ogrenilmis and ogrenilmis.get("bilgi"):
+        cevap = (
+            "🧠 EAGLE ÖĞRENME HAFIZASI\n\n"
+            + str(ogrenilmis.get("bilgi"))
+        )
+        return jsonify({
+            "ok": True,
+            "answer": cevap,
+            "eagle_direct": True,
+            "learned_memory": True,
+            "memory_count": len(hafiza_yukle())
+        })
+
     # 🗣️ Genel sohbet modülü
     if karar.get("arac") == "eagle_sohbet":
         cevap = genel_sohbet(
