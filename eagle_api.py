@@ -544,14 +544,25 @@ def eagle_ogrenme_ekle(konu, bilgi, kaynak=None):
 
     veri = hafiza_yukle()
     ogrenme = veri.setdefault("eagle_ogrenme", [])
+    konu_key = konu.casefold()
+    bilgi_key = bilgi.casefold()
 
     for kayit in ogrenme:
-        if (
-            isinstance(kayit, dict)
-            and str(kayit.get("konu", "")).strip().casefold() == konu.casefold()
-            and str(kayit.get("bilgi", "")).strip().casefold() == bilgi.casefold()
-        ):
+        if not isinstance(kayit, dict):
+            continue
+
+        if str(kayit.get("konu", "")).strip().casefold() != konu_key:
+            continue
+
+        if str(kayit.get("bilgi", "")).strip().casefold() == bilgi_key:
             return False
+
+        kayit["bilgi"] = bilgi
+        if kaynak:
+            kayit["kaynak"] = str(kaynak).strip()
+
+        hafiza_kaydet(veri)
+        return True
 
     kayit = {
         "konu": konu,
