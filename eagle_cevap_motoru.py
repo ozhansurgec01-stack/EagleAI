@@ -536,15 +536,26 @@ def _devam_uret(mesaj, onceki_kullanici, son_eagle, hafiza=None):
     if _gorus_istiyor_mu(mesaj.casefold()):
         return _gorus_uret(mesaj, onceki_kullanici)
 
-    hafiza_bilgisi = _hafizadan_bilgi_cek(
-        f"{onceki_kullanici} {mesaj}"
+    hafiza_sorgusu = any(
+        ifade in mesaj.casefold()
+        for ifade in (
+            "hafıza", "hafiza",
+            "hatırla", "hatirla",
+            "hatırlıyor musun", "hatirliyor musun",
+            "neydi", "unutma"
+        )
     )
 
-    if hafiza_bilgisi:
-        return (
-            f"🦅 Hafızamdaki bilgiye göre: {hafiza_bilgisi} "
-            f"“{mesaj}” dediğine göre, bu konunun üzerinden devam edebiliriz."
+    if hafiza_sorgusu:
+        hafiza_bilgisi = _hafizadan_bilgi_cek(
+            f"{onceki_kullanici} {mesaj}"
         )
+
+        if hafiza_bilgisi:
+            return (
+                f"🦅 Hafızamdaki bilgiye göre: {hafiza_bilgisi} "
+                f"“{mesaj}” dediğine göre, bu konunun üzerinden devam edebiliriz."
+            )
 
     return _soru_uret(mesaj, onceki_kullanici)
 
