@@ -4072,10 +4072,32 @@ def hafiza_metni():
     if not hafiza:
         return "Henüz kayıtlı kalıcı bilgi yok."
 
-    return "\n".join(
-        f"- {bilgi}"
-        for bilgi in hafiza
-    )
+    if isinstance(hafiza, list):
+        return "\n".join(
+            f"- {bilgi}"
+            for bilgi in hafiza
+        )
+
+    satirlar = []
+
+    for bilgi in hafiza.get("kullanici", []):
+        satirlar.append(f"- {bilgi}")
+
+    for kayit in hafiza.get("eagle_ogrenme", []):
+        if isinstance(kayit, dict):
+            konu = str(kayit.get("konu", "")).strip()
+            bilgi = str(kayit.get("bilgi", "")).strip()
+            if konu or bilgi:
+                satirlar.append(f"- {konu}: {bilgi}")
+
+    for kayit in hafiza.get("sohbet", []):
+        if isinstance(kayit, dict):
+            soru = str(kayit.get("soru", "")).strip()
+            cevap = str(kayit.get("cevap", "")).strip()
+            if soru and cevap:
+                satirlar.append(f"- Soru: {soru} | Cevap: {cevap}")
+
+    return "\n".join(satirlar) if satirlar else "Henüz kayıtlı kalıcı bilgi yok."
 
 
 @app.get("/")
@@ -4546,6 +4568,25 @@ def sohbet():
     akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
 
+    # 🧠 Hafıza soruları kod analizi değildir.
+    hafiza_sorgusu = any(
+        ifade in mesaj_kucuk
+        for ifade in (
+            "hafıza", "hafiza",
+            "hatırla", "hatirla",
+            "hatırlıyor musun", "hatirliyor musun",
+            "neydi"
+        )
+    )
+
+    if hafiza_sorgusu and karar.get("arac") == "kod_analiz":
+        karar = {
+            **karar,
+            "intent": "sohbet",
+            "arac": "eagle_sohbet",
+            "neden": "Hafıza sorgusu kod analizi kararını geçersiz kıldı.",
+        }
+
     # 🧠 AKTİF PYTHON KODU TAKİBİ
     aktif_kod = sohbet_baglam.get("aktif_kod", "")
     aktif_kod_takibi = False
@@ -4558,7 +4599,10 @@ def sohbet():
     )
     yeni_kod_var = bool(yeni_kod_eslesmesi)
 
-    if aktif_kod and not yeni_kod_var:
+    if aktif_kod and not yeni_kod_var and not any(
+        ifade in mesaj_kucuk
+        for ifade in ("hafıza", "hafiza", "hatırla", "hatirla", "neydi")
+    ):
         kod_takip_ifadeleri = [
             "bu kod",
             "yukarıdaki kod",
@@ -4597,13 +4641,26 @@ def sohbet():
             })
 
     # 🧠 Önceki konuşmanın aktif konusu belirsiz mesajı açıklıyorsa kullan.
-    karar = eagle_baglam_yonlendir(
-        mesaj,
-        karar,
-        sohbet_baglam,
-        borc_modulu,
-        gecmis
+    # 🧠 Hafıza soruları kod analizi olarak yönlendirilmemeli.
+    hafiza_sorgusu = any(
+        ifade in mesaj_kucuk
+        for ifade in (
+            "hafızamda", "hafizamda",
+            "hafızadaki", "hafizadaki",
+            "hafızaya", "hafizaya",
+            "hatırlıyor musun", "hatirliyor musun",
+            "neydi", "ne olduğunu"
+        )
     )
+
+    if not hafiza_sorgusu:
+        karar = eagle_baglam_yonlendir(
+            mesaj,
+            karar,
+            sohbet_baglam,
+            borc_modulu,
+            gecmis
+        )
 
     print(f"🧠 EAGLE KARAR: {karar}", flush=True)
 

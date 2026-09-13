@@ -31,10 +31,24 @@ def _hafizadan_bilgi_cek(anahtar):
         else:
             return None
 
+        en_iyi_kullanici = None
+        en_iyi_puan = 0
+
         for item in kullanici:
             metin = str(item).casefold()
-            if any(k in metin for k in kelimeler):
-                return item
+            puan = sum(1 for k in kelimeler if k in metin)
+
+            if puan > en_iyi_puan:
+                en_iyi_puan = puan
+                en_iyi_kullanici = item
+
+        if kelimeler:
+            gereken = 2 if len(kelimeler) >= 2 else 1
+            if en_iyi_puan >= gereken:
+                return en_iyi_kullanici
+
+        en_iyi_ogrenme = None
+        en_iyi_puan = 0
 
         for item in ogrenme:
             if not isinstance(item, dict):
@@ -42,9 +56,18 @@ def _hafizadan_bilgi_cek(anahtar):
 
             konu = str(item.get("konu", "")).casefold()
             bilgi = str(item.get("bilgi", "")).strip()
+            metin = konu + " " + bilgi.casefold()
 
-            if any(k in konu or k in bilgi.casefold() for k in kelimeler):
-                return bilgi
+            puan = sum(1 for k in kelimeler if k in metin)
+
+            if puan > en_iyi_puan:
+                en_iyi_puan = puan
+                en_iyi_ogrenme = bilgi
+
+        if kelimeler:
+            gereken = 2 if len(kelimeler) >= 2 else 1
+            if en_iyi_puan >= gereken:
+                return en_iyi_ogrenme
 
     except Exception:
         pass
@@ -159,7 +182,7 @@ def eagle_cevap_uret(mesaj, gecmis=None, hafiza=None, karar=None, baglam=None):
 
     mesaj = str(mesaj or "").strip()
     gecmis = gecmis if isinstance(gecmis, list) else []
-    hafiza = hafiza if isinstance(hafiza, list) else []
+    hafiza = hafiza if isinstance(hafiza, (list, dict)) else []
     karar = karar if isinstance(karar, dict) else {}
     baglam = str(baglam or '').strip()
 
@@ -237,10 +260,21 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None,
     if _devam_mesaji_mi(kucuk) and son_kullanici:
         return _devam_uret(metin, son_kullanici, son_eagle, hafiza)
 
-    # Kişisel hafıza.
-    hafiza_sonuc = _hafizadan_bilgi_cek(kucuk)
-    if hafiza_sonuc:
-        return f"🦅 Hafızamda bununla ilgili şu bilgiyi buldum: {hafiza_sonuc}"
+    # Kişisel hafıza yalnızca açık bir hafıza sorgusunda aranır.
+    hafiza_sorgusu = any(
+        ifade in kucuk
+        for ifade in (
+            "hafıza", "hafiza",
+            "hatırla", "hatirla",
+            "hatırlıyor musun", "hatirliyor musun",
+            "neydi", "unutma"
+        )
+    )
+
+    if hafiza_sorgusu:
+        hafiza_sonuc = _hafizadan_bilgi_cek(kucuk)
+        if hafiza_sonuc:
+            return f"🦅 Hafızamda bununla ilgili şu bilgiyi buldum: {hafiza_sonuc}"
 
     # Geçmiş başarılı sohbetler.
     sohbet_sonuc = _sohbet_hafizasindan_cek(kucuk)
