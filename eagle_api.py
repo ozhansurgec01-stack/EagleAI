@@ -2475,6 +2475,99 @@ def super_lig_getir(mesaj=""):
         )
         return []
 
+
+def super_lig_puan_durumu_getir():
+    """TFF resmi kaynağından güncel Süper Lig puan durumunu getirir."""
+    try:
+        url = "https://www.tff.org/Default.aspx?pageID=198"
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Linux; Android 15) "
+                "AppleWebKit/537.36 "
+                "Chrome/140 Mobile Safari/537.36"
+            ),
+            "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
+        }
+
+        cevap = requests.get(
+            url,
+            headers=headers,
+            timeout=15
+        )
+
+        if cevap.status_code != 200:
+            print(
+                f"⚠️ TFF puan durumu HTTP {cevap.status_code}",
+                flush=True
+            )
+            return []
+
+        soup = BeautifulSoup(cevap.text, "html.parser")
+        tablo = soup.select_one("table.s-table")
+
+        if not tablo:
+            print("⚠️ TFF puan tablosu bulunamadı", flush=True)
+            return []
+
+        sonuc = []
+
+        for satir in tablo.select("tr"):
+            hucreler = satir.find_all("td")
+
+            if len(hucreler) < 9:
+                continue
+
+            takim_linki = hucreler[0].find("a")
+            if not takim_linki:
+                continue
+
+            takim_metin = takim_linki.get_text(" ", strip=True)
+
+            eslesme = re.match(
+                r"^\s*(\d+)\s*\.\s*(.+?)\s*$",
+                takim_metin
+            )
+
+            if not eslesme:
+                continue
+
+            sira = int(eslesme.group(1))
+            takim = eslesme.group(2).strip()
+
+            puan_metin = hucreler[-1].get_text(" ", strip=True)
+
+            if not puan_metin.isdigit():
+                continue
+
+            puan = int(puan_metin)
+
+            sonuc.append({
+                "sira": sira,
+                "takim": takim,
+                "puan": puan,
+                "title": f"{sira}. {takim} - {puan} puan",
+                "url": url,
+                "snippet": f"{sira}. {takim} | {puan} puan"
+            })
+
+        sonuc.sort(key=lambda x: x["sira"])
+
+        print(
+            f"✅ TFF Süper Lig puan durumu: {len(sonuc)} takım",
+            flush=True
+        )
+
+        return sonuc
+
+    except Exception as hata:
+        print(
+            f"⚠️ TFF Süper Lig puan durumu hatası: {hata}",
+            flush=True
+        )
+        return []
+
+
 def uefa_sampiyonlar_ligi_getir(mesaj=""):
     """Şampiyonlar Ligi günlük fikstürü."""
     from datetime import datetime
@@ -5299,7 +5392,15 @@ def sohbet():
                 "super lig"
             ])
 
-            if super_lig_mi and not web_verisi:
+            puan_durumu_istegi = any(k in mesaj_spor for k in [
+                "puan durumu",
+                "puan cetveli",
+                "puan tablosu"
+            ])
+
+            if super_lig_mi and puan_durumu_istegi and not web_verisi:
+                web_verisi = super_lig_puan_durumu_getir()
+            elif super_lig_mi and not web_verisi:
                 web_verisi = super_lig_getir(mesaj)
 
             # 🏐 Türkiye-İtalya voleybol sonucu: TVF resmi haber
@@ -5517,7 +5618,7 @@ def sohbet():
             })
 
     # 🏟️ MAÇ SONUCU — doğrulanmış skoru doğrudan döndür
-    if karar.get("intent") == "spor":
+    if karar.get("intent") == "spor" and not puan_durumu_istegi:
         web_verisi = spor_web_sayfalarini_oku(
             mesaj,
             web_verisi,
@@ -5677,6 +5778,41 @@ def sohbet():
             "eagle_direct": True,
             "memory_count": len(hafiza_yukle())
         })
+
+    # 🇹🇷 Süper Lig puan durumu özel cevabı
+    if (
+        karar.get("intent") == "spor"
+        and super_lig_mi
+        and puan_durumu_istegi
+        and web_verisi
+    ):
+        satirlar = [
+            "🏟️ EAGLE SPOR",
+            "",
+            "🇹🇷 SÜPER LİG PUAN DURUMU",
+            ""
+        ]
+
+        for takim in web_verisi:
+            if not isinstance(takim, dict):
+                continue
+
+            sira = str(takim.get("sira", "")).strip()
+            ad = str(takim.get("takim", "")).strip()
+            puan = str(takim.get("puan", "")).strip()
+
+            if sira and ad and puan:
+                satirlar.append(f"{sira}. {ad} — {puan} puan")
+
+        if len(satirlar) > 4:
+            return jsonify({
+                "ok": True,
+                "answer": "\n".join(satirlar),
+                "web_search": True,
+                "eagle_direct": True,
+                "spor_puan_durumu": True,
+                "memory_count": len(hafiza_yukle())
+            })
 
     # 🧠 EAGLE MERKEZ AKILLI MOTORU
     # Web sonuçları kullanıcıya ham liste olarak verilmez.
