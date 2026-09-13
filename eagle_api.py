@@ -1850,7 +1850,15 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "rüzgar", "ruzgar", "nem", "fırtına", "firtina"
     ]
 
-    if any(x in k for x in hava_kelimeleri):
+    sohbet_ifadeleri = [
+        "sohbet", "konuşalım", "konusalim",
+        "muhabbet", "biraz konuş", "biraz konus",
+        "dertleş", "dertles"
+    ]
+
+    acik_sohbet = any(x in k for x in sohbet_ifadeleri)
+
+    if any(x in k for x in hava_kelimeleri) and not acik_sohbet:
         karar.update({
             "intent": "hava",
             "guven": "yüksek",
