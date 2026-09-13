@@ -49,7 +49,7 @@ def _hafiza_bilgisi(hafiza):
     return str(hafiza or "").strip()
 
 
-def genel_sohbet(mesaj, gecmis=None, hafiza=None, karar=None):
+def genel_sohbet(mesaj, gecmis=None, hafiza=None, karar=None, baglam=None):
     """
     EagleAI doğal konuşma motoru.
 
@@ -66,11 +66,12 @@ def genel_sohbet(mesaj, gecmis=None, hafiza=None, karar=None):
     gecmis = gecmis if isinstance(gecmis, list) else []
     karar = karar if isinstance(karar, dict) else {}
 
-    baglam = {
+    cevap_baglam = {
         "mesaj": metin,
         "konusma": _konusma_ozeti(gecmis),
         "hafiza": _hafiza_bilgisi(hafiza),
         "karar": karar,
+        "baglam": baglam or "",
     }
 
     # Eagle'ın doğal konuşma bağlamı.
@@ -78,10 +79,11 @@ def genel_sohbet(mesaj, gecmis=None, hafiza=None, karar=None):
     # Bu katman cevapları soru kalıplarına göre seçmez.
     # Üst cevap motorunun kullanacağı yapı burada hazırlanır.
     return eagle_cevap_uret(
-        baglam["mesaj"],
+        cevap_baglam["mesaj"],
         gecmis=gecmis,
         hafiza=hafiza,
-        karar=karar
+        karar=karar,
+        baglam=cevap_baglam["baglam"]
     )
 
 
