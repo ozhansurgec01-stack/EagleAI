@@ -544,14 +544,25 @@ def eagle_ogrenme_ekle(konu, bilgi, kaynak=None):
 
     veri = hafiza_yukle()
     ogrenme = veri.setdefault("eagle_ogrenme", [])
+    konu_key = konu.casefold()
+    bilgi_key = bilgi.casefold()
 
     for kayit in ogrenme:
-        if (
-            isinstance(kayit, dict)
-            and str(kayit.get("konu", "")).strip().casefold() == konu.casefold()
-            and str(kayit.get("bilgi", "")).strip().casefold() == bilgi.casefold()
-        ):
+        if not isinstance(kayit, dict):
+            continue
+
+        if str(kayit.get("konu", "")).strip().casefold() != konu_key:
+            continue
+
+        if str(kayit.get("bilgi", "")).strip().casefold() == bilgi_key:
             return False
+
+        kayit["bilgi"] = bilgi
+        if kaynak:
+            kayit["kaynak"] = str(kaynak).strip()
+
+        hafiza_kaydet(veri)
+        return True
 
     kayit = {
         "konu": konu,
@@ -4074,6 +4085,101 @@ def web_sonuclari_metni(sonuclar):
     return "\n".join(satirlar)
 
 
+def eagle_ogrenme_ara(konu):
+    konu = str(konu).strip().casefold()
+
+    if not konu:
+        return None
+
+    veri = hafiza_yukle()
+    sorgu_kelimeleri = set(konu.replace("(", " ").replace(")", " ").split())
+
+    for kayit in veri.get("eagle_ogrenme", []):
+        if not isinstance(kayit, dict):
+            continue
+
+        kayit_konu = str(kayit.get("konu", "")).strip().casefold()
+
+        if kayit_konu == konu:
+            return kayit
+
+        kayit_kelimeleri = set(
+            kayit_konu.replace("(", " ").replace(")", " ").split()
+        )
+
+        ortak = sorgu_kelimeleri & kayit_kelimeleri
+
+        anlamli_ortak = {
+            kelime for kelime in ortak
+            if len(kelime) >= 3 and kelime not in {"python", "nedir", "nedeni", "fonksiyonu"}
+        }
+
+        if anlamli_ortak:
+            return kayit
+
+    return None
+
+
+def eagle_webden_ogren(konu, sonuclar):
+    konu = str(konu).strip()
+
+    if not konu:
+        return False
+
+    if not isinstance(sonuclar, list) or not sonuclar:
+        sorgu = konu
+        kelimeler = konu.casefold().split()
+
+        if "python" in kelimeler and len(kelimeler) >= 2:
+            sorgu = " ".join(kelime for kelime in kelimeler if kelime != "python")
+            sorgu += " Python built-in function"
+
+        sonuclar = web_arastir(sorgu, limit=6)
+
+    if not isinstance(sonuclar, list):
+        return False
+
+    bilgiler = []
+    kaynaklar = set()
+
+    anahtarlar = [
+        kelime for kelime in konu.casefold().split()
+        if len(kelime) >= 3 and kelime not in {"python", "nedir", "fonksiyonu"}
+    ]
+
+    for sonuc in sonuclar:
+        if not isinstance(sonuc, dict):
+            continue
+
+        baslik = str(sonuc.get("title", "")).strip()
+        aciklama = str(sonuc.get("snippet", "")).strip()
+        url = str(sonuc.get("url", "")).strip()
+
+        metin = f"{baslik} {aciklama}".casefold()
+
+        if not anahtarlar or not any(kelime in metin for kelime in anahtarlar):
+            continue
+
+        alan = ""
+        if url.startswith(("http://", "https://")):
+            parcalar = url.split("/")
+            if len(parcalar) > 2:
+                alan = parcalar[2].lower().split(":")[0]
+
+        if alan:
+            kaynaklar.add(alan)
+
+        if baslik and aciklama:
+            bilgiler.append(f"{baslik}: {aciklama}")
+
+    if len(kaynaklar) < 2 or len(bilgiler) < 2:
+        return False
+
+    bilgi = " | ".join(bilgiler[:3])
+
+    return eagle_ogrenme_ekle(konu, bilgi, "web")
+
+
 def hafiza_metni():
     hafiza = hafiza_yukle()
 
@@ -5243,6 +5349,32 @@ def sohbet():
             web_verisi = web_arastir(arama_sorgusu)
 
     elif karar.get("arac") == "web_arastirma":
+        # 🧠 Öğrenme hafızası: güncel olmayan genel konuda önce mevcut bilgiyi kullan
+        mesaj_kucuk = mesaj.casefold()
+        guncel_isaretleri = [
+            "şimdi", "şu an", "son dakika", "güncel", "guncel",
+            "haber", "haberler", "maç", "mac", "skor", "puan durumu",
+            "bitcoin", "btc", "ethereum", "eth",
+            "altın", "gram altın", "dolar", "euro", "sterlin",
+            "en son", "son durum", "ne oldu"
+        ]
+
+        if not any(x in mesaj_kucuk for x in guncel_isaretleri):
+            ogrenilmis = eagle_ogrenme_ara(mesaj)
+            if ogrenilmis and ogrenilmis.get("bilgi"):
+                print("🧠 ÖĞRENME HAFIZASI KULLANILDI — WEB ATLANDI", flush=True)
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🧠 EAGLE ÖĞRENME HAFIZASI\n\n"
+                        + str(ogrenilmis.get("bilgi"))
+                    ),
+                    "eagle_direct": True,
+                    "learned_memory": True,
+                    "web_search": False,
+                    "memory_count": len(hafiza_yukle())
+                })
+
         arama_sorgusu = doviz_arama_sorgusu(mesaj)
         print(f"🌐 WEB SORGU: {arama_sorgusu!r}", flush=True)
         web_verisi = web_arastir(arama_sorgusu)
@@ -5467,6 +5599,21 @@ def sohbet():
             "answer": cevap,
             "eagle_direct": True,
             "knowledge_base": True,
+            "memory_count": len(hafiza_yukle())
+        })
+
+    # 🧠 Eagle öğrenme hafızası — bilgi bankasında yoksa öğrenilmiş bilgiyi kullan
+    ogrenilmis = eagle_ogrenme_ara(mesaj)
+    if ogrenilmis and ogrenilmis.get("bilgi"):
+        cevap = (
+            "🧠 EAGLE ÖĞRENME HAFIZASI\n\n"
+            + str(ogrenilmis.get("bilgi"))
+        )
+        return jsonify({
+            "ok": True,
+            "answer": cevap,
+            "eagle_direct": True,
+            "learned_memory": True,
             "memory_count": len(hafiza_yukle())
         })
 
