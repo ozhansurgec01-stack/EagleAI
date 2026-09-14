@@ -1575,12 +1575,30 @@ def spor_arama_sorgusu(mesaj):
     ])
 
     if bugun_sorusu:
-        # Kullanıcının takım/oyuncu adını ve özgün bağlamını koru.
-        # Böylece "Bugün Galatasaray'ın maçı var mı?" gibi
-        # sorgular genel spor aramasına dönüştürülmez.
+        # Takım/lig/spor belirtilmişse özgün sorguyu koru.
+        # Genel "Bugün maç var mı?" sorgusunda arama motoruna
+        # doğrudan bugünün maç programını sor.
+        ozel_spor = any(k in mesaj_kucuk for k in [
+            "futbol", "basketbol", "voleybol", "tenis", "hentbol",
+            "nba", "euroleague", "şampiyonlar ligi", "sampiyonlar ligi",
+            "premier lig", "premier league", "la liga", "bundesliga",
+            "serie a", "ligue 1", "süper lig", "super lig"
+        ])
+
+        genel_mac_sorusu = any(k in mesaj_kucuk for k in [
+            "maç var mı", "mac var mi",
+            "hangi maç", "hangi mac",
+            "maçlar var mı", "maclar var mi"
+        ])
+
+        if genel_mac_sorusu and not ozel_spor:
+            # Genel maç sorgusunda bugünün tarihini aramaya ekle.
+            # Takım, lig veya site hardcode edilmez.
+            bugunun_tarihi = datetime.now().strftime("%d.%m.%Y")
+            return f"{bugunun_tarihi} bugün maçlar maç programı karşılaşmalar"
+
         return f"{mesaj.strip()} maç fikstür güncel"
 
-    return f"{mesaj.strip()} maç fikstür güncel"
 
 
 def eagle_karar_motoru(mesaj, gecmis=None):
@@ -4106,6 +4124,35 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
                 if ".com" in aday or "http" in aday:
                     continue
 
+                # Regex ile çıkarılan maçlarda sayfa/arayüz metninin
+                # takım adına karışmasını engelle.
+                aday_takim_metni = f"{ev} {deplasman}".casefold()
+
+                sahte_parcalar = (
+                    "maç", "mac", "bilgi", "detay",
+                    "ilgini çekebilir", "ilgini cekebilir",
+                    "tarih", "saat", "chevron",
+                    "canlı", "canli", "lig",
+                    "division", "championship", "league",
+                    "kupasi", "kupası", "trendyol",
+                    "primera division", "cev erkekler",
+                    "cev kadınlar", "cev kadinlar"
+                )
+
+                if any(x in aday_takim_metni for x in sahte_parcalar):
+                    continue
+
+                if len(ev.split()) > 6 or len(deplasman.split()) > 6:
+                    continue
+
+                # Takım adının içine saat/skor metni karışmışsa sonucu alma.
+                if re.search(r"\b\d{1,2}[.:]\d{2}\b", f"{ev} {deplasman}"):
+                    continue
+
+                # Kaynakların eklediği lig/sezon numarası takım adının parçasıysa alma.
+                if re.search(r"\b(?:1\.|2\.|3\.)\s*$", f"{ev} {deplasman}"):
+                    continue
+
                 satirlar.append((ev, deplasman, satir))
 
         return satirlar
@@ -4119,6 +4166,32 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         deplasman = temiz(sonuc.get("deplasman", ""))
         saat = temiz(sonuc.get("saat", ""))
         lig = temiz(sonuc.get("lig", ""))
+
+        # Arama sonuçlarında maç durumu takım adına yapışabiliyor.
+        # "Maç Bitti Torino - Roma" gerçek bir gelecek fikstürü değildir;
+        # genel "bugün maç var mı?" sorgusunda tamamen dışarıda bırak.
+        durum_ifadesi = re.compile(
+            r"\b(?:maç|mac)\s+(?:bitti|başladı|basladi|oynanıyor|oynaniyor|ertelendi|iptal)\b",
+            re.IGNORECASE
+        )
+        if durum_ifadesi.search(f"{ev} {deplasman}"):
+            continue
+
+        # Genel "bugün maç var mı?" sorgusunda geçmiş saatleri listeleme.
+        if saat:
+            try:
+                saat_dt = datetime.strptime(saat, "%H:%M")
+                simdi_dt = datetime.now()
+                if (
+                    saat_dt.hour < simdi_dt.hour
+                    or (
+                        saat_dt.hour == simdi_dt.hour
+                        and saat_dt.minute <= simdi_dt.minute
+                    )
+                ):
+                    continue
+            except ValueError:
+                pass
 
         # Web kaynaklarının takım adlarına eklediği skor/kod öneklerini temizle.
         ev = re.sub(r"^(?:\d{1,2}\s+)+", "", ev).strip()
@@ -4149,6 +4222,35 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             continue
 
         if not ev or not deplasman:
+            continue
+
+        # Yapılandırılmış sonuç gerçekten takım adı mı kontrol et.
+        # Web sayfası başlıkları, lig açıklamaları ve arayüz metinleri
+        # maç olarak kabul edilmez. Takım/lig/site hardcode edilmez.
+        takim_metin = f"{ev} {deplasman}".casefold()
+
+        sahte_mac_ifadeleri = (
+            "maç", "mac", "bilgi", "detay", "ilgini çekebilir",
+            "ilgini cekebilir", "tarih", "saat", "chevron",
+            "ilk yarı", "ilk yari", "canlı", "canli",
+            "lig", "division", "championship",
+            "league", "kupasi", "kupası",
+            "cev erkekler", "cev kadınlar", "cev kadinlar",
+            "trendyo", "primera division"
+        )
+
+        if any(ifade in takim_metin for ifade in sahte_mac_ifadeleri):
+            continue
+
+        # Bir takım adı yerine uzun bir sayfa başlığı/snippet gelmişse ele.
+        if len(ev.split()) > 6 or len(deplasman.split()) > 6:
+            continue
+
+        # HTML/arayıcı ve URL artıkları.
+        if any(x in takim_metin for x in (
+            "http://", "https://", ".com", ".net", ".org",
+            "›", "»", "|"
+        )):
             continue
 
         if istenen_spor and sonuc.get("spor") != istenen_spor:
@@ -4234,6 +4336,11 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         kategoriler["futbol"].extend(tekil)
         # Yapılandırılmış veri varsa eski regex ayrıştırmasını çalıştırma.
+
+    # Yapılandırılmış maçlar bulunduysa eski sayfa/regex yolunu
+    # çalıştırma. Bu yol menü, lig ve ülke adlarını takım adı sanabiliyor.
+    if yapilandirilmis:
+        web_verisi = []
 
     bulunan = set()
 
@@ -5843,13 +5950,14 @@ def sohbet():
                     limit=8
                 )
 
-            # 🌐 Güncel spor soruları doğrudan web üzerinden araştırılır.
-            # Sabit lig/site/veri kaynağı kullanılmaz.
-            arama_sorgusu = spor_arama_sorgusu(mesaj)
-            web_verisi = web_arastir(
-                arama_sorgusu,
-                limit=8
-            )
+            # 🌐 Güncel spor soruları için yalnızca veri yoksa genel web araması yap.
+            # Mevcut resmi/özel veri tekrar ezilmez.
+            if not web_verisi:
+                arama_sorgusu = spor_arama_sorgusu(mesaj)
+                web_verisi = web_arastir(
+                    arama_sorgusu,
+                    limit=8
+                )
 
     elif karar.get("arac") == "web_arastirma":
         # 🧠 Öğrenme hafızası: güncel olmayan genel konuda önce mevcut bilgiyi kullan
