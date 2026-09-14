@@ -153,6 +153,84 @@ def _bilgi_bankasindan_cek(anahtar):
     return None
 
 
+def _ogrenilmis_bilgiyi_cevaba_donustur(mesaj, bilgi):
+    """Öğrenilmiş web bilgisindeki ortak anlamı kısa cevaba dönüştürür."""
+    metin = str(bilgi or "").strip()
+
+    if not metin:
+        return None
+
+    parcalar = [
+        parca.strip()
+        for parca in re.split(r"\s*\|\s*", metin)
+        if parca.strip()
+    ]
+
+    if not parcalar:
+        return None
+
+    # Kaynak başlıklarını ve tekrar eden ifadeleri temizle.
+    cumleler = []
+    gorulen = set()
+
+    for parca in parcalar:
+        if ":" in parca:
+            parca = parca.split(":", 1)[1].strip()
+
+        for cumle in re.split(r"(?<=[.!?])\s+", parca):
+            cumle = re.sub(r"\s+", " ", cumle).strip()
+
+            if len(cumle) < 35:
+                continue
+
+            anahtar = cumle.casefold()
+            if anahtar in gorulen:
+                continue
+
+            gorulen.add(anahtar)
+            cumleler.append(cumle)
+
+    if not cumleler:
+        return None
+
+    # Soruyla ilgili cümlelere öncelik ver.
+    soru_kelimeleri = {
+        k for k in re.findall(r"\w+", str(mesaj or "").casefold())
+        if len(k) > 3
+    }
+
+    sirali = sorted(
+        cumleler,
+        key=lambda cumle: sum(
+            1 for kelime in soru_kelimeleri
+            if kelime in cumle.casefold()
+        ),
+        reverse=True
+    )
+
+    secilen = sirali[:3]
+
+    # Aynı anlamı taşıyan cümleleri tekrar ettirmemek için
+    # benzer başlangıçları mümkün olduğunca azalt.
+    sonuc = []
+    for cumle in secilen:
+        if any(
+            cumle.casefold() in onceki.casefold()
+            or onceki.casefold() in cumle.casefold()
+            for onceki in sonuc
+        ):
+            continue
+        sonuc.append(cumle)
+
+    if not sonuc:
+        return None
+
+    cevap = " ".join(sonuc)
+    cevap = re.sub(r"\\s+", " ", cevap).strip()
+
+    return f"🦅 Öğrendiğim bilgilere göre: {cevap}"
+
+
 def _hafizaya_kaydet(yeni_bilgi):
     """Yeni öğrenilen bir bilgiyi kalıcı hafızaya mühürler."""
     try:
@@ -189,8 +267,25 @@ def eagle_cevap_uret(mesaj, gecmis=None, hafiza=None, karar=None, baglam=None):
     if not mesaj:
         return "🦅 Buradayım."
 
-    if karar.get("arac") and karar.get("arac") != "eagle_sohbet":
+    if (
+        karar.get("arac")
+        and karar.get("arac") != "eagle_sohbet"
+        and not karar.get("ogrenmeden")
+    ):
         return mesaj
+
+    # 🧠 Öğrenilmiş bilgi: Eagle'ın kendi öğrenme hafızasındaki
+    # doğrulanmış bilgiyi genel cevap motoruna bağla.
+    ogrenilmis_bilgi = str(
+        karar.get("ogrenilmis_bilgi", "")
+    ).strip()
+
+    if karar.get("ogrenmeden") and ogrenilmis_bilgi:
+        baglam = (
+            f"{baglam}\n\n"
+            "ÖĞRENİLMİŞ BİLGİ:\n"
+            f"{ogrenilmis_bilgi}"
+        ).strip()
 
     son_kullanici = ""
     son_eagle = ""
@@ -280,6 +375,22 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None,
         sohbet_sonuc = _sohbet_hafizasindan_cek(kucuk)
         if sohbet_sonuc:
             return f"🦅 Daha önceki sohbet hafızamdan bulduğum cevap: {sohbet_sonuc}"
+
+    # 🧠 İnternetten öğrenilmiş bilgiyi doğal cevaba dönüştür.
+    if karar.get("ogrenmeden") and baglam:
+        ogrenilmis_etiket = "ÖĞRENİLMİŞ BİLGİ:"
+        if ogrenilmis_etiket in baglam:
+            ogrenilmis_bilgi = baglam.split(
+                ogrenilmis_etiket, 1
+            )[1].strip()
+
+            ogrenilmis_cevap = _ogrenilmis_bilgiyi_cevaba_donustur(
+                metin,
+                ogrenilmis_bilgi
+            )
+
+            if ogrenilmis_cevap:
+                return ogrenilmis_cevap
 
     # Bilgi bankası.
     bilgi_sonuc = _bilgi_bankasindan_cek(kucuk)
