@@ -7,6 +7,44 @@
       "konu": "Python isinstance",
       "bilgi": "isinstance() bir nesnenin belirtilen türden olup olmadığını kontrol eder.",
       "kaynak": "yerel_test"
+    },
+    {
+      "konu": "Python len()",
+      "bilgi": "len() bir nesnenin uzunluğunu veya eleman sayısını döndürür.",
+      "kaynak": "öğretim"
+    },
+    {
+      "konu": "Python enumerate",
+      "bilgi": "Enumerate () İşlevi Python: Döngü, Tuple, String (Örnek) - Guru99: Enumerate () işlevi python'da kullanılabilen yerleşik bir işlevdir. Enumerate () işlevi, yinelenebilir nesnenin her öğesine bir sayaç ekler ve bir numaralandırma nesnesi döndürür. | Python'un enumerate () Fonksiyonu Döngülerde Nasıl Kullanılır: enumerate () fonksiyonu, döngülerde dizin ve değer işlemeyi birleştirerek kodu basitleştiren ve okunabilirliği artıran çok yönlü bir araçtır. enumerate () kullanarak sayaçları manuel olarak yönetmekten kaçınabilir ve verileri verimli bir şekilde işlemeye odaklanabilirsiniz. | Python'da Enumerate fonksiyonunu verimli bir şekilde kullanın: Listelerle çalışırken Python'daki Enumerate işlevinin size nasıl yardımcı olduğunu öğrenin.",
+      "kaynak": "web"
+    },
+    {
+      "konu": "Python zip",
+      "bilgi": "zip () | Python's Built-in Functions - Real Python: Python's Built-in Functions / zip () The built-in zip () function aggregates elements from zero or more iterables, creating an iterator that yields tuples. Each tuple contains the i-th element from each of the input iterables. The function stops when the shortest iterable is exhausted, silently discarding any remaining items in the longer ... | Python zip () Function - W3Schools: The zip () function returns a zip object, which is an iterator of tuples where the first item in each passed iterator is paired together, and then the second item in each passed iterator are paired together etc. If the passed iterables have different lengths, the iterable with the least items decides the length of the new iterator. | zip () in Python - GeeksforGeeks: Explanation: zip () pairs each key with its corresponding value, creating a clean list of (key, value) tuples. This representation is helpful for iteration, display, or converting the data into other formats.",
+      "kaynak": "web"
+    },
+    {
+      "konu": "HTTP 429 Too Many Requests nedir?",
+      "bilgi": "HTTP - Vikipedi: HTTP kaynakları, Tekdüzen Kaynak Tanımlayıcıları (URL'ler) şemaları http ve https kullanılarak, Tekdüzen Kaynak Konum … | HTTP - Wikipedia: HTTP is the foundation of data communication for the World Wide Web, where hypertext documents include hyperlinks to other … | Google: Search the world's information, including webpages, images, videos and more. Google has many special features to help you find exactly …",
+      "kaynak": "web"
+    },
+    {
+      "konu": "Yapay zekâda makine öğrenmesi nedir?",
+      "bilgi": "Yapay Zeka ve Makine Öğrenmesi Bölümü Nedir? Mezunu Ne İş Yapar?: Yapay zeka, bilgisayarların insan benzeri düşünme, öğrenme ve karar verme yetenekleri geliştirmesini amaçlayan bir teknoloji alanıdır. Makine öğrenmesi ise yapay zekanın alt dallarından biridir ve sistemlerin verilerden öğrenmesini sağlar. | Makine Öğrenmesi Nedir? Tarihi, Gelişimi, Kullanım Alanları ve Geleceği ...: Makine öğ renmesi , bilgisayar sistemlerinin açıkça programlanmadan veri ve deneyimlerden öğrenmelerini, iyileşmelerini ve kendilerini uyarlamalarını sağlayan yapay zeka alt dalıdır. | Yapay Zeka ve Makine Öğrenmesi - Techcareer.net: Makine öğ renmesi , yapay zekanın bir alt dalıdır ve bilgisayarların açıkça programlanmadan veri analizi yoluyla öğrenmesini sağlar. Makine öğrenmesi algoritmaları, verilere dayalı olarak örüntüleri tespit eder, tahminler yapar ve kararlar alır.",
+      "kaynak": "web",
+      "soru": "Yapay zekâda makine öğrenmesi nedir?",
+      "intent": "guncel_bilgi",
+      "arac": "web_arastirma",
+      "strateji": "web"
+    },
+    {
+      "konu": "Makine öğrenmesi ne demek?",
+      "bilgi": "Makine Öğrenmesi Nedir? Tanım, Türler ve Örnekler | SAP: Makine öğrenmesi (ML), bilgisayarlara verilerden öğrenmeyi ve deneyimle geliştirmeyi öğreten bir yapay zeka (AI) türüdür. Basitçe söylemek gerekirse, bilgisayarların sabit, önceden belirlenmiş kuralları takip etmek yerine örüntüler bularak görevlerde daha iyi hale gelmeleri anlamına gelir. | Makine öğrenimi - Vikipedi: Makine öğrenimi (ML), veriden öğrenebilen ve görünmeyen verilere genelleştirebilen ve dolayısıyla açık talimatlar olmadan görevleri yerine getirebilen istatistiksel algoritmaların geliştirilmesi ve incelenmesiyle ilgilenen, yapay zekâda akademik bir disiplindir. [1] | Makine Öğrenimi Nedir? | Oracle Türkiye: Makine öğrenimi (ML), daha fazla veri tükettikçe öğrenen ve gelişen sistemler oluşturmaya odaklanan yapay zeka alt kümesidir. Yapay zeka, insan zekasını taklit eden sistemler veya makineler anlamına gelen daha kapsamlı bir terimdir. Makine öğrenimi ve yapay zeka genellikle bir arada değerlendirilir.",
+      "kaynak": "web",
+      "soru": "Makine öğrenmesi ne demek?",
+      "intent": "guncel_bilgi",
+      "arac": "web_arastirma",
+      "strateji": "web"
     }
   ],
   "sohbet": [
@@ -38,6 +76,16 @@
     {
       "soru": "EagleMusic projem neydi?",
       "cevap": "🦅 Hafızamda bununla ilgili şu bilgiyi buldum: EagleMusic benim Android müzik çalar projem.",
+      "konu": "genel_sohbet"
+    },
+    {
+      "soru": "Bugün hava çok sıcak, biraz sohbet edelim.",
+      "cevap": "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin.",
+      "konu": "genel_sohbet"
+    },
+    {
+      "soru": "Bugün biraz canım sıkılıyor, ne yapabilirim?",
+      "cevap": "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin.",
       "konu": "genel_sohbet"
     }
   ]

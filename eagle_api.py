@@ -535,7 +535,15 @@ def sohbet_hafizaya_ekle(soru, cevap, konu="", kaynak=None):
     return True
 
 
-def eagle_ogrenme_ekle(konu, bilgi, kaynak=None):
+def eagle_ogrenme_ekle(
+    konu,
+    bilgi,
+    kaynak=None,
+    soru=None,
+    intent=None,
+    arac=None,
+    strateji=None
+):
     konu = str(konu).strip()
     bilgi = str(bilgi).strip()
 
@@ -558,8 +566,17 @@ def eagle_ogrenme_ekle(konu, bilgi, kaynak=None):
             return False
 
         kayit["bilgi"] = bilgi
+
         if kaynak:
             kayit["kaynak"] = str(kaynak).strip()
+        if soru:
+            kayit["soru"] = str(soru).strip()
+        if intent:
+            kayit["intent"] = str(intent).strip()
+        if arac:
+            kayit["arac"] = str(arac).strip()
+        if strateji:
+            kayit["strateji"] = str(strateji).strip()
 
         hafiza_kaydet(veri)
         return True
@@ -571,6 +588,14 @@ def eagle_ogrenme_ekle(konu, bilgi, kaynak=None):
 
     if kaynak:
         kayit["kaynak"] = str(kaynak).strip()
+    if soru:
+        kayit["soru"] = str(soru).strip()
+    if intent:
+        kayit["intent"] = str(intent).strip()
+    if arac:
+        kayit["arac"] = str(arac).strip()
+    if strateji:
+        kayit["strateji"] = str(strateji).strip()
 
     ogrenme.append(kayit)
 
@@ -4197,35 +4222,59 @@ def eagle_ogrenme_ara(konu):
         return None
 
     veri = hafiza_yukle()
-    sorgu_kelimeleri = set(konu.replace("(", " ").replace(")", " ").split())
+    sorgu_kelimeleri = set(
+        konu.replace("(", " ").replace(")", " ").split()
+    )
 
     for kayit in veri.get("eagle_ogrenme", []):
         if not isinstance(kayit, dict):
             continue
 
-        kayit_konu = str(kayit.get("konu", "")).strip().casefold()
+        kayit_konu = str(
+            kayit.get("konu", "")
+        ).strip().casefold()
 
-        if kayit_konu == konu:
+        kayit_soru = str(
+            kayit.get("soru", "")
+        ).strip().casefold()
+
+        if kayit_konu == konu or kayit_soru == konu:
             return kayit
 
         kayit_kelimeleri = set(
-            kayit_konu.replace("(", " ").replace(")", " ").split()
+            (
+                kayit_konu + " " + kayit_soru
+            ).replace("(", " ").replace(")", " ").split()
         )
 
         ortak = sorgu_kelimeleri & kayit_kelimeleri
 
         anlamli_ortak = {
             kelime for kelime in ortak
-            if len(kelime) >= 3 and kelime not in {"python", "nedir", "nedeni", "fonksiyonu"}
+            if (
+                len(kelime) >= 3
+                and kelime not in {
+                    "python",
+                    "nedir",
+                    "nedeni",
+                    "fonksiyonu",
+                    "nasıl",
+                    "ne",
+                }
+            )
         }
 
-        if anlamli_ortak:
+        if len(anlamli_ortak) >= 2:
             return kayit
 
     return None
 
 
-def eagle_webden_ogren(konu, sonuclar):
+def eagle_webden_ogren(
+    konu,
+    sonuclar,
+    karar=None
+):
     konu = str(konu).strip()
 
     if not konu:
@@ -4282,7 +4331,25 @@ def eagle_webden_ogren(konu, sonuclar):
 
     bilgi = " | ".join(bilgiler[:3])
 
-    return eagle_ogrenme_ekle(konu, bilgi, "web")
+    soru = konu
+
+    intent = None
+    arac = None
+    strateji = "web"
+
+    if isinstance(karar, dict):
+        intent = karar.get("intent")
+        arac = karar.get("arac")
+
+    return eagle_ogrenme_ekle(
+        konu,
+        bilgi,
+        "web",
+        soru=soru,
+        intent=intent,
+        arac=arac,
+        strateji=strateji
+    )
 
 
 def hafiza_metni():
@@ -4787,6 +4854,24 @@ def sohbet():
     akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
 
+    # 🧠 ÖĞRENİLMİŞ DAVRANIŞ ADAYI
+    # Öğrenilmiş kayıt kararın yerine geçmez; yalnızca güvenli bir aday olarak tutulur.
+    ogrenilmis_karar = eagle_ogrenme_ara(mesaj_karar)
+
+    if (
+        isinstance(ogrenilmis_karar, dict)
+        and ogrenilmis_karar.get("arac")
+        and ogrenilmis_karar.get("strateji")
+    ):
+        print(
+            "🧠 ÖĞRENİLMİŞ DAVRANIŞ ADAYI: "
+            f"{ogrenilmis_karar.get('arac')} / "
+            f"{ogrenilmis_karar.get('strateji')}",
+            flush=True
+        )
+    else:
+        ogrenilmis_karar = None
+
     # 🧠 Hafıza soruları kod analizi değildir.
     hafiza_sorgusu = any(
         ifade in mesaj_kucuk
@@ -4879,6 +4964,35 @@ def sohbet():
             sohbet_baglam,
             borc_modulu,
             gecmis
+        )
+
+    # 🧠 ÖĞRENİLMİŞ DAVRANIŞI UYGULA
+    # Özel kararları (spor, hava, borç, kod vb.) ezmeden yalnızca
+    # genel sohbet kararında öğrenilmiş aracı devreye al.
+    if (
+        ogrenilmis_karar
+        and (
+            karar.get("arac") == "eagle_sohbet"
+            or (
+                karar.get("intent") == "guncel_bilgi"
+                and ogrenilmis_karar.get("arac") == "web_arastirma"
+            )
+        )
+        and ogrenilmis_karar.get("arac")
+        in ("eagle_sohbet", "web_arastirma", "spor_kaynaklari", "hava_api")
+    ):
+        karar = {
+            **karar,
+            "intent": ogrenilmis_karar.get("intent") or karar.get("intent"),
+            "arac": ogrenilmis_karar.get("arac"),
+            "neden": "Önceki başarılı öğrenmeden öğrenilmiş davranış kullanıldı.",
+            "ogrenmeden": True,
+            "ogrenilmis_bilgi": ogrenilmis_karar.get("bilgi", ""),
+        }
+        print(
+            f"🧠 ÖĞRENİLMİŞ DAVRANIŞ UYGULANDI: "
+            f"{karar.get('arac')}",
+            flush=True
         )
 
     print(f"🧠 EAGLE KARAR: {karar}", flush=True)
@@ -5473,19 +5587,36 @@ def sohbet():
         ]
 
         if not any(x in mesaj_kucuk for x in guncel_isaretleri):
-            ogrenilmis = eagle_ogrenme_ara(mesaj)
-            if ogrenilmis and ogrenilmis.get("bilgi"):
-                print("🧠 ÖĞRENME HAFIZASI KULLANILDI — WEB ATLANDI", flush=True)
+            # 🧠 Öğrenilmiş kayıt artık cevabı doğrudan üretmez.
+            # Üst akışta bulunan ogrenilmis_karar, öğrenilmiş davranış
+            # için aday olarak kullanılacaktır.
+            if ogrenilmis_karar:
+                print(
+                    "🧠 ÖĞRENİLMİŞ KAYIT KULLANILIYOR",
+                    flush=True
+                )
+
+                karar_ogrenilmis = {
+                    **karar,
+                    "arac": "eagle_sohbet",
+                    "ogrenmeden": True,
+                    "ogrenilmis_bilgi": ogrenilmis_karar.get("bilgi", ""),
+                }
+
+                cevap = genel_sohbet(
+                    mesaj,
+                    gecmis=gecmis,
+                    hafiza=kalici_hafiza,
+                    karar=karar_ogrenilmis,
+                    baglam=akil_plani.get("baglam", {}).get("son_mesaj", "")
+                )
+
                 return jsonify({
                     "ok": True,
-                    "answer": (
-                        "🧠 EAGLE ÖĞRENME HAFIZASI\n\n"
-                        + str(ogrenilmis.get("bilgi"))
-                    ),
-                    "eagle_direct": True,
-                    "learned_memory": True,
+                    "answer": cevap,
                     "web_search": False,
-                    "memory_count": len(hafiza_yukle())
+                    "memory_count": len(hafiza_yukle()),
+                    "learned": True
                 })
 
         arama_sorgusu = doviz_arama_sorgusu(mesaj)
@@ -5493,7 +5624,7 @@ def sohbet():
         web_verisi = web_arastir(arama_sorgusu)
         print(f"🌐 WEB SONUÇ: {len(web_verisi)}", flush=True)
 
-        if web_verisi and eagle_webden_ogren(mesaj, web_verisi):
+        if web_verisi and eagle_webden_ogren(mesaj, web_verisi, karar):
             print("🧠 WEB BİLGİSİ ÖĞRENME HAFIZASINA KAYDEDİLDİ", flush=True)
 
 
@@ -5718,20 +5849,13 @@ def sohbet():
             "memory_count": len(hafiza_yukle())
         })
 
-    # 🧠 Eagle öğrenme hafızası — bilgi bankasında yoksa öğrenilmiş bilgiyi kullan
-    ogrenilmis = eagle_ogrenme_ara(mesaj)
-    if ogrenilmis and ogrenilmis.get("bilgi"):
-        cevap = (
-            "🧠 EAGLE ÖĞRENME HAFIZASI\n\n"
-            + str(ogrenilmis.get("bilgi"))
+    # 🧠 Öğrenilmiş bilgi doğrudan cevap olarak basılmaz.
+    # Öğrenilmiş kayıt üst akışta davranış/routing adayı olarak değerlendirilir.
+    if ogrenilmis_karar:
+        print(
+            "🧠 ÖĞRENİLMİŞ DAVRANIŞ KAYDI HAZIR — ROUTING DEĞERLENDİRMESİ",
+            flush=True
         )
-        return jsonify({
-            "ok": True,
-            "answer": cevap,
-            "eagle_direct": True,
-            "learned_memory": True,
-            "memory_count": len(hafiza_yukle())
-        })
 
     # 🗣️ Genel sohbet modülü
     if karar.get("arac") == "eagle_sohbet":
