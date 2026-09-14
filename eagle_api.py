@@ -1178,43 +1178,53 @@ def hava_sehir_bul(mesaj):
 
     # Türkiye şehirleri
     sehirler = [
-        "Adana", "Adıyaman", "Afyonkarahisar", "Ağrı", "Amasya",
-        "Ankara", "Antalya", "Artvin", "Aydın", "Balıkesir",
+        "Adana", "Adıyaman", "Afyonkarahisar", "Ağrı", "Aksaray",
+        "Amasya", "Ankara", "Antalya", "Ardahan", "Artvin",
+        "Aydın", "Balıkesir", "Bartın", "Batman", "Bayburt",
         "Bilecik", "Bingöl", "Bitlis", "Bolu", "Burdur",
         "Bursa", "Çanakkale", "Çankırı", "Çorum", "Denizli",
-        "Diyarbakır", "Edirne", "Elazığ", "Erzincan", "Erzurum",
-        "Eskişehir", "Gaziantep", "Giresun", "Gümüşhane",
-        "Hakkari", "Hatay", "Isparta", "İstanbul", "İzmir",
-        "Kahramanmaraş", "Karabük", "Karaman", "Kars", "Kastamonu",
-        "Kayseri", "Kilis", "Kırıkkale", "Kırklareli", "Kırşehir",
-        "Kocaeli", "Konya", "Kütahya", "Malatya", "Manisa",
-        "Mardin", "Mersin", "Muğla", "Muş", "Nevşehir",
-        "Niğde", "Ordu", "Osmaniye", "Rize", "Sakarya",
-        "Samsun", "Siirt", "Sinop", "Sivas", "Şanlıurfa",
-        "Şırnak", "Tekirdağ", "Tokat", "Trabzon", "Tunceli",
-        "Uşak", "Van", "Yalova", "Yozgat", "Zonguldak"
+        "Diyarbakır", "Düzce", "Edirne", "Elazığ", "Erzincan",
+        "Erzurum", "Eskişehir", "Gaziantep", "Giresun", "Gümüşhane",
+        "Hakkari", "Hatay", "Iğdır", "Isparta", "İstanbul",
+        "İzmir", "Kahramanmaraş", "Karabük", "Karaman", "Kars",
+        "Kastamonu", "Kayseri", "Kilis", "Kırıkkale", "Kırklareli",
+        "Kırşehir", "Kocaeli", "Konya", "Kütahya", "Malatya",
+        "Manisa", "Mardin", "Mersin", "Muğla", "Muş",
+        "Nevşehir", "Niğde", "Ordu", "Osmaniye", "Rize",
+        "Sakarya", "Samsun", "Siirt", "Sinop", "Sivas",
+        "Şanlıurfa", "Şırnak", "Tekirdağ", "Tokat", "Trabzon",
+        "Tunceli", "Uşak", "Van", "Yalova", "Yozgat", "Zonguldak"
     ]
 
+    kucuk = metin.casefold()
+
     # Önce doğrudan şehir adını ara.
-    kucuk = metin.lower()
-
     for sehir in sehirler:
-        if re.search(r"\\b" + re.escape(sehir.lower()) + r"\\b", kucuk):
+        if re.search(r"\b" + re.escape(sehir.casefold()) + r"\b", kucuk):
             return sehir
 
-    # "Adana'da", "Adana için", "Adana'nın" gibi kullanımlar.
-    for sehir in sehirler:
-        desen = (
-            r"\\b" + re.escape(sehir.lower()) +
-            r"(?:'|’)?(?:da|de|ta|te|daki|deki|taki|teki|"
-            r"nın|nin|nun|nün|için|icin)\\b"
-        )
-        if re.search(desen, kucuk):
-            return sehir
+    # "yarın Tarsus'ta", "bugün Silifke'de" gibi ifadelerde
+    # zaman kelimelerini yer adından ayır.
+    yer_metin = re.sub(
+        r"\b(?:bugün|bugun|yarın|yarin)\b",
+        "",
+        metin,
+        flags=re.IGNORECASE
+    ).strip()
 
-    # Şehir belirtilmemişse varsayılan konum: Adana.
+    # "Tarsus'ta", "Silifke'de", "Çamlıyayla için" gibi yer adlarını yakala.
+    eslesme = re.search(
+        r"\b([A-Za-zÇĞİÖŞÜçğıöşü]+(?:\s+[A-Za-zÇĞİÖŞÜçğıöşü]+)?)"
+        r"(?:'|’)?(?:da|de|ta|te|daki|deki|taki|teki|nın|nin|nun|nün|"
+        r"için|icin)\b",
+        yer_metin,
+        re.IGNORECASE
+    )
+    if eslesme:
+        return eslesme.group(1).strip()
+
+    # Şehir/yer belirtilmemişse mevcut varsayılan davranışı koru.
     return "Adana"
-
 
 def hava_durumu_getir(mesaj):
     if not hava_sorusu_mu(mesaj):
@@ -5810,7 +5820,13 @@ def sohbet():
         sehir = hava_verisi.get("city", "Bilinmeyen şehir")
         current = hava_verisi.get("current", {}) or {}
         tahmin = hava_verisi.get("forecast", []) or []
-        bugun = tahmin[0] if tahmin else {}
+
+        mesaj_kucuk = (mesaj or "").casefold()
+        yarin_istegi = any(k in mesaj_kucuk for k in ["yarın", "yarin"])
+
+        secilen_gun = tahmin[1] if yarin_istegi and len(tahmin) > 1 else (
+            tahmin[0] if tahmin else {}
+        )
 
         hava_metni = (
             f"📍 {sehir}\n"
@@ -5821,12 +5837,13 @@ def sohbet():
             f"☁️ {current.get('description', '—')}"
         )
 
-        if bugun:
+        if secilen_gun:
+            gun_etiketi = "Yarın" if yarin_istegi else "Bugün"
             hava_metni += (
                 "\n\n"
-                "📅 Bugün\n"
-                f"{bugun.get('min', '—')}°C — {bugun.get('max', '—')}°C\n"
-                f"🌧️ Yağış ihtimali: %{bugun.get('rain_probability', '—')}"
+                f"📅 {gun_etiketi}\n"
+                f"{secilen_gun.get('min', '—')}°C — {secilen_gun.get('max', '—')}°C\n"
+                f"🌧️ Yağış ihtimali: %{secilen_gun.get('rain_probability', '—')}"
             )
 
     elif hava_verisi and not hava_verisi.get("ok"):
