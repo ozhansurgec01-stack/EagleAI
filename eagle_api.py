@@ -4294,6 +4294,11 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
                 continue
 
             # Arama sayfasının kırpılmış takım adlarını maç olarak alma.
+            # Bugünün fikstüründe yarınki maçları gösterme.
+            tarih_metni = norm(ham_satir)
+            if re.search(r"\b(yarın|yarin)\b", tarih_metni):
+                continue
+
             if len(ev.strip()) < 4 or len(deplasman.strip()) < 4:
                 continue
 
@@ -4346,10 +4351,10 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
     def mac_anahtari(ad):
         ad = norm(ad)
-        ad = re.sub(r"\\b(fc|fk|cf|ac|sc)\\b", "", ad)
-        ad = re.sub(r"\\b\\d{4}\\b", "", ad)
+        ad = re.sub(r"\b(fc|fk|cf|ac|sc)\b", "", ad)
+        ad = re.sub(r"\b\d{4}\b", "", ad)
         ad = re.sub(r"[^a-zçğıöşü0-9 ]+", " ", ad)
-        return re.sub(r"\\s+", " ", ad).strip()
+        return re.sub(r"\s+", " ", ad).strip()
 
     def takimlar_benzer(a, b):
         a = mac_anahtari(a)
@@ -4373,7 +4378,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         for satir in mac_listesi:
             eslesme = re.search(
-                r"⚽\\s*(.*?)\\s+-\\s+(.*?)\\s+—\\s+(\\d{2}:\\d{2})",
+                r"⚽\s*(.*?)\s+-\s+(.*?)\s+—\s+(\d{2}:\d{2})",
                 satir
             )
 
