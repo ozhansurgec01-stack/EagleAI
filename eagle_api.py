@@ -1508,6 +1508,10 @@ def spor_arama_sorgusu(mesaj):
     # 🎾 Tenis
     tenis_mu = "tenis" in mesaj_kucuk
 
+    # Sonuç/geçmiş maç soruları lig ve ülke bloklarından önce değerlendirilir.
+    if gecmis_mac and futbol_mu:
+        return f"{mesaj.strip()} maç sonucu skor güncel"
+
     # 🇹🇷 Türkiye
     if any(k in mesaj_kucuk for k in turkiye_kelimeleri):
         if voleybol_mu:
