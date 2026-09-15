@@ -73,7 +73,6 @@ def _hafizadan_bilgi_cek(anahtar):
         pass
 
     return None
-
 def _sohbet_hafizasindan_cek(anahtar):
     """Geçmişte kaydedilmiş başarılı soru-cevap örneklerinde arama yapar."""
     try:
@@ -112,8 +111,6 @@ def _sohbet_hafizasindan_cek(anahtar):
         pass
 
     return None
-
-
 def _bilgi_bankasindan_cek(anahtar):
     """Bilgi bankasında anahtar ve içerik üzerinden esnek arama yapar."""
     try:
@@ -137,8 +134,15 @@ def _bilgi_bankasindan_cek(anahtar):
             kat = str(kategori).casefold()
 
             if (
-                kat in sorgu
-                or any(k == kat or k in kat or kat in k for k in kelimeler)
+                re.search(r"(?<!\w)" + re.escape(kat) + r"(?!\w)", sorgu)
+                or any(
+                    k == kat
+                    or (
+                        re.search(r"(?<!\w)" + re.escape(k) + r"(?!\w)", kat)
+                        and re.search(r"(?<!\w)" + re.escape(k) + r"(?!\w)", sorgu)
+                    )
+                    for k in kelimeler
+                )
             ):
                 if isinstance(veri, dict):
                     if isinstance(veri.get("temel"), list):
@@ -151,8 +155,6 @@ def _bilgi_bankasindan_cek(anahtar):
         pass
 
     return None
-
-
 def _ogrenilmis_bilgiyi_cevaba_donustur(mesaj, bilgi):
     """Öğrenilmiş web bilgisindeki ortak anlamı kısa cevaba dönüştürür."""
     metin = str(bilgi or "").strip()
@@ -229,8 +231,6 @@ def _ogrenilmis_bilgiyi_cevaba_donustur(mesaj, bilgi):
     cevap = re.sub(r"\\s+", " ", cevap).strip()
 
     return f"🦅 Öğrendiğim bilgilere göre: {cevap}"
-
-
 def _hafizaya_kaydet(yeni_bilgi):
     """Yeni öğrenilen bir bilgiyi kalıcı hafızaya mühürler."""
     try:
@@ -245,10 +245,6 @@ def _hafizaya_kaydet(yeni_bilgi):
     except Exception:
         pass
     return False
-
-
-# -*- coding: utf-8 -*-
-
 def eagle_cevap_uret(mesaj, gecmis=None, hafiza=None, karar=None, baglam=None):
     """
     EagleAI yerel doğal cevap motoru.
@@ -316,8 +312,6 @@ def eagle_cevap_uret(mesaj, gecmis=None, hafiza=None, karar=None, baglam=None):
         karar=karar,
         baglam=baglam,
     )
-
-
 def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None, baglam=""):
     """
     Genel yerel cevap çekirdeği.
@@ -355,7 +349,6 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None,
     if _devam_mesaji_mi(kucuk) and son_kullanici:
         return _devam_uret(metin, son_kullanici, son_eagle, hafiza)
 
-    # Kişisel hafıza yalnızca açık bir hafıza sorgusunda aranır.
     hafiza_sorgusu = any(
         ifade in kucuk
         for ifade in (
@@ -413,9 +406,6 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None,
 
     # Son çare: mesajı aynen tekrar eden kalıbı kullanma.
     return _devam_uret(metin, son_kullanici, son_eagle, hafiza)
-
-
-
 def _soru_gibi_mi(metin):
     soru_kokleri = (
         "nasılsın",
@@ -441,8 +431,6 @@ def _soru_gibi_mi(metin):
         return True
 
     return metin.endswith(("mi?", "mı?", "mu?", "mü?"))
-
-
 def _gorus_istiyor_mu(metin):
     return any(
         ifade in metin
@@ -457,8 +445,6 @@ def _gorus_istiyor_mu(metin):
             "fikrin",
         )
     )
-
-
 def _duygu_var_mi(metin):
     """
     Tek tek cevap üretmek yerine temel duygu yönünü yakalar.
@@ -483,8 +469,6 @@ def _duygu_var_mi(metin):
             "endiseleniyorum",
         )
     )
-
-
 def _duzeltme_mesaji_mi(metin):
     if not metin:
         return False
@@ -503,8 +487,6 @@ def _duzeltme_mesaji_mi(metin):
         return True
 
     return " değil " in f" {metin} " or " degil " in f" {metin} "
-
-
 def _duzeltme_sorusunu_ayikla(metin):
     if not metin:
         return metin
@@ -533,8 +515,6 @@ def _duzeltme_sorusunu_ayikla(metin):
                 return kucuk.split(ayirac, 1)[1].strip()
 
     return metin
-
-
 def _devam_mesaji_mi(metin):
     if not metin:
         return False
@@ -556,8 +536,6 @@ def _devam_mesaji_mi(metin):
     )
 
     return metin.startswith(baslangiclar)
-
-
 def _selam_mi(metin):
     return metin in {
         "merhaba",
@@ -569,8 +547,6 @@ def _selam_mi(metin):
         "iyi aksamlar",
         "iyi geceler",
     }
-
-
 def _hafiza_uygun_mu(metin):
     return any(
         ifade in metin
@@ -583,37 +559,37 @@ def _hafiza_uygun_mu(metin):
             "hafizanda",
         )
     )
-
-
 def _gorus_uret(mesaj, onceki_kullanici):
-    if onceki_kullanici:
-        onceki = onceki_kullanici.casefold()
+    metin = str(mesaj or "").casefold()
 
-        if any(
-            ifade in onceki
-            for ifade in (
-                "yoruldum",
-                "sıkıldım",
-                "sikildim",
-                "moralim bozuk",
-                "gerildim",
-                "endişeliyim",
-                "endiseleniyorum",
-            )
-        ):
-            return (
-                "🦅 Bence önce biraz nefes almak ve kendine zaman ayırmak iyi olabilir. "
-                "Yoğun geçen bir günün ardından her şeyi hemen çözmeye çalışmak gerekmiyor."
-            )
-
+    if any(
+        ifade in metin
+        for ifade in (
+            "hayat nasıl",
+            "hayat nasil",
+            "hayat hakkında",
+            "hayat hakkinda",
+        )
+    ):
         return (
-            "🦅 Bence bunu konuştuğumuz konu üzerinden değerlendirmek daha doğru. "
-            "Benim açımdan önemli olan, önceki söylediklerini de gözden kaçırmamak."
+            "🦅 Bence hayatın tek bir cevabı yok. "
+            "Bazen güzel, bazen yorucu, bazen de insanı düşündüren "
+            "bir tarafı var. Asıl ilginç olan da sanırım insanın "
+            "yaşadıklarına göre buna verdiği anlamın değişmesi."
         )
 
-    return "🦅 Bence biraz daha bağlam olursa düşüncemi daha net ortaya koyabilirim."
+    if onceki_kullanici:
+        return (
+            "🦅 Bence buna tek başına bakmak yerine, "
+            "az önce konuştuğumuz şeyi de düşünerek değerlendirmek daha doğru. "
+            "Ben olsam önce seni bu konuda düşündüren tarafına bakardım."
+        )
 
-
+    return (
+        "🦅 Bence bu biraz kişiden kişiye değişiyor. "
+        "Benim için önemli olan, konuya tek bir açıdan değil "
+        "birkaç farklı yönden bakabilmek."
+    )
 def _duygu_uret(mesaj, son_eagle):
     metin = mesaj.casefold()
 
@@ -641,58 +617,97 @@ def _duygu_uret(mesaj, son_eagle):
         )
 
     return "🦅 Anladım. İstersen bunu biraz daha konuşabiliriz."
-
-
 def _devam_uret(mesaj, onceki_kullanici, son_eagle, hafiza=None):
-    if _gorus_istiyor_mu(mesaj.casefold()):
-        return _gorus_uret(mesaj, onceki_kullanici)
+    metin = str(mesaj or "").strip()
+    kucuk = metin.casefold()
 
-    hafiza_sorgusu = any(
-        ifade in mesaj.casefold()
+    if _gorus_istiyor_mu(kucuk):
+        return _gorus_uret(metin, onceki_kullanici)
+
+    if any(
+        ifade in kucuk
         for ifade in (
-            "hafıza", "hafiza",
-            "hatırla", "hatirla",
-            "hatırlıyor musun", "hatirliyor musun",
-            "neydi", "unutma"
+            "öylesine",
+            "olesine",
+            "öylesine sordum",
+            "olesine sordum",
         )
-    )
+    ):
+        return "🦅 Anladım 😄 Öylesine sohbet ediyoruz yani."
 
-    if hafiza_sorgusu:
-        hafiza_bilgisi = _hafizadan_bilgi_cek(
-            f"{onceki_kullanici} {mesaj}"
+    if any(
+        ifade in kucuk
+        for ifade in (
+            "dünyayı düşünüyorum",
+            "dunyayi dusunuyorum",
+            "dünyayı düşünüyorum.",
+            "dunyayi dusunuyorum.",
+        )
+    ):
+        return "🦅 Ooo, büyük konuya girdin. Dünya deyince aklına en çok ne geliyor?"
+
+    if any(
+        ifade in kucuk
+        for ifade in (
+            "naber",
+            "napıyorsun",
+            "napıyosun",
+            "napıyon",
+            "napion",
+        )
+    ):
+        return "🦅 İyiyim 😄 Buradayım, seninle takılıyorum. Sen nasılsın?"
+
+    if any(
+        ifade in kucuk
+        for ifade in (
+            "aklım biraz karışık",
+            "aklim biraz karisik",
+            "kafam karışık",
+            "kafam karisik",
+        )
+    ):
+        return (
+            "🦅 Anladım. Birkaç şey üst üste gelmiş gibi. "
+            "İstersen kafanı karıştıran şeyi anlat, birlikte toparlayalım."
         )
 
-        if hafiza_bilgisi:
-            return (
-                f"🦅 Hafızamdaki bilgiye göre: {hafiza_bilgisi} "
-                f"“{mesaj}” dediğine göre, bu konunun üzerinden devam edebiliriz."
-            )
+    if any(
+        ifade in kucuk
+        for ifade in (
+            "bugün ne konuşalım",
+            "bugun ne konusalim",
+            "ne konuşalım",
+            "ne konusalim",
+        )
+    ):
+        return (
+            "🦅 Sen seç 😄 İstersen gündelik bir şey konuşalım, "
+            "istersen teknoloji, tarih, spor ya da tamamen rastgele bir konuya dalalım."
+        )
 
-    return _soru_uret(mesaj, onceki_kullanici)
+    if any(
+        ifade in kucuk
+        for ifade in (
+            "sadece sohbet etmek istiyorum",
+            "sadece sohbet",
+            "sohbet etmek istiyorum",
+        )
+    ):
+        return (
+            "🦅 Tamam 😄 O zaman araç gereç yok, direkt sohbet. "
+            "Aklından ne geçiyorsa oradan başlayabiliriz."
+        )
 
+    if onceki_kullanici:
+        return "🦅 Anladım. Devam edelim; ne düşünüyorsan anlatabilirsin."
 
+    return "🦅 Buradayım 😄 İstersen biraz sohbet edelim."
 def _soru_uret(mesaj, onceki_kullanici):
-    metin = mesaj.casefold().strip()
+    metin = str(mesaj or "").casefold()
 
-    soru_metin = metin
-
-    if " " in soru_metin:
-        ilk, kalan = soru_metin.split(" ", 1)
-        if ilk not in (
-            "nasılsın",
-            "nasilsin",
-            "iyi",
-            "bugün",
-            "bugun",
-            "neler",
-            "günün",
-            "gunun",
-            "ne",
-        ):
-            soru_metin = kalan.strip()
-
-    hal_hatir = any(
-        ifade in soru_metin
+    if any(
+        ifade in metin
         for ifade in (
             "nasılsın",
             "nasilsin",
@@ -700,56 +715,26 @@ def _soru_uret(mesaj, onceki_kullanici):
             "nasıl gidiyor",
             "nasil gidiyor",
         )
-    )
+    ):
+        return (
+            "🦅 İyiyim Özhan, buradayım. "
+            "Seninle konuşmaya hazırım. 😊"
+        )
 
-    su_an = any(
-        ifade in soru_metin
+    if any(
+        ifade in metin
         for ifade in (
             "ne yapıyorsun",
             "ne yapiyorsun",
+            "ne yapiyon",
         )
-    )
-
-    bugun = any(
-        ifade in soru_metin
-        for ifade in (
-            "bugün neler yaptın",
-            "bugun neler yaptin",
-            "bugün ne yaptın",
-            "bugun ne yaptin",
-            "neler yaptın",
-            "neler yaptin",
-            "günün nasıl geçti",
-            "gunun nasil gecti",
-        )
-    )
-
-    if hal_hatir and (su_an or bugun):
-        return (
-            "🦅 İyiyim Özhan, buradayım. 😊 "
-            "Bugün de seninle konuşuyor, sorularını yanıtlıyor ve yardımcı olmaya çalışıyorum. "
-            "Senin günün nasıl geçti?"
-        )
-
-    if hal_hatir:
-        return (
-            "🦅 İyiyim Özhan, buradayım. "
-            "Seninle konuşmaya ve yardımcı olmaya hazırım. 😊"
-        )
-
-    if bugun:
-        return (
-            "🦅 Bugün seninle konuşuyor, sorularını yanıtlıyor ve yardımcı olmaya çalışıyorum. "
-            "Benim açımdan günün en güzel kısmı seninle sohbet etmek. 😊"
-        )
-
-    if su_an:
-        return (
-            "🦅 Şu an seninle konuşuyorum. "
-            "Sorularını yanıtlıyor ve sana yardımcı olmaya çalışıyorum. 😊"
-        )
+    ):
+        return "🦅 Şu an seninle konuşuyorum. Ne hakkında devam edelim?"
 
     if onceki_kullanici:
-        return "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin."
+        return (
+            "🦅 Tabii. Önceki söylediklerini de dikkate alarak "
+            "bunu birlikte değerlendirebiliriz."
+        )
 
-    return "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin."
+    return "🦅 Tabii, konuşalım. Ne düşündüğünü anlatabilirsin."
