@@ -3880,7 +3880,17 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "maçlar var", "maclar var"
     ])
 
-    if not bugun_mu:
+    # Geçmiş/sonuç soruları da doğrudan sonuç cevabına girebilir.
+    sonuc_mu = any(k in mesaj_norm for k in [
+        "sonuç", "sonuc",
+        "sonuçları", "sonuclari",
+        "maç sonucu", "mac sonucu",
+        "maç sonuçları", "mac sonuclari",
+        "skor", "skorları", "skorlari",
+        "kaç kaç", "kac kac"
+    ])
+
+    if not bugun_mu and not sonuc_mu:
         return ""
 
     fikstur_mu = any(k in mesaj_norm for k in [
@@ -4181,8 +4191,9 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         if durum_ifadesi.search(f"{ev} {deplasman}"):
             continue
 
-        # Genel "bugün maç var mı?" sorgusunda geçmiş saatleri listeleme.
-        if saat:
+        # Geçmiş saatleri yalnızca bugünkü fikstür sorgusunda ele.
+        # Maç sonucu sorularında oynanmış maçlar korunmalıdır.
+        if bugun_mu and not sonuc_mu and saat:
             try:
                 saat_dt = datetime.strptime(saat, "%H:%M")
                 simdi_dt = datetime.now()
@@ -4257,7 +4268,9 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         )):
             continue
 
-        if istenen_spor and sonuc.get("spor") != istenen_spor:
+        # Kaynak spor bilgisini vermiyorsa mevcut yapılandırılmış
+        # sonucu gereksiz yere eleme.
+        if istenen_spor and sonuc.get("spor") and sonuc.get("spor") != istenen_spor:
             continue
 
         # Kullanıcı belirli bir takım/oyuncu sorduysa sonucu onunla sınırla.
@@ -4271,7 +4284,17 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         if lig:
             parcalar.append(f"[{lig}]")
 
-        if saat:
+        if sonuc_mu and sonuc.get("oynandi"):
+            tarih = str(sonuc.get("tarih", "")).strip()
+            ev_skor = sonuc.get("ev_skor")
+            deplasman_skor = sonuc.get("deplasman_skor")
+
+            if tarih:
+                parcalar.append(f"— {tarih}")
+
+            if ev_skor is not None and deplasman_skor is not None:
+                parcalar.append(f"| {ev_skor}-{deplasman_skor}")
+        elif saat:
             parcalar.append(f"— {saat}")
 
         yapilandirilmis.append(" ".join(parcalar))
@@ -4284,7 +4307,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         for satir in yapilandirilmis:
             mac = re.search(
-                r"⚽\s*(.*?)\s+-\s+(.*?)\s+—\s+(\d{2}:\d{2})",
+                r"⚽\s*(.*?)\s+-\s+(.*?)\s+—\s+(.*?)(?:\s+\|\s+\d+[-–]\d+|\s+—\s+\d{2}:\d{2})?$",
                 satir
             )
             if not mac:
@@ -4546,7 +4569,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
     satirlar = [
         "🏟️ EAGLE SPOR",
         "",
-        "📅 BUGÜNÜN MAÇLARI"
+        "📅 MAÇ SONUÇLARI" if sonuc_mu else "📅 BUGÜNÜN MAÇLARI"
     ]
 
     for kategori in [
