@@ -2362,7 +2362,8 @@ def super_lig_getir(mesaj=""):
         sonuc_istegi = any(k in mesaj_kucuk for k in [
             "sonuç", "sonuc", "skor",
             "maç sonucu", "mac sonucu",
-            "maç sonuçları", "mac sonuclari"
+            "maç sonuçları", "mac sonuclari",
+            "oynanan maç", "oynanan mac"
         ])
 
         tum_maclar = []
@@ -3892,6 +3893,8 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "sonuçları", "sonuclari",
         "maç sonucu", "mac sonucu",
         "maç sonuçları", "mac sonuclari",
+        "oynanan maç", "oynanan mac",
+        "oynanan maçlar", "oynanan maclar",
         "skor", "skorları", "skorlari",
         "kaç kaç", "kac kac"
     ])
@@ -4313,7 +4316,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         for satir in yapilandirilmis:
             mac = re.search(
-                r"⚽\s*(.*?)\s+-\s+(.*?)\s+—\s+(.*?)(?:\s+\|\s+\d+[-–]\d+|\s+—\s+\d{2}:\d{2})?$",
+                r"⚽\s*(.*?)\s+-\s+(.*?)\s+—\s+(.+)$",
                 satir
             )
             if not mac:
@@ -4518,7 +4521,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         for satir in mac_listesi:
             eslesme = re.search(
-                r"⚽\s*(.*?)\s+-\s+(.*?)\s+—\s+(\d{2}:\d{2})",
+                r"⚽\s*(.*?)\s+-\s+(.*?)\s+—\s+(.+)$",
                 satir
             )
 
@@ -4939,6 +4942,7 @@ def eagle_genel_baglam_coz(mesaj, gecmis=None):
     # Devam/belirsizlik ifadeleri.
     devam_ifadeleri = [
         "peki",
+        "bunlar",
         "buna", "bunu", "bunun", "bunda",
         "şuna", "şunu", "şunun",
         "ona", "onu", "onun",
@@ -5284,6 +5288,7 @@ def sohbet():
             flush=True
         )
 
+    mesaj = mesaj_karar
     akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
 
