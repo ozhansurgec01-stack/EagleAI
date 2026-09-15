@@ -1893,7 +1893,13 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
-    if any(x in k for x in kod_kelimeleri):
+    if any(
+        re.search(
+            r"(?<!\w)" + re.escape(x) + r"(?!\w)",
+            k
+        )
+        for x in kod_kelimeleri
+    ):
         karar.update({
             "intent": "kod_hata",
             "guven": "yüksek",
