@@ -1404,6 +1404,32 @@ def spor_arama_sorgusu(mesaj):
     """Spor sorusunu ülke ve lig bağlamına göre güncel aramaya dönüştürür."""
     mesaj_kucuk = mesaj.casefold().replace('\u0307', '')
 
+    # 🕐 Zaman kapsamı
+    # Tek bir zaman etiketi üret; lig/ülke dalları bunu kullanır.
+    if any(k in mesaj_kucuk for k in [
+        "gelecek hafta", "gelecek haftanın", "gelecek haftaki"
+    ]):
+        zaman_eki = "gelecek hafta"
+    elif any(k in mesaj_kucuk for k in [
+        "bu hafta", "bu haftanın", "bu haftaki"
+    ]):
+        zaman_eki = "bu hafta"
+    elif any(k in mesaj_kucuk for k in [
+        "yarın", "yarin", "yarınki", "yarinki"
+    ]):
+        zaman_eki = "yarın"
+    elif any(k in mesaj_kucuk for k in [
+        "dün", "dünkü", "dünün",
+        "dun", "dunku", "dunun"
+    ]):
+        zaman_eki = "dün"
+    elif any(k in mesaj_kucuk for k in [
+        "bugün", "bugun", "bugünkü", "bugunku"
+    ]):
+        zaman_eki = "bugün"
+    else:
+        zaman_eki = "güncel"
+
     # 🇹🇷 Türkiye
     turkiye_kelimeleri = [
         "türkiye", "turkiye",
@@ -1520,42 +1546,42 @@ def spor_arama_sorgusu(mesaj):
                 return f"Türkiye voleybol {dun} maç sonuçları"
             return "Türkiye bugün voleybol maç programı resmi TVF fikstür"
         if futbol_mu:
-            return "Türkiye bugün futbol maç programı Süper Lig resmi fikstür"
+            return f"Türkiye {zaman_eki} futbol maç programı Süper Lig resmi fikstür"
         if basketbol_mu:
-            return "Türkiye bugün basketbol maç programı resmi fikstür"
+            return f"Türkiye {zaman_eki} basketbol maç programı resmi fikstür"
         if tenis_mu:
-            return "Türkiye tenisçiler bugün maç programı"
-        return "Türkiye bugün spor müsabakaları maç programı"
+            return f"Türkiye tenisçiler {zaman_eki} maç programı"
+        return f"Türkiye {zaman_eki} spor müsabakaları maç programı"
 
     # 🇬🇧 İngiltere
     if any(k in mesaj_kucuk for k in ingiltere_kelimeleri):
         if futbol_mu:
-            return "İngiltere bugün futbol maç programı Premier League resmi fikstür"
-        return "İngiltere bugün spor maç programı Premier League futbol"
+            return f"İngiltere {zaman_eki} futbol maç programı Premier League resmi fikstür"
+        return f"İngiltere {zaman_eki} spor maç programı Premier League futbol"
 
     # 🇪🇸 İspanya
     if any(k in mesaj_kucuk for k in ispanya_kelimeleri):
         if futbol_mu:
-            return "İspanya bugün futbol maç programı La Liga resmi fikstür"
-        return "İspanya bugün spor maç programı La Liga futbol"
+            return f"İspanya {zaman_eki} futbol maç programı La Liga resmi fikstür"
+        return f"İspanya {zaman_eki} spor maç programı La Liga futbol"
 
     # 🇩🇪 Almanya
     if any(k in mesaj_kucuk for k in almanya_kelimeleri):
         if futbol_mu:
-            return "Almanya bugün futbol maç programı Bundesliga resmi fikstür"
-        return "Almanya bugün spor maç programı Bundesliga futbol"
+            return f"Almanya {zaman_eki} futbol maç programı Bundesliga resmi fikstür"
+        return f"Almanya {zaman_eki} spor maç programı Bundesliga futbol"
 
     # 🇮🇹 İtalya
     if any(k in mesaj_kucuk for k in italya_kelimeleri):
         if futbol_mu:
-            return "İtalya bugün futbol maç programı Serie A resmi fikstür"
-        return "İtalya bugün spor maç programı Serie A futbol"
+            return f"İtalya {zaman_eki} futbol maç programı Serie A resmi fikstür"
+        return f"İtalya {zaman_eki} spor maç programı Serie A futbol"
 
     # 🇫🇷 Fransa
     if any(k in mesaj_kucuk for k in fransa_kelimeleri):
         if futbol_mu:
-            return "Fransa bugün futbol maç programı Ligue 1 resmi fikstür"
-        return "Fransa bugün spor maç programı Ligue 1 futbol"
+            return f"Fransa {zaman_eki} futbol maç programı Ligue 1 resmi fikstür"
+        return f"Fransa {zaman_eki} spor maç programı Ligue 1 futbol"
 
     # 🌍 Genel spor — takım/oyuncu adı kullanıcı mesajından korunur
     sonuc_sorusu = any(k in mesaj_kucuk for k in [
@@ -1573,12 +1599,9 @@ def spor_arama_sorgusu(mesaj):
     if sonuc_sorusu:
         return f"{mesaj.strip()} maç sonucu skor güncel"
 
-    bugun_sorusu = any(k in mesaj_kucuk for k in [
-        "bugün", "bugun",
-        "bugünkü", "bugunku"
-    ])
+    zaman_sorusu = zaman_eki != "güncel"
 
-    if bugun_sorusu:
+    if zaman_sorusu:
         # Takım/lig/spor belirtilmişse özgün sorguyu koru.
         # Genel "Bugün maç var mı?" sorgusunda arama motoruna
         # doğrudan bugünün maç programını sor.
@@ -1601,7 +1624,7 @@ def spor_arama_sorgusu(mesaj):
             bugunun_tarihi = datetime.now().strftime("%d.%m.%Y")
             return f"{bugunun_tarihi} bugün maçlar maç programı karşılaşmalar"
 
-        return f"{mesaj.strip()} maç fikstür güncel"
+        return f"{mesaj.strip()} maç fikstür {zaman_eki} güncel"
 
 
 
@@ -2413,9 +2436,6 @@ def super_lig_getir(mesaj=""):
                         and deplasman_skor is not None
                     )
 
-                    if not oynandi:
-                        continue
-
                     try:
                         dt = datetime.strptime(
                             f"{tarih} {saat}",
@@ -2481,6 +2501,66 @@ def super_lig_getir(mesaj=""):
             ]
 
         maclar.sort(key=lambda x: x["_tarih"])
+
+        # Kullanıcının istediği zaman aralığını TFF verisi üzerinde uygula.
+        simdi = datetime.now()
+        zaman_kapsami = "bugun"
+
+        if any(k in mesaj_kucuk for k in [
+            "gelecek hafta", "gelecek haftanın", "gelecek haftaki"
+        ]):
+            zaman_kapsami = "gelecek_hafta"
+        elif any(k in mesaj_kucuk for k in [
+            "bu hafta", "bu haftanın", "bu haftaki"
+        ]):
+            zaman_kapsami = "bu_hafta"
+        elif any(k in mesaj_kucuk for k in [
+            "yarın", "yarin", "yarınki", "yarinki"
+        ]):
+            zaman_kapsami = "yarin"
+        elif any(k in mesaj_kucuk for k in [
+            "dün", "dünkü", "dünün",
+            "dun", "dunku", "dunun"
+        ]):
+            zaman_kapsami = "dun"
+
+        if not sonuc_istegi:
+            if zaman_kapsami == "bu_hafta":
+                baslangic = simdi.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ) - timedelta(days=simdi.weekday())
+                bitis = baslangic + timedelta(days=6, hours=23, minutes=59, seconds=59)
+            elif zaman_kapsami == "gelecek_hafta":
+                baslangic = (
+                    simdi.replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    ) - timedelta(days=simdi.weekday())
+                    + timedelta(days=7)
+                )
+                bitis = baslangic + timedelta(days=6, hours=23, minutes=59, seconds=59)
+            elif zaman_kapsami == "yarin":
+                baslangic = simdi.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ) + timedelta(days=1)
+                bitis = baslangic + timedelta(days=1) - timedelta(seconds=1)
+            elif zaman_kapsami == "dun":
+                baslangic = simdi.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ) - timedelta(days=1)
+                bitis = simdi.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ) - timedelta(seconds=1)
+            else:
+                baslangic = simdi.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                bitis = baslangic + timedelta(days=1) - timedelta(seconds=1)
+
+            maclar = [
+                mac for mac in maclar
+                if baslangic <= mac["_tarih"] <= bitis
+                and mac["_tarih"] >= simdi
+            ]
 
         # Sonuç sorgusunda en güncel oynanan maçlar önde olsun.
         if sonuc_istegi:
@@ -3875,10 +3955,30 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
     mesaj_norm = str(mesaj).casefold().replace("\u0307", "")
 
-    # Bugün/genel maç sorgularında çalış.
-    # "Maç var mı" gibi gün belirtmeyen sorgular da mevcut günün
-    # fikstürünü istediği için doğrudan kabul edilir.
-    bugun_mu = any(k in mesaj_norm for k in [
+    # Genel zaman kapsamını tek noktadan belirle.
+    # Böylece bugün/yarın/dün/bu hafta/gelecek hafta/oynananlar
+    # ayrı ayrı fikstür dalları gerektirmeden aynı akıştan geçer.
+    zaman_kapsami = "bugun"
+
+    if any(k in mesaj_norm for k in [
+        "gelecek hafta", "gelecek haftanın", "gelecek haftaki"
+    ]):
+        zaman_kapsami = "gelecek_hafta"
+    elif any(k in mesaj_norm for k in [
+        "bu hafta", "bu haftanın", "bu haftaki"
+    ]):
+        zaman_kapsami = "bu_hafta"
+    elif any(k in mesaj_norm for k in [
+        "dün", "dünya", "dünkü", "dünün",
+        "dun", "dunku", "dunun"
+    ]):
+        zaman_kapsami = "dun"
+    elif any(k in mesaj_norm for k in [
+        "yarın", "yarin", "yarınki", "yarinki"
+    ]):
+        zaman_kapsami = "yarin"
+
+    bugun_mu = zaman_kapsami == "bugun" and any(k in mesaj_norm for k in [
         "bugün", "bugun",
         "bugünkü", "bugunku",
         "bugün maç", "bugun mac",
@@ -3887,7 +3987,6 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "maçlar var", "maclar var"
     ])
 
-    # Geçmiş/sonuç soruları da doğrudan sonuç cevabına girebilir.
     sonuc_mu = any(k in mesaj_norm for k in [
         "sonuç", "sonuc",
         "sonuçları", "sonuclari",
@@ -3899,7 +3998,11 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "kaç kaç", "kac kac"
     ])
 
-    if not bugun_mu and not sonuc_mu:
+    if (
+        not bugun_mu
+        and not sonuc_mu
+        and zaman_kapsami not in ("bu_hafta", "gelecek_hafta", "dun", "yarin")
+    ):
         return ""
 
     fikstur_mu = any(k in mesaj_norm for k in [
@@ -4578,7 +4681,16 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
     satirlar = [
         "🏟️ EAGLE SPOR",
         "",
-        "📅 MAÇ SONUÇLARI" if sonuc_mu else "📅 BUGÜNÜN MAÇLARI"
+        (
+            "📅 MAÇ SONUÇLARI"
+            if sonuc_mu
+            else {
+                "bu_hafta": "📅 BU HAFTANIN MAÇLARI",
+                "gelecek_hafta": "📅 GELECEK HAFTANIN MAÇLARI",
+                "yarin": "📅 YARININ MAÇLARI",
+                "dun": "📅 DÜNÜN MAÇLARI",
+            }.get(zaman_kapsami, "📅 BUGÜNÜN MAÇLARI")
+        )
     ]
 
     for kategori in [
@@ -5942,7 +6054,21 @@ def sohbet():
 
             if super_lig_mi and puan_durumu_istegi and not web_verisi:
                 web_verisi = super_lig_puan_durumu_getir()
-            elif super_lig_mi and not web_verisi:
+            elif super_lig_mi:
+                # Sonuç/oynanan maç isteğinde resmi TFF sonuçlarını kullan.
+                # Fikstür/zaman kapsamı isteğinde ise güncel web araması yap;
+                # böylece sistem yalnızca geçmiş sonuçlara kilitlenmez.
+                super_lig_sonuc_istegi = any(k in mesaj_spor for k in [
+                    "sonuç", "sonuc", "sonuçları", "sonuclari",
+                    "maç sonucu", "mac sonucu",
+                    "maç sonuçları", "mac sonuclari",
+                    "oynanan maç", "oynanan mac",
+                    "oynanan maçlar", "oynanan maclar",
+                    "skor", "skorları", "skorlari",
+                    "kaç kaç", "kac kac", "kaç kaç bitti", "kac kac bitti"
+                ])
+
+                # Süper Lig sonuç/fikstür sorgularında resmi TFF verisini kullan.
                 web_verisi = super_lig_getir(mesaj)
 
             # 🏐 Türkiye-İtalya voleybol sonucu: TVF resmi haber
