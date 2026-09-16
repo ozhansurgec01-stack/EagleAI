@@ -3369,10 +3369,27 @@ def web_sayfa_oku(url, limit=7000):
             "html.parser"
         )
 
-        for etiket in soup(["script", "style", "noscript"]):
+        # Sayfa metnine karışan teknik/navigasyon bölümlerini temizle.
+        for etiket in soup([
+            "script", "style", "noscript", "svg",
+            "nav", "header", "footer", "aside", "form"
+        ]):
             etiket.decompose()
 
-        metin = " ".join(soup.stripped_strings)
+        # Önce makalenin/asıl içeriğin bulunduğu alanı tercih et.
+        # Uygun bir alan yoksa sayfanın tamamına kontrollü biçimde düş.
+        icerik = None
+
+        for secici in ("article", "main"):
+            aday = soup.select_one(secici)
+            if aday:
+                aday_metin = " ".join(aday.stripped_strings)
+                if len(aday_metin) >= 300:
+                    icerik = aday
+                    break
+
+        kaynak = icerik if icerik is not None else soup
+        metin = " ".join(kaynak.stripped_strings)
         metin = re.sub(r"\s+", " ", metin).strip()
 
         if len(metin) > limit:

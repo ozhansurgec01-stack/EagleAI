@@ -1275,18 +1275,37 @@ class EagleMerkezMotoru:
 
         return " | ".join(sirali), guven
 
-    def genel_web_cevabi(cls, mesaj, veriler):
+    def kaynak_ozeti(cls, veriler):
         """
-        Genel bilgi sorularında web kaynaklarından kısa cevap çıkarır.
-        Sorunun ana konusu ile gerçekten ilişkili kaynakları seçer.
+        Kaynak sayısını ve farklı domainleri hesaplar.
         """
+        domainler = {
+            veri.get("domain", "")
+            for veri in veriler
+            if veri.get("domain")
+        }
 
+        return {
+            "kaynak_sayisi": len(veriler),
+            "farkli_domain_sayisi": len(domainler),
+        }
+
+
+    def genel_web_cevabi(
+        cls,
+        mesaj,
+        veriler,
+        sayfa_okuyucu=None,
+    ):
+        """
+        Genel web sorularında kaynak sayfalarını okuyup,
+        soruyla ilgili gerçek bilgi cümlelerinden kısa cevap çıkarır.
+        """
         if not mesaj or not veriler:
             return "", 0.0
 
         soru = cls.normalize(mesaj)
 
-        # Tek başına anlam taşımayan soru kelimeleri.
         etkisiz = {
             "bir", "bu", "şu", "ve", "ile", "için",
             "nasıl", "neden", "ne", "nedir", "mi", "mı",
@@ -1305,145 +1324,265 @@ class EagleMerkezMotoru:
         if not soru_kelime:
             return "", 0.0
 
-        # Soru türünü belirle.
         tanim_sorusu = bool(
-            re.search(r"\b(nedir|ne demek|ne anlama gelir)\b", soru)
+            re.search(
+                r"\b(nedir|ne demek|ne anlama gelir)\b",
+                soru
+            )
         )
+
+        # "Nasıl çalışır?" bir kurulum/işlem sorusu değil,
+        # mekanizmayı açıklama sorusudur.
+        mekanizma_sorusu = bool(
+            re.search(
+                r"\b(nasıl çalışır|nasıl işler)\b",
+                soru
+            )
+        )
+
         islem_sorusu = bool(
-            re.search(r"\b(nasıl|nasıl yapılır|nasıl kurulur|değiştiririm)\b", soru)
+            re.search(
+                r"\b(nasıl yapılır|nasıl kurulur|değiştiririm)\b",
+                soru
+            )
         )
 
         adaylar = []
 
-        for veri in veriler:
+        for kaynak_no, veri in enumerate(veriler[:4]):
             if not isinstance(veri, dict):
                 continue
 
             baslik = str(veri.get("title", "")).strip()
             ozet = str(veri.get("snippet", "")).strip()
-            metin = " ".join(
-                x for x in (baslik, ozet)
-                if x
-            ).strip()
+            sayfa = ""
 
-            if not metin:
+            if sayfa_okuyucu:
+                url = str(veri.get("url", "")).strip()
+                if url:
+                    try:
+                        sayfa = str(
+                            sayfa_okuyucu(url) or ""
+                        ).strip()
+                    except Exception as e:
+                        print(
+                            f"⚠️ Web sayfa okuma hatası: {e}",
+                            flush=True
+                        )
+
+            # Başlıklar SEO/navigasyon metni içerebildiği için
+            # cevap adayı olarak kullanılmaz.
+            # Sayfa okunabildiyse asıl bilgi kaynağı sayfa metnidir.
+            # Sayfa okunamadıysa snippet kullanılabilir.
+            kaynak = sayfa if sayfa else ozet
+
+            if not kaynak:
                 continue
 
-            metin_norm = cls.normalize(metin)
-            kelimeler = set(
-                re.findall(
-                    r"[a-z0-9çğıöşü]+",
-                    metin_norm
+            # Sayfa başlıklarında ve menülerde sık görülen
+            # navigasyon ifadelerini bilgi adayı olmaktan çıkar.
+            kaynak = re.sub(
+                r"(?i)\b("
+                r"anasayfa|ana sayfa|menü|giriş yap|üye ol|"
+                r"bizi takip edin|arama|kategoriler|"
+                r"sayfa içerikleri|toggle|"
+                r"ilginizi çekebilir|bunlar da ilginizi çekebilir|"
+                r"en çok okunanlar|en çok paylaşılanlar|"
+                r"en çok izlenenler|hakkımızda|gizlilik|"
+                r"üyelik işlemleri|sıkça sorulan sorular"
+                r")\b",
+                " ",
+                kaynak
+            )
+
+            kaynak = re.sub(r"\s+", " ", kaynak).strip()
+
+            cumleler = re.split(
+                r"(?<=[.!?])\s+",
+                kaynak
+            )
+
+            for cumle_no, cumle in enumerate(cumleler):
+                cumle = re.sub(r"\s+", " ", cumle).strip()
+
+                if len(cumle) < 45 or len(cumle) > 500:
+                    continue
+
+                norm = cls.normalize(cumle)
+
+                metin_kelime = set(
+                    re.findall(
+                        r"[a-z0-9çğıöşü]+",
+                        norm
+                    )
                 )
-            )
 
-            eslesen = [
-                kelime
-                for kelime in soru_kelime
-                if kelime in kelimeler
-            ]
+                eslesen = [
+                    kelime
+                    for kelime in soru_kelime
+                    if kelime in metin_kelime
+                ]
 
-            # Ana konu kelimelerinden hiçbiri yoksa kaynak alakasızdır.
-            if not eslesen:
-                continue
+                if not eslesen:
+                    continue
 
-            puan = len(eslesen) * 10
+                # Mekanizma sorularında soru/başlık cümlelerini
+                # cevap adayı olarak kullanma.
+                if (mekanizma_sorusu or islem_sorusu) and "?" in cumle:
+                    continue
 
-            # Daha uzun/özgül ana konu eşleşmeleri daha değerlidir.
-            puan += sum(
-                min(len(kelime), 12)
-                for kelime in eslesen
-            )
+                puan = len(eslesen) * 10
+                puan += sum(
+                    min(len(kelime), 12)
+                    for kelime in eslesen
+                )
 
-            # Tanım sorusunda tanımlayıcı ifadeler ek puan alır.
-            if tanim_sorusu and re.search(
-                r"\b(denir|olarak tanımlanır|sistemidir|anlamına gelir|"
-                r"oluşur|ifade eder|nedir)\b",
-                metin_norm
-            ):
-                puan += 12
+                # İşlem sorularında gerçek adım cümlelerini öne çıkar.
+                bilgi_fiili = bool(
+                    re.search(
+                        r"\b("
+                        r"dır|dir|dur|dür|"
+                        r"seçin|seçilir|seçiniz|"
+                        r"girin|giriniz|"
+                        r"tıklayın|dokunun|"
+                        r"açın|açılır|"
+                        r"değiştirin|değiştirilir|"
+                        r"yapın|yapılır|"
+                        r"bağlanın|bağlayın|"
+                        r"işaretleyin|işaretlenir|"
+                        r"gidin|izleyin|"
+                        r"basın|ekleyin|silin|"
+                        r"kaydedin|kaydedilir|"
+                        r"çift tıklayın|"
+                        r"üzerine tıklayın"
+                        r")\b",
+                        norm
+                    )
+                )
 
-            # İşlem sorusunda işlem ifadeleri ek puan alır.
-            if islem_sorusu and re.search(
-                r"\b(adım|ayar|kurulum|kurulur|değiştir|"
-                r"yapılır|bağla|bağlantı|giriş|menü)\b",
-                metin_norm
-            ):
-                puan += 8
+                if islem_sorusu:
+                    if not bilgi_fiili:
+                        continue
 
-            adaylar.append((puan, baslik, ozet, metin))
+                    # Rehber/SEO girişlerini cevap adayından çıkar.
+                    if re.search(
+                        r"\b("
+                        r"günümüzde|"
+                        r"bu rehberimizde|"
+                        r"bu rehberde|"
+                        r"işte tam bu sırada|"
+                        r"daha iyi bir internet deneyimi|"
+                        r"daha iyi bir internet için|"
+                        r"rehberi ile karşınızdayız|"
+                        r"işte güncel|"
+                        r"işte güncel dns adresleri|"
+                        r"karşınızdayız|"
+                        r"en çok tercih edilen|"
+                        r"sizin için|"
+                        r"çeşitli sebeplerden dolayı|"
+                        r"anlatacağız|"
+                        r"tercih ediyor|"
+                        r"tercih ediliyor|"
+                        r"hayati önem|"
+                        r"kolayca yapılabilir"
+                        r")\b",
+                        norm
+                    ):
+                        continue
+
+                    # Gerçek işlem adımlarına güçlü öncelik.
+                    puan += 30
+
+                if tanim_sorusu and re.search(
+                    r"\b(denir|sistemidir|anlamına gelir|"
+                    r"ifade eder|oluşur|çeviren|sağlayan)\b",
+                    norm
+                ):
+                    puan += 15
+
+                # Kaynağın ilk cümlesi çoğunlukla giriş/SEO metnidir.
+                if cumle_no == 0:
+                    puan -= 25
+
+                adaylar.append(
+                    (puan, kaynak_no, cumle)
+                )
 
         if not adaylar:
             return "", 0.0
 
-        adaylar.sort(key=lambda x: (-x[0], len(x[3])))
+        adaylar.sort(
+            key=lambda x: (-x[0], len(x[2]))
+        )
 
         secilen = []
+        kullanilan_kaynaklar = set()
 
-        for puan, baslik, ozet, metin in adaylar:
-            kaynak_metin = ozet or baslik
-            if not kaynak_metin:
-                continue
-
-            tekrar = False
-
-            yeni_kelimeler = set(
+        for _, kaynak_no, cumle in adaylar:
+            norm = cls.normalize(cumle)
+            yeni_kelime = set(
                 re.findall(
                     r"[a-z0-9çğıöşü]+",
-                    cls.normalize(kaynak_metin)
+                    norm
                 )
             )
 
+            tekrar = False
+
             for eski in secilen:
-                eski_kelimeler = set(
+                eski_kelime = set(
                     re.findall(
                         r"[a-z0-9çğıöşü]+",
                         cls.normalize(eski)
                     )
                 )
 
-                birlesim = eski_kelimeler | yeni_kelimeler
-                ortak = eski_kelimeler & yeni_kelimeler
+                birlesim = eski_kelime | yeni_kelime
+                ortak = eski_kelime & yeni_kelime
 
-                if birlesim and len(ortak) / len(birlesim) >= 0.70:
+                if (
+                    birlesim
+                    and len(ortak) / len(birlesim) >= 0.65
+                ):
                     tekrar = True
                     break
 
             if tekrar:
                 continue
 
-            secilen.append(kaynak_metin.strip())
+            # Aynı kaynaktan arka arkaya metin doldurmak yerine
+            # mümkün olduğunca farklı kaynakları kullan.
+            if (
+                not islem_sorusu
+                and kaynak_no in kullanilan_kaynaklar
+                and len(kullanilan_kaynaklar) < 3
+            ):
+                continue
+
+            secilen.append(cumle)
+            kullanilan_kaynaklar.add(kaynak_no)
 
             if len(secilen) >= 3:
                 break
 
+        # Farklı kaynak şartı fazla katı kaldıysa,
+        # kalan en iyi adaylarla üç cümleye tamamla.
+        if len(secilen) < 2:
+            for _, _, cumle in adaylar:
+                if cumle in secilen:
+                    continue
+                secilen.append(cumle)
+                if len(secilen) >= 3:
+                    break
+
         if not secilen:
             return "", 0.0
 
-        # En az iki bağımsız alakalı kaynak varsa güven yükselir.
-        if len(secilen) >= 2:
-            guven = 0.82
-        else:
-            guven = 0.76
+        return " ".join(secilen).strip(), (
+            0.86 if sayfa_okuyucu else 0.76
+        )
 
-        return " ".join(secilen).strip(), guven
 
-    def kaynak_ozeti(cls, veriler):
-        """
-        Kaynak sayısını ve farklı domainleri hesaplar.
-        """
-        domainler = {
-            veri.get("domain", "")
-            for veri in veriler
-            if veri.get("domain")
-        }
-
-        return {
-            "kaynak_sayisi": len(veriler),
-            "farkli_domain_sayisi": len(domainler),
-        }
-
-    @classmethod
     def genel_altin_cevabi(cls, mesaj, veriler, web_arayici=None, sayfa_okuyucu=None):
         """İnternette bulunan güncel kaynakların sayfalarından toplu altın fiyatı çıkarır."""
         metin = cls.normalize(str(mesaj or ""))
@@ -1958,7 +2097,16 @@ class EagleMerkezMotoru:
             veriler
         )
 
-        if tekrar_skoru >= 0.60 and karar.get("intent") != "spor":
+        if (
+            tekrar_skoru >= 0.60
+            and karar.get("intent") != "spor"
+            and not bool(
+                re.search(
+                    r"\b(nasıl|nasıl yapılır|nasıl kurulur|değiştiririm)\b",
+                    self.normalize(mesaj),
+                )
+            )
+        ):
             en_iyi = veriler[0].get("snippet") or \
                 veriler[0].get("title")
 
@@ -1983,7 +2131,8 @@ class EagleMerkezMotoru:
         # yalnızca üst katmana son çare sinyali verilecek.
         genel_cevap, genel_guven = self.genel_web_cevabi(
             mesaj,
-            veriler
+            veriler,
+            sayfa_okuyucu=sayfa_okuyucu
         )
 
         if genel_cevap and genel_guven >= 0.75:
