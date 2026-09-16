@@ -1105,7 +1105,12 @@ def bilgi_bankasi_ara(mesaj):
                     if any(k in madde_metin for k in hedefler):
                         bulunan.append((10, gosterilecek))
 
-    tara(bilgi)
+    # Python sorusunda gerçek eşleşme bulunamadıysa genel konu taraması
+    # alakasız kayıtları sonuç olarak döndürmemeli; web fallback'e bırakılmalı.
+    python_sorusu = bool(re.search(r"\bpython(?:['’](?:da|de)|\s+(?:da|de))?\b", metin))
+
+    if (konu != "python" and not python_sorusu) or bulunan:
+        tara(bilgi)
 
     bulunan.sort(key=lambda x: x[0], reverse=True)
 
@@ -1945,6 +1950,17 @@ def eagle_karar_motoru(mesaj, gecmis=None):
     ]
 
     acik_sohbet = any(x in k for x in sohbet_ifadeleri)
+
+    if acik_sohbet:
+        karar.update({
+            "intent": "basit_sohbet",
+            "guven": "yüksek",
+            "neden": "Açık sohbet isteği algılandı.",
+            "arac": "eagle_sohbet",
+            "islem": "dogrudan_cevap",
+            "dogrulama": True
+        })
+        return karar
 
     if any(x in k for x in hava_kelimeleri) and not acik_sohbet:
         karar.update({
@@ -6278,8 +6294,20 @@ def sohbet():
             flush=True
         )
 
+    # 🌐 KB sonucu yoksa genel bilgi isteğini web ile tamamla.
+    if (
+        not bilgi_sonuclari
+        and not autofix_istegi
+        and karar.get("arac") == "eagle_sohbet"
+        and karar.get("intent") != "basit_sohbet"
+    ):
+        print("🌐 KB SONUÇSUZ — WEB ARAŞTIRMASINA GEÇİLİYOR", flush=True)
+        print(f"🌐 WEB SORGU: {mesaj!r}", flush=True)
+        web_verisi = web_arastir(mesaj)
+        print(f"🌐 WEB SONUÇ: {len(web_verisi)}", flush=True)
+
     # 🗣️ Genel sohbet modülü
-    if karar.get("arac") == "eagle_sohbet":
+    if karar.get("arac") == "eagle_sohbet" and not web_verisi:
         cevap = genel_sohbet(
             mesaj,
             gecmis=gecmis,
@@ -6414,42 +6442,146 @@ def sohbet():
                         "memory_count": len(hafiza_yukle())
                     })
 
+                # 🧠 Eagle cevap çıkaramadıysa Gemini yalnızca son çare.
+                if merkez_sonuc.get("gemini_gerekli"):
+                    try:
+                        import os
+                        import requests
+
+                        gemini_key = os.getenv("GEMINI_API_KEY")
+
+                        if gemini_key:
+                            kaynaklar = []
+
+                            for kaynak in web_verisi[:6]:
+                                if not isinstance(kaynak, dict):
+                                    continue
+
+                                baslik = str(
+                                    kaynak.get("title", "")
+                                ).strip()
+                                ozet = str(
+                                    kaynak.get("snippet", "")
+                                ).strip()
+                                url = str(
+                                    kaynak.get("url", "")
+                                ).strip()
+
+                                parca = " ".join(
+                                    x for x in (baslik, ozet)
+                                    if x
+                                ).strip()
+
+                                if parca:
+                                    kaynaklar.append(
+                                        f"- {parca}"
+                                        + (
+                                            f"\\nKaynak: {url}"
+                                            if url
+                                            else ""
+                                        )
+                                    )
+
+                            web_icerigi = "\\n\\n".join(kaynaklar)
+
+                            gemini_prompt = (
+                                "Sen EagleAI'nin yalnızca son çare olarak "
+                                "kullanılan cevap motorusun. Kullanıcının "
+                                "sorusunu Türkçe ve doğrudan cevapla. "
+                                "Web araştırmasındaki bilgiler dışına "
+                                "çıkan güncel iddiaları uydurma. "
+                                "Yeterli bilgi yoksa bunu açıkça belirt. "
+                                "Gereksiz uzun anlatma.\\n\\n"
+                                f"KULLANICI SORUSU:\\n{mesaj}\\n\\n"
+                                f"WEB ARAŞTIRMASI:\\n{web_icerigi}"
+                            )
+
+                            gemini_url = (
+                                "https://generativelanguage.googleapis.com/"
+                                "v1beta/models/gemini-2.5-flash:generateContent"
+                            )
+
+                            gemini_payload = {
+                                "contents": [
+                                    {
+                                        "parts": [
+                                            {"text": gemini_prompt}
+                                        ]
+                                    }
+                                ]
+                            }
+
+                            gemini_response = requests.post(
+                                gemini_url,
+                                params={"key": gemini_key},
+                                json=gemini_payload,
+                                timeout=30,
+                            )
+
+                            if gemini_response.ok:
+                                gemini_data = gemini_response.json()
+                                adaylar = gemini_data.get(
+                                    "candidates",
+                                    []
+                                )
+
+                                if adaylar:
+                                    parts = (
+                                        adaylar[0]
+                                        .get("content", {})
+                                        .get("parts", [])
+                                    )
+
+                                    gemini_cevap = " ".join(
+                                        str(part.get("text", "")).strip()
+                                        for part in parts
+                                        if isinstance(part, dict)
+                                        and part.get("text")
+                                    ).strip()
+
+                                    if gemini_cevap:
+                                        return jsonify({
+                                            "ok": True,
+                                            "answer": gemini_cevap,
+                                            "web_search": True,
+                                            "eagle_direct": True,
+                                            "merkez_motor": False,
+                                            "gemini_fallback": True,
+                                            "memory_count": len(hafiza_yukle())
+                                        })
+
+                            print(
+                                "⚠️ Gemini text son çare cevap üretemedi.",
+                                flush=True
+                            )
+
+                    except Exception as gemini_hatasi:
+                        print(
+                            "⚠️ Gemini text son çare hatası:",
+                            gemini_hatasi,
+                            flush=True
+                        )
+
         except Exception as merkez_hatasi:
             print(
                 "⚠️ Merkezi motor hatası:",
                 merkez_hatasi
             )
 
-        # Merkez cevap üretemezse mevcut sistem bozulmaz.
-        satirlar = ["🌐 EAGLE WEB", ""]
-
-        for sonuc in web_verisi[:8]:
-            if not isinstance(sonuc, dict):
-                continue
-
-            baslik = str(sonuc.get("title", "")).strip()
-            ozet = str(sonuc.get("snippet", "")).strip()
-            url = web_kaynak_url(
-                str(sonuc.get("url", "")).strip()
-            )
-
-            if baslik:
-                satirlar.append(f"• {baslik}")
-            if ozet:
-                satirlar.append(ozet)
-            if url:
-                satirlar.append(f"🔗 {url}")
-
-            satirlar.append("")
-
+        # 🛑 Merkezi motor ve Gemini güvenilir cevap üretemediyse
+        # ham/alakasız web sonuçlarını kullanıcıya gösterme.
         return jsonify({
             "ok": True,
-            "answer": "\n".join(satirlar).strip(),
+            "answer": (
+                "🦅 Web araştırması yaptım ancak güvenilir ve "
+                "doğrudan bir cevap çıkaramadım."
+            ),
             "web_search": True,
             "eagle_direct": True,
             "merkez_motor": False,
             "memory_count": len(hafiza_yukle())
         })
+
 
     # 🦅 Hiçbir özel araç veya web sonucu yoksa Eagle doğrudan cevap verir
     return jsonify({

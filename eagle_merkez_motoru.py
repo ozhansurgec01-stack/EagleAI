@@ -128,10 +128,22 @@ class EagleMerkezMotoru:
     @classmethod
     def deger_sorusu_mu(cls, mesaj):
         metin = cls.normalize(mesaj)
-        return any(
-            ifade in metin
-            for ifade in cls.DEGER_TERIMLERI
-        )
+
+        for ifade in cls.DEGER_TERIMLERI:
+            # "kur" ve "kuru" yalnızca bağımsız kelime olarak
+            # değer/kur sorusu kabul edilir.
+            # Böylece "kurulur" ve "kurulum" yanlış eşleşmez.
+            if ifade in ("kur", "kuru"):
+                if re.search(
+                    rf"(?<!\w){re.escape(ifade)}(?!\w)",
+                    metin,
+                    flags=re.IGNORECASE
+                ):
+                    return True
+            elif ifade in metin:
+                return True
+
+        return False
 
     @staticmethod
     def domain(url):
@@ -1263,6 +1275,159 @@ class EagleMerkezMotoru:
 
         return " | ".join(sirali), guven
 
+    def genel_web_cevabi(cls, mesaj, veriler):
+        """
+        Genel bilgi sorularında web kaynaklarından kısa cevap çıkarır.
+        Sorunun ana konusu ile gerçekten ilişkili kaynakları seçer.
+        """
+
+        if not mesaj or not veriler:
+            return "", 0.0
+
+        soru = cls.normalize(mesaj)
+
+        # Tek başına anlam taşımayan soru kelimeleri.
+        etkisiz = {
+            "bir", "bu", "şu", "ve", "ile", "için",
+            "nasıl", "neden", "ne", "nedir", "mi", "mı",
+            "mu", "mü", "kaç", "hangi", "olan", "olarak"
+        }
+
+        soru_kelime = [
+            kelime
+            for kelime in re.findall(
+                r"[a-z0-9çğıöşü]+",
+                soru
+            )
+            if len(kelime) >= 3 and kelime not in etkisiz
+        ]
+
+        if not soru_kelime:
+            return "", 0.0
+
+        # Soru türünü belirle.
+        tanim_sorusu = bool(
+            re.search(r"\b(nedir|ne demek|ne anlama gelir)\b", soru)
+        )
+        islem_sorusu = bool(
+            re.search(r"\b(nasıl|nasıl yapılır|nasıl kurulur|değiştiririm)\b", soru)
+        )
+
+        adaylar = []
+
+        for veri in veriler:
+            if not isinstance(veri, dict):
+                continue
+
+            baslik = str(veri.get("title", "")).strip()
+            ozet = str(veri.get("snippet", "")).strip()
+            metin = " ".join(
+                x for x in (baslik, ozet)
+                if x
+            ).strip()
+
+            if not metin:
+                continue
+
+            metin_norm = cls.normalize(metin)
+            kelimeler = set(
+                re.findall(
+                    r"[a-z0-9çğıöşü]+",
+                    metin_norm
+                )
+            )
+
+            eslesen = [
+                kelime
+                for kelime in soru_kelime
+                if kelime in kelimeler
+            ]
+
+            # Ana konu kelimelerinden hiçbiri yoksa kaynak alakasızdır.
+            if not eslesen:
+                continue
+
+            puan = len(eslesen) * 10
+
+            # Daha uzun/özgül ana konu eşleşmeleri daha değerlidir.
+            puan += sum(
+                min(len(kelime), 12)
+                for kelime in eslesen
+            )
+
+            # Tanım sorusunda tanımlayıcı ifadeler ek puan alır.
+            if tanim_sorusu and re.search(
+                r"\b(denir|olarak tanımlanır|sistemidir|anlamına gelir|"
+                r"oluşur|ifade eder|nedir)\b",
+                metin_norm
+            ):
+                puan += 12
+
+            # İşlem sorusunda işlem ifadeleri ek puan alır.
+            if islem_sorusu and re.search(
+                r"\b(adım|ayar|kurulum|kurulur|değiştir|"
+                r"yapılır|bağla|bağlantı|giriş|menü)\b",
+                metin_norm
+            ):
+                puan += 8
+
+            adaylar.append((puan, baslik, ozet, metin))
+
+        if not adaylar:
+            return "", 0.0
+
+        adaylar.sort(key=lambda x: (-x[0], len(x[3])))
+
+        secilen = []
+
+        for puan, baslik, ozet, metin in adaylar:
+            kaynak_metin = ozet or baslik
+            if not kaynak_metin:
+                continue
+
+            tekrar = False
+
+            yeni_kelimeler = set(
+                re.findall(
+                    r"[a-z0-9çğıöşü]+",
+                    cls.normalize(kaynak_metin)
+                )
+            )
+
+            for eski in secilen:
+                eski_kelimeler = set(
+                    re.findall(
+                        r"[a-z0-9çğıöşü]+",
+                        cls.normalize(eski)
+                    )
+                )
+
+                birlesim = eski_kelimeler | yeni_kelimeler
+                ortak = eski_kelimeler & yeni_kelimeler
+
+                if birlesim and len(ortak) / len(birlesim) >= 0.70:
+                    tekrar = True
+                    break
+
+            if tekrar:
+                continue
+
+            secilen.append(kaynak_metin.strip())
+
+            if len(secilen) >= 3:
+                break
+
+        if not secilen:
+            return "", 0.0
+
+        # En az iki bağımsız alakalı kaynak varsa güven yükselir.
+        if len(secilen) >= 2:
+            guven = 0.82
+        else:
+            guven = 0.76
+
+        return " ".join(secilen).strip(), guven
+
     def kaynak_ozeti(cls, veriler):
         """
         Kaynak sayısını ve farklı domainleri hesaplar.
@@ -1793,7 +1958,7 @@ class EagleMerkezMotoru:
             veriler
         )
 
-        if tekrar_skoru >= 0.60:
+        if tekrar_skoru >= 0.60 and karar.get("intent") != "spor":
             en_iyi = veriler[0].get("snippet") or \
                 veriler[0].get("title")
 
@@ -1816,6 +1981,27 @@ class EagleMerkezMotoru:
         # 6. Hiçbir güvenli çıkarım yok.
         # Gemini burada devreye GİRECEK değil;
         # yalnızca üst katmana son çare sinyali verilecek.
+        genel_cevap, genel_guven = self.genel_web_cevabi(
+            mesaj,
+            veriler
+        )
+
+        if genel_cevap and genel_guven >= 0.75:
+            return EagleMerkezSonuc(
+                ok=True,
+                cevap=genel_cevap,
+                guven=genel_guven,
+                kaynak_sayisi=(
+                    kaynak_ozet["kaynak_sayisi"]
+                ),
+                gemini_gerekli=False,
+                kaynak_goster=False,
+                neden=(
+                    "Genel web kaynaklarından Eagle tarafından "
+                    "doğrudan cevap sentezlendi."
+                )
+            )
+
         return EagleMerkezSonuc(
             ok=False,
             cevap="",
