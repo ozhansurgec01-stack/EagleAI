@@ -6260,6 +6260,16 @@ def sohbet():
             "memory_count": len(hafiza_yukle())
         })
 
+    if (
+        karar.get("arac") == "bilgi_bankasi"
+        and not bilgi_sonuclari
+        and not autofix_istegi
+    ):
+        print("🌐 BİLGİ BANKASI SONUÇSUZ — WEB ARAŞTIRMASINA GEÇİLİYOR", flush=True)
+        print(f"🌐 WEB SORGU: {mesaj!r}", flush=True)
+        web_verisi = web_arastir(mesaj)
+        print(f"🌐 WEB SONUÇ: {len(web_verisi)}", flush=True)
+
     # 🧠 Öğrenilmiş bilgi doğrudan cevap olarak basılmaz.
     # Öğrenilmiş kayıt üst akışta davranış/routing adayı olarak değerlendirilir.
     if ogrenilmis_karar:
