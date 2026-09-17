@@ -5588,7 +5588,18 @@ def sohbet():
     # 🧠 GENEL KONUŞMA BAĞLAMI
     # Belirsiz devam mesajlarını karar motorundan önce yakın geçmişle çöz.
     mesaj_orijinal = mesaj
-    mesaj_karar = eagle_genel_baglam_coz(mesaj, gecmis)
+
+    # Yeni Python kodu doğrudan geldiyse genel konuşma bağlamı
+    # kodun içine önceki mesajları eklememeli.
+    yeni_python_mesaji = bool(re.search(
+        r'(?m)^\s*(?:from\s+\w+|import\s+\w+|def\s+\w+|class\s+\w+|print\s*\(|[A-Za-z_]\w*\s*=)',
+        mesaj
+    ))
+
+    if yeni_python_mesaji:
+        mesaj_karar = mesaj
+    else:
+        mesaj_karar = eagle_genel_baglam_coz(mesaj, gecmis)
     if mesaj_karar != mesaj_orijinal:
         print(
             f"🧠 EAGLE BAĞLAM ÇÖZÜLDÜ: {mesaj_karar}",
@@ -5916,8 +5927,23 @@ def sohbet():
                         kaynak_kod = "\n".join(satirlar[:i]).strip()
                         break
             elif yeni_kod_eslesmesi:
-                kaynak_kod = yeni_kod_eslesmesi.group(1).strip()
-                kaynak_kod = mesaj.strip()
+                # Yeni Python kodu, önceki konuşma bağlamından ayrıştırılır.
+                yeni_mesaj = mesaj.strip()
+                baglam_isareti = "Kullanıcının devam mesajı:"
+                if baglam_isareti in yeni_mesaj:
+                    yeni_mesaj = yeni_mesaj.rsplit(baglam_isareti, 1)[1].strip()
+
+                # Kodun arkasındaki doğal dil sorusunu Python kaynağına dahil etme.
+                satirlar = yeni_mesaj.splitlines()
+                for i, satir in enumerate(satirlar):
+                    if any(
+                        ifade in satir.strip().lower()
+                        for ifade in soru_isaretleri
+                    ):
+                        satirlar = satirlar[:i]
+                        break
+
+                kaynak_kod = "\n".join(satirlar).strip()
 
 
             # Markdown kod çitlerini temizle.
