@@ -1309,7 +1309,8 @@ class EagleMerkezMotoru:
         etkisiz = {
             "bir", "bu", "şu", "ve", "ile", "için",
             "nasıl", "neden", "ne", "nedir", "mi", "mı",
-            "mu", "mü", "kaç", "hangi", "olan", "olarak"
+            "mu", "mü", "kaç", "hangi", "olan", "olarak",
+            "hangisi", "hangisidir", "hangileri", "hangileridir"
         }
 
         soru_kelime = [
@@ -1511,6 +1512,68 @@ class EagleMerkezMotoru:
         if not adaylar:
             return "", 0.0
 
+        # "ve" ile bağlanan sorularda birden fazla bilgi parçası
+        # istenebilir. Aynı kaynaktaki, daha önce karşılanmayan
+        # soru kelimelerini içeren cümleleri birlikte değerlendir.
+        cok_parcali_soru = bool(
+            re.search(r"\bve\b", soru)
+        )
+
+        if cok_parcali_soru:
+            gruplanmis = []
+
+            for kaynak_no in sorted(
+                {no for _, no, _ in adaylar}
+            ):
+                kaynak_adaylari = [
+                    (puan, cumle)
+                    for puan, no, cumle in adaylar
+                    if no == kaynak_no
+                ]
+
+                kaynak_adaylari.sort(
+                    key=lambda x: (-x[0], len(x[1]))
+                )
+
+                secilecek = []
+                karsilanan = set()
+                toplam_puan = 0
+
+                for puan, cumle in kaynak_adaylari:
+                    cumle_norm = cls.normalize(cumle)
+                    cumle_kelime = set(
+                        re.findall(
+                            r"[a-z0-9çğıöşü]+",
+                            cumle_norm
+                        )
+                    )
+
+                    yeni_soru_kelime = (
+                        cumle_kelime & set(soru_kelime)
+                    ) - karsilanan
+
+                    if not yeni_soru_kelime:
+                        continue
+
+                    secilecek.append(cumle)
+                    karsilanan.update(yeni_soru_kelime)
+                    toplam_puan += puan
+
+                    if len(secilecek) >= 2:
+                        break
+
+                if secilecek:
+                    gruplanmis.append(
+                        (
+                            toplam_puan,
+                            kaynak_no,
+                            " ".join(secilecek)
+                        )
+                    )
+
+            if gruplanmis:
+                adaylar = gruplanmis
+
         adaylar.sort(
             key=lambda x: (-x[0], len(x[2]))
         )
@@ -1562,12 +1625,12 @@ class EagleMerkezMotoru:
             secilen.append(cumle)
             kullanilan_kaynaklar.add(kaynak_no)
 
-            if len(secilen) >= 3:
+            if len(secilen) >= (1 if cok_parcali_soru else 3):
                 break
 
         # Farklı kaynak şartı fazla katı kaldıysa,
         # kalan en iyi adaylarla üç cümleye tamamla.
-        if len(secilen) < 2:
+        if len(secilen) < 2 and not cok_parcali_soru:
             for _, _, cumle in adaylar:
                 if cumle in secilen:
                     continue
