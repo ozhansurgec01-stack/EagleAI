@@ -31,6 +31,8 @@ class EagleAkilKarari:
             "ogrenme_adayi": self.ogrenme_adayi,
             "baglamdan": self.baglam_kullanildi,
             "history_devam": self.baglam_kullanildi,
+            "denklem_coz": self.denklem_coz,
+            "denklem_aciklama": self.denklem_aciklama,
         }
         return eslesme.get(anahtar, varsayilan)
     arac: str = "eagle_sohbet"
@@ -40,6 +42,8 @@ class EagleAkilKarari:
     dogrulama_gerekli: bool = False
     ogrenme_adayi: bool = False
     baglam_kullanildi: bool = False
+    denklem_coz: bool = False
+    denklem_aciklama: bool = False
 
 
 class EagleAkilMotoru:
@@ -187,6 +191,18 @@ class EagleAkilMotoru:
                             )
                             or ham_karar.get(
                                 "history_devam",
+                                False
+                            )
+                        ),
+                        denklem_coz=bool(
+                            ham_karar.get(
+                                "denklem_coz",
+                                False
+                            )
+                        ),
+                        denklem_aciklama=bool(
+                            ham_karar.get(
+                                "denklem_aciklama",
                                 False
                             )
                         )
