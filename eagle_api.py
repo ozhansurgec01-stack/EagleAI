@@ -1993,6 +1993,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
     # 🧮 SEMBOLİK DENKLEM ÇÖZME
     denklem_cozme_istegi = (
         "=" in metin
+        and "\n" not in metin
         and (
             any(x in k for x in [
                 "çöz", "coz", "çözümü", "cozumu",
@@ -5641,7 +5642,7 @@ def sohbet():
     # Yeni mesajın içinde açık bir Python ataması varsa,
     # eski aktif kod yerine yeni kod kullanılacak.
     yeni_kod_eslesmesi = re.search(
-        r'([A-Za-z_]\w*\s*=\s*[^?]+)$',
+        r'(?m)^\s*(?:from\s+\w+|import\s+\w+|def\s+\w+|class\s+\w+|[A-Za-z_]\w*\s*=)',
         mesaj
     )
     yeni_kod_var = bool(yeni_kod_eslesmesi)
@@ -5888,6 +5889,28 @@ def sohbet():
                 kaynak_kod = aktif_kod.strip()
             elif eagle_yapistirilmis_kod_mu(mesaj):
                 kaynak_kod = mesaj.strip()
+
+                # Kodun arkasına eklenen doğal dil sorusunu Python kaynağına dahil etme.
+                soru_isaretleri = (
+                    "bu python kodunu",
+                    "bu kodu",
+                    "kod ne yapıyor",
+                    "kod ne yapiyor",
+                    "fonksiyonunun adımları",
+                    "fonksiyonunun adimlari",
+                    "sonuç olarak ne yazdırır",
+                    "sonuc olarak ne yazdirir",
+                    "counter neden kullanılmış",
+                    "counter neden kullanilmis",
+                )
+                satirlar = kaynak_kod.splitlines()
+                for i, satir in enumerate(satirlar):
+                    if any(
+                        ifade in satir.strip().lower()
+                        for ifade in soru_isaretleri
+                    ):
+                        kaynak_kod = "\n".join(satirlar[:i]).strip()
+                        break
             elif yeni_kod_eslesmesi:
                 kaynak_kod = yeni_kod_eslesmesi.group(1).strip()
                 kaynak_kod = mesaj.strip()
