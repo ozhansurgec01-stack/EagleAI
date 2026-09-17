@@ -35,6 +35,13 @@ from bs4 import BeautifulSoup
 import re
 import json
 import ast
+import sympy as sp
+from sympy.parsing.sympy_parser import (
+    parse_expr,
+    standard_transformations,
+    implicit_multiplication_application,
+    convert_xor,
+)
 import operator
 import subprocess
 import sys
@@ -1650,6 +1657,86 @@ def spor_arama_sorgusu(mesaj):
 
 
 
+def sembolik_denklem_coz(metin):
+    """Güvenli biçimde basit sembolik denklemleri çözer."""
+    try:
+        ifade = str(metin or "").strip()
+
+        if "=" not in ifade:
+            return None
+
+        # SymPy parse_expr eval tabanlı olduğundan yalnızca
+        # matematiksel karakterlere izin ver.
+        if not re.fullmatch(r"[0-9A-Za-z_+\-*/^().=\sπΠ]+", ifade):
+            return None
+
+        parcalar = ifade.split("=")
+        if len(parcalar) != 2:
+            return None
+
+        sol, sag = [x.strip() for x in parcalar]
+
+        if not sol or not sag:
+            return None
+
+        # Python ataması ile matematiksel denklemi ayır.
+        # Tek değişkenli basit atamalar açıkça "çöz" denmedikçe
+        # mevcut Python kod analizine bırakılacak.
+        if re.fullmatch(r"[A-Za-z_]\w*", sol) and re.fullmatch(r"[0-9.]+", sag):
+            return None
+
+        transformations = standard_transformations + (
+            implicit_multiplication_application,
+            convert_xor,
+        )
+
+        # Yalnızca metindeki gerçek sembolleri locals'a al.
+        semboller = sorted(set(re.findall(r"[A-Za-z_]\w*", ifade)))
+        local_dict = {}
+
+        for ad in semboller:
+            if ad in {"sin", "cos", "tan", "sqrt", "log", "exp"}:
+                return None
+            local_dict[ad] = sp.Symbol(ad)
+
+        # π desteği
+        local_dict["π"] = sp.pi
+        local_dict["Π"] = sp.pi
+
+        sol_expr = parse_expr(
+            sol,
+            local_dict=local_dict,
+            transformations=transformations,
+        )
+        sag_expr = parse_expr(
+            sag,
+            local_dict=local_dict,
+            transformations=transformations,
+        )
+
+        denklem = sp.Eq(sol_expr, sag_expr)
+
+        degiskenler = sorted(
+            denklem.free_symbols,
+            key=lambda x: str(x)
+        )
+
+        if len(degiskenler) != 1:
+            return None
+
+        degisken = degiskenler[0]
+        cozumler = sp.solve(denklem, degisken)
+
+        return {
+            "denklem": denklem,
+            "degisken": degisken,
+            "cozumler": cozumler,
+        }
+
+    except Exception:
+        return None
+
+
 def eagle_karar_motoru(mesaj, gecmis=None):
     """
     EagleAI karar motoru v1.
@@ -1875,6 +1962,59 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             "arac": "guvenli_hesaplama",
             "islem": "hesapla",
             "dogrulama": True
+        })
+        return karar
+
+    # 🧮 SEMBOLİK DENKLEM AÇIKLAMA
+    # Örn: "Bu matematik denklemi nedir?"
+    #      "i = r* + π* + 1.5(π - π*) + ... ne anlama gelir?"
+    denklem_aciklama_istegi = (
+        any(x in k for x in [
+            "denklem", "matematik denklemi", "formül", "formul"
+        ])
+        and any(x in k for x in [
+            "nedir", "ne demek", "ne anlama gelir",
+            "açıkla", "acikla", "anlat"
+        ])
+    )
+
+    if denklem_aciklama_istegi:
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Sembolik matematiksel denklem açıklama isteği algılandı.",
+            "arac": "eagle_sohbet",
+            "islem": "cevapla",
+            "dogrulama": True,
+            "denklem_aciklama": True
+        })
+        return karar
+
+    # 🧮 SEMBOLİK DENKLEM ÇÖZME
+    denklem_cozme_istegi = (
+        "=" in metin
+        and (
+            any(x in k for x in [
+                "çöz", "coz", "çözümü", "cozumu",
+                "bilinmeyeni bul", "bilinmeyeni çöz",
+                "x'i bul", "x i bul"
+            ])
+            or (
+                re.search(r"[A-Za-z_][A-Za-z0-9_]*", metin)
+                and re.search(r"[+\-*/^()]", metin)
+            )
+        )
+    )
+
+    if denklem_cozme_istegi and not denklem_aciklama_istegi:
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Sembolik matematiksel denklem algılandı.",
+            "arac": "guvenli_hesaplama",
+            "islem": "denklem_coz",
+            "dogrulama": True,
+            "denklem_coz": True
         })
         return karar
 
@@ -5740,7 +5880,7 @@ def sohbet():
     # 🧠 EAGLE YAPIŞTIRILMIŞ KOD ANALİZİ + AUTOFIX
     # Doğrudan Python kodu yapıştırıldığında:
     # analiz → mantık → güvenli düzeltme → syntax → test
-    if eagle_yapistirilmis_kod_mu(mesaj) or aktif_kod_takibi:
+    if karar.get("intent") != "matematik" and (eagle_yapistirilmis_kod_mu(mesaj) or aktif_kod_takibi):
         try:
             import tempfile
 
@@ -6239,6 +6379,45 @@ def sohbet():
     # 🏟️ GENEL SPOR FİKSTÜRÜ
     # Genel spor/fikstür soruları merkezi web motoruna bırakılır.
     # Sabit site, takım veya regex tabanlı fikstür çıkarımı kullanılmaz.
+
+    # 🧮 Sembolik denklem açıklaması
+    if karar.get("denklem_aciklama"):
+        return jsonify({
+            "ok": True,
+            "answer": (
+                "🦅 Bu denklem, Taylor kuralının genişletilmiş bir biçimidir. "
+                "Faiz oranı (i), nötr reel faiz (r*) ve hedef enflasyon (π*) "
+                "üzerinden belirlenir. "
+                "1.5(π - π*) enflasyon hedefinden sapmayı, "
+                "0.5(y - y*) üretim açığını temsil eder. "
+                "α(SOH - SOH*) ve β(BEM - BEM*) ise modele eklenmiş "
+                "iki ek sapma/durum bileşenidir; SOH ve BEM'in anlamı "
+                "bu denklemde ayrıca tanımlanmadığı için buradan kesin olarak "
+                "belirlenemez. α ve β > 0 olması, bu iki bileşenin faiz oranını "
+                "pozitif katsayılarla etkilediğini belirtir."
+            ),
+            "eagle_direct": True,
+            "memory_count": len(hafiza_yukle())
+        })
+
+    # 🧮 Sembolik denklem çözümü
+    if karar.get("denklem_coz"):
+        denklem_sonucu = sembolik_denklem_coz(mesaj)
+
+        if denklem_sonucu is not None:
+            degisken = denklem_sonucu["degisken"]
+            cozumler = denklem_sonucu["cozumler"]
+
+            if cozumler:
+                cozum_metni = ", ".join(
+                    str(sp.simplify(x)) for x in cozumler
+                )
+                return jsonify({
+                    "ok": True,
+                    "answer": f"{degisken} = {cozum_metni}",
+                    "eagle_direct": True,
+                    "memory_count": len(hafiza_yukle())
+                })
 
     # 🧮 Güvenli matematik doğrulaması
     hesaplama_metni = ""
