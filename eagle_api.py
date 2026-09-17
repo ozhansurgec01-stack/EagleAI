@@ -5642,7 +5642,7 @@ def sohbet():
     # Yeni mesajın içinde açık bir Python ataması varsa,
     # eski aktif kod yerine yeni kod kullanılacak.
     yeni_kod_eslesmesi = re.search(
-        r'(?m)^\s*(?:from\s+\w+|import\s+\w+|def\s+\w+|class\s+\w+|[A-Za-z_]\w*\s*=)',
+        r'(?m)^\s*(?:from\s+\w+|import\s+\w+|def\s+\w+|class\s+\w+|print\s*\(|[A-Za-z_]\w*\s*=)',
         mesaj
     )
     yeni_kod_var = bool(yeni_kod_eslesmesi)
@@ -5747,6 +5747,9 @@ def sohbet():
 
         # Tek satırlı veya soru içine gömülmüş Python atamasını yakala.
         if re.search(r'([A-Za-z_]\w*\s*=\s*[^?]+)$', metin):
+            return True
+
+        if re.search(r'(?m)^\s*print\s*\(', metin):
             return True
 
         if len(satirlar) < 2:
@@ -5893,6 +5896,7 @@ def sohbet():
                 # Kodun arkasına eklenen doğal dil sorusunu Python kaynağına dahil etme.
                 soru_isaretleri = (
                     "bu python kodunu",
+                    "bu python kodu",
                     "bu kodu",
                     "kod ne yapıyor",
                     "kod ne yapiyor",
@@ -5963,6 +5967,17 @@ def sohbet():
             )
 
             try:
+                # Yapıştırılmış Python kodunun gerçek çalışma çıktısını al.
+                calisma_sonucu = subprocess.run(
+                    [sys.executable, str(gecici_dosya)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    cwd=str(gecici_klasor)
+                )
+                gercek_cikti = (calisma_sonucu.stdout or "").strip()
+                gercek_hata = (calisma_sonucu.stderr or "").strip()
+
                 # Mevcut güvenli AutoFix döngüsü.
                 autofix_sonucu = autofix_engine.repair_loop(
                     gecici_dosya
@@ -5997,6 +6012,25 @@ def sohbet():
                         "⚠️ DÜZELTME KABUL EDİLMEDİ",
                         "",
                         f"Neden: {autofix_sonucu.get('reason', '')}",
+                    ])
+
+                cevap.extend([
+                    "",
+                    "📤 Gerçek çalışma çıktısı:",
+                    "",
+                    "```text",
+                    gercek_cikti if gercek_cikti else "(çıktı yok)",
+                    "```"
+                ])
+
+                if gercek_hata:
+                    cevap.extend([
+                        "",
+                        "⚠️ Gerçek çalışma hatası:",
+                        "",
+                        "```text",
+                        gercek_hata,
+                        "```"
                     ])
 
                 if yuksek:
