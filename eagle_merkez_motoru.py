@@ -2159,9 +2159,13 @@ class EagleMerkezMotoru:
         tekrar_skoru = self.metin_tekrar_skoru(
             veriler
         )
+        cok_parcali_soru = bool(
+            re.search(r"\bve\b", self.normalize(mesaj))
+        )
 
         if (
             tekrar_skoru >= 0.60
+            and not cok_parcali_soru
             and karar.get("intent") != "spor"
             and not bool(
                 re.search(
