@@ -6008,11 +6008,6 @@ def sohbet():
                         "",
                         f"Neden: {autofix_sonucu.get('reason', '')}",
                     ])
-                    cevap.extend([
-                        "⚠️ DÜZELTME KABUL EDİLMEDİ",
-                        "",
-                        f"Neden: {autofix_sonucu.get('reason', '')}",
-                    ])
 
                 cevap.extend([
                     "",
