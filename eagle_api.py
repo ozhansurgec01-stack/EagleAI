@@ -674,6 +674,7 @@ def bilgi_bankasi_ara(mesaj):
         "print": ["print"],
         "input": ["input"],
         "type": ["type"],
+        "isinstance": ["isinstance", "isinstance()"],
         "len": ["len"],
         "algoritma": ["algoritma"],
         "json": ["json", "json nedir", "json dosyası", "json dosyasi"],
@@ -864,6 +865,22 @@ def bilgi_bankasi_ara(mesaj):
                     # Terim başka bir sorunun bağlamında geçiyorsa
                     # aşağıdaki çoklu kavram motoruna bırakılır.
                     if hedef_norm in mesaj_norm:
+                        return [cevap]
+
+    # 🎯 isinstance() eski tip düz KB kayıtlarında tutulduğu için
+    # özel doğrudan eşleşmeyle seç.
+    if re.search(r"\bisinstance\s*\(?", metin, re.IGNORECASE):
+        python_kayitlari = bilgi.get("python", {})
+        for maddeler in python_kayitlari.values():
+            if not isinstance(maddeler, list):
+                continue
+            for madde in maddeler:
+                if isinstance(madde, str) and "isinstance()" in madde.lower():
+                    return [madde]
+                if isinstance(madde, dict):
+                    soru = str(madde.get("soru", "")).lower()
+                    cevap = str(madde.get("cevap", "")).strip()
+                    if "isinstance" in soru and cevap:
                         return [cevap]
 
     # 🎯 Özel Python terimleri için akıllı eşleştirme
