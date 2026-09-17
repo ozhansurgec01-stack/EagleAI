@@ -3639,6 +3639,203 @@ def spor_web_sayfalarini_oku(mesaj, web_verisi, sayfa_okuyucu):
     return sonuc
 
 
+def _sofascore_takim_adi_norm(x):
+    """SofaScore takım adlarını karşılaştırmak için ortak normalizasyon."""
+    return (
+        str(x or "")
+        .casefold()
+        .replace("\u0307", "")
+        .replace("ı", "i")
+        .replace("ğ", "g")
+        .replace("ü", "u")
+        .replace("ş", "s")
+        .replace("ö", "o")
+        .replace("ç", "c")
+    )
+
+
+def sofascore_takim_bul(sorgu):
+    """SofaScore'dan futbol için uygun kıdemli takım adayını dinamik bulur."""
+    sorgu = str(sorgu or "").strip()
+    if not sorgu:
+        return None
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        }
+
+        def ara(q):
+            r = requests.get(
+                "https://www.sofascore.com/api/v1/search/all/",
+                params={"q": q},
+                headers=headers,
+                timeout=10,
+            )
+
+            if r.status_code != 200:
+                return []
+
+            sonuc = []
+
+            for item in r.json().get("results", []):
+                if item.get("type") != "team":
+                    continue
+
+                entity = item.get("entity", {})
+                if (entity.get("sport") or {}).get("slug") != "football":
+                    continue
+
+                takim_adi = str(entity.get("name") or "").strip()
+                takim_id = entity.get("id")
+
+                if takim_adi and takim_id:
+                    sonuc.append(entity)
+
+            return sonuc
+
+        norm = _sofascore_takim_adi_norm(sorgu)
+        adaylar = ara(sorgu)
+
+        def puanla(entity):
+            ad_norm = _sofascore_takim_adi_norm(entity.get("name"))
+            alt_takim = bool(re.search(
+                r"\b(?:u(?:17|18|19|20|21|23)|ii|2|b)\b",
+                ad_norm,
+            ))
+
+            puan = 0
+
+            if ad_norm == norm:
+                puan += 100
+            if norm and norm in ad_norm:
+                puan += 70
+            if ad_norm and ad_norm in norm:
+                puan += 60
+
+            if alt_takim:
+                puan -= 80
+
+            return puan
+
+        if adaylar:
+            adaylar.sort(
+                key=lambda x: (puanla(x), len(str(x.get("name") or ""))),
+                reverse=True
+            )
+
+            en_iyi = adaylar[0]
+
+            # SofaScore yalnızca genç/rezerv takım bulduysa,
+            # alt takım ekini kaldırıp kıdemli takımı yeniden ara.
+            ad_norm = _sofascore_takim_adi_norm(en_iyi.get("name"))
+            alt_eslesme = re.search(
+                r"\s+(?:u(?:17|18|19|20|21|23)|ii|2|b)$",
+                ad_norm,
+            )
+
+            if alt_eslesme:
+                taban_adi = re.sub(
+                    r"\s+(?:u(?:17|18|19|20|21|23)|ii|2|b)$",
+                    "",
+                    str(en_iyi.get("name") or ""),
+                    flags=re.IGNORECASE,
+                ).strip()
+
+                if taban_adi:
+                    ust_adaylar = ara(taban_adi)
+                    ust_adaylar = [
+                        x for x in ust_adaylar
+                        if not re.search(
+                            r"\b(?:u(?:17|18|19|20|21|23)|ii|2|b)\b",
+                            _sofascore_takim_adi_norm(x.get("name")),
+                        )
+                    ]
+
+                    if ust_adaylar:
+                        ust_adaylar.sort(
+                            key=lambda x: (
+                                _sofascore_takim_adi_norm(x.get("name")) == _sofascore_takim_adi_norm(taban_adi),
+                                len(str(x.get("name") or "")),
+                            ),
+                            reverse=True,
+                        )
+                        return ust_adaylar[0]
+
+            return en_iyi
+
+        return None
+
+    except Exception as e:
+        print(f"[SofaScore] Takım arama hatası: {e}", flush=True)
+        return None
+
+def sofascore_takimlar_arasi_mac_getir(takim1, takim2):
+    """İki futbol takımının SofaScore'daki ortak güncel/son maçını bulur."""
+    if not takim1 or not takim2:
+        return None
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        }
+
+        bulunan = {}
+
+        for takim in (takim1, takim2):
+            takim_id = takim.get("id")
+            if not takim_id:
+                continue
+
+            for yon in ("next", "last"):
+                r = requests.get(
+                    f"https://www.sofascore.com/api/v1/team/{takim_id}/events/{yon}/0",
+                    headers=headers,
+                    timeout=10,
+                )
+
+                if r.status_code != 200:
+                    continue
+
+                for event in r.json().get("events", []):
+                    event_id = event.get("id")
+                    if event_id:
+                        bulunan[event_id] = event
+
+        id1 = takim1.get("id")
+        id2 = takim2.get("id")
+
+        for event in bulunan.values():
+            ev_id = (event.get("homeTeam") or {}).get("id")
+            dep_id = (event.get("awayTeam") or {}).get("id")
+
+            if {ev_id, dep_id} != {id1, id2}:
+                continue
+
+            durum = event.get("status") or {}
+            skor_ev = (event.get("homeScore") or {}).get("current")
+            skor_dep = (event.get("awayScore") or {}).get("current")
+
+            return {
+                "id": event.get("id"),
+                "ev": (event.get("homeTeam") or {}).get("name"),
+                "deplasman": (event.get("awayTeam") or {}).get("name"),
+                "ev_skor": skor_ev,
+                "deplasman_skor": skor_dep,
+                "durum": durum.get("type") or "",
+                "durum_adi": durum.get("description") or "",
+                "timestamp": event.get("startTimestamp"),
+            }
+
+        return None
+
+    except Exception as e:
+        print(f"[SofaScore] İki takım maç arama hatası: {e}", flush=True)
+        return None
+
+
 def sofascore_son_mac_getir(mesaj):
     """Takımın tüm organizasyonlardaki en son tamamlanmış maçını SofaScore'dan bulur."""
     try:
@@ -6199,6 +6396,132 @@ def sohbet():
 
     # 🌐 Güncel bilgi gerekiyorsa ücretsiz web araştırması yap
     web_verisi = []
+    cevap = ""
+
+    # 🏟️ İki takım + skor/canlı sonuç: önce doğrudan SofaScore.
+    # Genel web aramasına düşmeden gerçek maç verisini kullan.
+    if karar.get("intent") == "spor":
+        mesaj_kf = str(mesaj or "").casefold().replace("\u0307", "")
+
+        skor_istegi = any(k in mesaj_kf for k in (
+            "canlı sonuç", "canli sonuc",
+            "canlı skor", "canli skor",
+            "maç sonucu", "mac sonucu",
+            "kaç kaç", "kac kac",
+            "skor", "sonuç", "sonuc"
+        ))
+
+        mac_ifadesi = "maç" in mesaj_kf or "mac" in mesaj_kf
+
+        if skor_istegi and mac_ifadesi:
+            temiz_mesaj = re.sub(
+                r"\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|bitti|sonucu)\b",
+                " ",
+                mesaj_kf
+            )
+            kelimeler = [
+                x for x in re.split(r"\s+", temiz_mesaj.strip())
+                if x
+            ]
+
+            adaylar = []
+            gorulen = set()
+
+            # Takım adlarını sabit listeyle değil, SofaScore aramasıyla çöz.
+            for uzunluk in range(min(4, len(kelimeler)), 0, -1):
+                for i in range(len(kelimeler) - uzunluk + 1):
+                    parca = " ".join(kelimeler[i:i + uzunluk]).strip()
+
+                    if not parca or parca in gorulen:
+                        continue
+
+                    gorulen.add(parca)
+
+                    takim = sofascore_takim_bul(parca)
+
+                    if takim:
+                        adaylar.append(
+                            (i, i + uzunluk, uzunluk, takim)
+                        )
+
+            secilen = []
+            kullanilan_araliklar = []
+
+            for aday in sorted(
+                adaylar,
+                key=lambda x: (x[0], -x[2])
+            ):
+                bas, son, _, takim = aday
+
+                if any(
+                    bas < s and son > b
+                    for b, s in kullanilan_araliklar
+                ):
+                    continue
+
+                if any(
+                    takim.get("id") == x.get("id")
+                    for x in secilen
+                ):
+                    continue
+
+                secilen.append(takim)
+                kullanilan_araliklar.append((bas, son))
+
+                if len(secilen) == 2:
+                    break
+
+            if len(secilen) == 2:
+                mac = sofascore_takimlar_arasi_mac_getir(
+                    secilen[0],
+                    secilen[1]
+                )
+
+                if mac:
+                    durum = mac.get("durum")
+                    ev = mac.get("ev")
+                    dep = mac.get("deplasman")
+                    ev_skor = mac.get("ev_skor")
+                    dep_skor = mac.get("deplasman_skor")
+
+                    if durum in ("inprogress", "live"):
+                        cevap = f"{ev} {ev_skor} - {dep_skor} {dep} (canlı)"
+                    elif durum == "finished":
+                        cevap = f"{ev} {ev_skor} - {dep_skor} {dep}"
+                    elif durum == "notstarted":
+                        cevap = f"{ev} - {dep} (henüz başlamadı)"
+                    else:
+                        cevap = f"{ev} - {dep}"
+
+                    print(
+                        f"⚽ SOFASCORE DOĞRUDAN CEVAP: {cevap}",
+                        flush=True
+                    )
+
+                    return jsonify({
+                        "ok": True,
+                        "answer": cevap,
+                        "web_search": True,
+                        "eagle_direct": True,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
+                else:
+                    cevap = (
+                        f"{secilen[0].get('name')} ile "
+                        f"{secilen[1].get('name')} arasında "
+                        "SofaScore'da güncel veya son maç bulunamadı."
+                    )
+
+                    return jsonify({
+                        "ok": True,
+                        "answer": cevap,
+                        "web_search": True,
+                        "eagle_direct": True,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
 
     if karar.get("arac") == "spor_kaynaklari":
         if karar.get("intent") == "spor":
@@ -6617,8 +6940,85 @@ def sohbet():
         )
 
         # Başarılı genel sohbeti kalıcı sohbet hafızasına kaydet.
-        if cevap and str(cevap).strip():
-            sohbet_hafizaya_ekle(mesaj, cevap, konu="genel_sohbet")
+        # 🏟️ İki takım + skor/canlı sonuç sorgularını doğrudan SofaScore'dan çöz.
+    if karar.get("intent") == "spor":
+        mesaj_kf = str(mesaj or "").casefold().replace("\u0307", "")
+        skor_istegi = any(k in mesaj_kf for k in (
+            "canlı sonuç", "canli sonuc", "canlı skor", "canli skor",
+            "maç sonucu", "mac sonucu", "kaç kaç", "kac kac",
+            "skor", "sonuç", "sonuc"
+        ))
+
+        if skor_istegi and "maç" in mesaj_kf or skor_istegi and "mac" in mesaj_kf:
+            temiz_mesaj = re.sub(
+                r"\\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|kaç kaç|kac kac|bitti|sonucu)\\b",
+                " ",
+                mesaj_kf,
+                flags=re.IGNORECASE
+            )
+            kelimeler = [x for x in re.split(r"\\s+", temiz_mesaj.strip()) if x]
+
+            adaylar = []
+            gorulen = set()
+
+            # Tek ve çok kelimeli takım adlarını SofaScore üzerinden dinamik çöz.
+            for uzunluk in range(min(4, len(kelimeler)), 0, -1):
+                for i in range(len(kelimeler) - uzunluk + 1):
+                    parca = " ".join(kelimeler[i:i + uzunluk]).strip()
+                    if not parca or parca in gorulen:
+                        continue
+                    gorulen.add(parca)
+
+                    takim = sofascore_takim_bul(parca)
+                    if not takim:
+                        continue
+
+                    adaylar.append((i, i + uzunluk, uzunluk, takim))
+
+            secilen = []
+            kullanilan_araliklar = []
+            for aday in sorted(adaylar, key=lambda x: (x[0], -x[2])):
+                bas, son, _, takim = aday
+                if any(bas < s and son > b for b, s in kullanilan_araliklar):
+                    continue
+                if any(takim.get("id") == x.get("id") for x in secilen):
+                    continue
+                secilen.append(takim)
+                kullanilan_araliklar.append((bas, son))
+                if len(secilen) == 2:
+                    break
+
+            if len(secilen) == 2:
+                mac = sofascore_takimlar_arasi_mac_getir(secilen[0], secilen[1])
+
+                if mac:
+                    durum = mac.get("durum")
+                    ev = mac.get("ev")
+                    dep = mac.get("deplasman")
+                    ev_skor = mac.get("ev_skor")
+                    dep_skor = mac.get("deplasman_skor")
+
+                    if durum in ("inprogress", "live"):
+                        cevap = f"{ev} {ev_skor} - {dep_skor} {dep} (canlı)"
+                    elif durum == "finished":
+                        cevap = f"{ev} {ev_skor} - {dep_skor} {dep}"
+                    elif durum == "notstarted":
+                        cevap = f"{ev} - {dep} (henüz başlamadı)"
+                    else:
+                        cevap = f"{ev} - {dep}"
+
+                    return jsonify({
+                        "ok": True,
+                        "answer": cevap,
+                        "web_search": True,
+                        "eagle_direct": True,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
+
+    if cevap and str(cevap).strip():
+        sohbet_hafizaya_ekle(mesaj, cevap, konu="genel_sohbet")
 
         return jsonify({
             "ok": True,
