@@ -1987,6 +1987,9 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "sonuç", "sonuc",
         "skor", "skorları", "skorlari",
         "fikstür", "fikstur",
+        "oynayacak", "oynanacak",
+        "kimle oynayacak", "kiminle oynayacak",
+        "bu hafta", "gelecek hafta",
         "puan durumu", "voleybol", "futbol",
         "basketbol", "tenis", "vnl",
         "süper lig", "super lig",
@@ -4044,7 +4047,8 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "karşılaşma", "karsilasma",
         "fikstür", "fikstur",
         "program",
-        "oynanacak",
+        "oynanacak", "oynayacak",
+        "kiminle oynayacak", "kimle oynayacak",
         "var mı", "var mi",
         "hangi maç", "hangi mac"
     ])
@@ -6087,8 +6091,13 @@ def sohbet():
 
             if super_lig_mi and puan_durumu_istegi and not web_verisi:
                 web_verisi = super_lig_puan_durumu_getir()
-            elif super_lig_mi:
-                # Sonuç/oynanan maç isteğinde resmi TFF sonuçlarını kullan.
+            elif super_lig_mi or (
+                not web_verisi
+                and not ingiltere_mi
+                and not voleybol_mu
+                and not gecmis_mac
+            ):
+                # Sonuç/oynanan maç veya takım fikstürü isteğinde resmi TFF verisini kullan.
                 # Fikstür/zaman kapsamı isteğinde ise güncel web araması yap;
                 # böylece sistem yalnızca geçmiş sonuçlara kilitlenmez.
                 super_lig_sonuc_istegi = any(k in mesaj_spor for k in [
