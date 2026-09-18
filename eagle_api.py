@@ -5508,7 +5508,10 @@ def eagle_genel_baglam_coz(mesaj, gecmis=None):
         "peki bu"
     ]
 
-    if not any(x in m for x in devam_ifadeleri):
+    if not any(
+        re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", m)
+        for x in devam_ifadeleri
+    ):
         return metin
 
     # En yakın anlamlı kullanıcı mesajını bul.
