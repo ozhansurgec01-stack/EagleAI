@@ -4090,12 +4090,12 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
     # Web kaynaklarını gerçekten kullan.
     kaynaklar = []
 
-    if web_verisi and not spor_sorgusu_mu(mesaj) and karar.get("intent") != "spor":
+    if web_verisi:
         for x in web_verisi:
             if not isinstance(x, dict):
                 continue
 
-            baslik = str(x.get("baslik", "") or "")
+            baslik = str(x.get("baslik") or x.get("title") or "")
             icerik = str(
                 x.get("content") or
                 x.get("metin") or
@@ -4379,6 +4379,22 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
         )
         if m:
             return f"{takim} {m.group(1)} - {rakip_adi} {m.group(2)}"
+
+    # Rakip takım sabit listede olmasa bile web kaynağındaki
+    # "Hedef Takım skor-Rakip" biçiminden dinamik olarak çıkar.
+    for kaynak in kaynaklar:
+        cevre_norm = norm(kaynak)
+        m = re.search(
+            re.escape(takim_norm)
+            + r"\s+(\d{1,2})\s*[-–—:]\s*(\d{1,2})\s+"
+            + r"([a-zçğıöşü0-9][a-zçğıöşü0-9 .'-]{0,39}?)(?=\s+(?:-|–|—|:)|$)",
+            cevre_norm,
+            re.IGNORECASE
+        )
+        if m:
+            rakip = re.sub(r"\s+", " ", m.group(3)).strip(" -–—:")
+            if rakip and norm(rakip) != takim_norm:
+                return f"{takim} {m.group(1)} - {rakip} {m.group(2)}"
 
     # Rakip çıkarılamazsa en azından takımın skorunu döndürme;
     # merkez motorun tek sayı cevabına düşmesini engelle.
@@ -7083,6 +7099,20 @@ def sohbet():
     # Genel "Bugün maç var mı?" sorusu takım belirtmese de mevcut günün
     # spor fikstürünü web sonuçlarından çıkarır.
     if karar.get("intent") == "spor":
+        spor_skor_cevap = spor_skoru_direkt_cevapla(
+            mesaj,
+            web_verisi=web_verisi
+        )
+        if spor_skor_cevap:
+            return jsonify({
+                "ok": True,
+                "answer": spor_skor_cevap,
+                "web_search": True,
+                "eagle_direct": True,
+                "merkez_motor": False,
+                "memory_count": len(hafiza_yukle())
+            })
+
         spor_cevap = spor_fikstur_direkt_cevapla(
             mesaj,
             web_verisi
