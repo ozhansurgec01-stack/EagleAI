@@ -668,6 +668,17 @@ class EagleMerkezMotoru:
             r"altın|gram|kg|%|yüzde"
         )
 
+        # Nüfus sorularında yüzdeler gibi yardımcı sayılar yerine,
+        # nüfus/kişi bağlamındaki gerçek toplam değeri önceliklendir.
+        nufus_sorusu = bool(
+            re.search(
+                r"\bnüfus\b|\bnufus\b|\bpopulation\b|"
+                r"\bnüfusu\b|\bnufusu\b",
+                mesaj_norm,
+                flags=re.IGNORECASE
+            )
+        )
+
         sayi_regex = re.compile(
             r"(?<![\w])"
             r"(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,4})?"
@@ -698,6 +709,20 @@ class EagleMerkezMotoru:
 
             for eslesme in sayi_regex.finditer(metin):
                 deger = eslesme.group(1).strip()
+
+                # Nüfus sorusunda açıkça yüzde olarak kullanılan
+                # yardımcı değerleri aday havuzuna alma.
+                if nufus_sorusu and re.search(
+                    r"%\s*" + re.escape(deger) +
+                    r"|yüzde\s*" + re.escape(deger) +
+                    r"|yuzde\s*" + re.escape(deger),
+                    metin[
+                        max(0, eslesme.start() - 30):
+                        min(len(metin), eslesme.end() + 30)
+                    ],
+                    flags=re.IGNORECASE
+                ):
+                    continue
 
                 sol = max(
                     0,
@@ -743,12 +768,66 @@ class EagleMerkezMotoru:
 
                 yakin_birim = bool(birim)
 
+                yuzde_degeri = bool(
+                    re.search(
+                        r"%\s*" + re.escape(deger) +
+                        r"|yüzde\s*" + re.escape(deger) +
+                        r"|yuzde\s*" + re.escape(deger),
+                        metin[
+                            max(0, eslesme.start() - 30):
+                            min(len(metin), eslesme.end() + 30)
+                        ],
+                        flags=re.IGNORECASE
+                    )
+                )
+
+                bolum_basliklari = list(
+                    re.finditer(
+                        r"\bnüfus\b|\bnufus\b|\bpopulation\b|"
+                        r"\byüzölçümü\b|\byuzolcumu\b|\barea\b",
+                        metin[:eslesme.start()],
+                        flags=re.IGNORECASE
+                    )
+                )
+
+                son_bolum = (
+                    bolum_basliklari[-1].group(0).casefold()
+                    if bolum_basliklari
+                    else ""
+                )
+
+                nufus_bolumu_mu = (
+                    son_bolum in (
+                        "nüfus",
+                        "nufus",
+                        "population"
+                    )
+                )
+
                 adaylar.append({
                     "deger": deger,
                     "kaynak": kaynak_no,
                     "baglam": baglam,
                     "birim": birim,
                     "yakin_birim": yakin_birim,
+                    "yuzde_degeri": yuzde_degeri,
+                    "nufus_baglam": (
+                        nufus_bolumu_mu
+                        if bolum_basliklari
+                        else bool(
+                            re.search(
+                                r"\bnüfus\w*\b(?!\s+sahip)|\bnufus\w*\b(?!\s+sahip)|"
+                                r"\bpopulation\b|\bkişi\b|\bkisi\b",
+                                baglam,
+                                flags=re.IGNORECASE
+                            )
+                        )
+                    ),
+                    "nufus_guclu": bool(
+                        nufus_sorusu
+                        and not yuzde_degeri
+                        and len(re.sub(r"[^0-9]", "", deger)) >= 5
+                    ),
                     "ondalik": bool(
                         re.search(
                             r"[.,]\d+",
@@ -801,6 +880,8 @@ class EagleMerkezMotoru:
 
             hedef_birim_puani = 0
             yakin_birim_puani = 0
+            nufus_baglam_puani = 0
+            nufus_guclu_puani = 0
             ondalik_puani = 0
             kur_karsilik_puani = 0
 
@@ -816,6 +897,12 @@ class EagleMerkezMotoru:
             )
 
             for aday in grup:
+                if nufus_sorusu and aday["nufus_guclu"]:
+                    nufus_guclu_puani = max(
+                        nufus_guclu_puani,
+                        25
+                    )
+
                 if aday["yakin_birim"]:
                     yakin_birim_puani = max(
                         yakin_birim_puani,
@@ -830,10 +917,42 @@ class EagleMerkezMotoru:
                         10
                     )
 
+                if nufus_sorusu and aday["nufus_baglam"]:
+                    nufus_baglam_puani = max(
+                        nufus_baglam_puani,
+                        15
+                    )
+
+                    # Toplam nüfus sorusunda erkek/kadın alt
+                    # nüfuslarını toplam nüfus adayından ayır.
+                    if re.search(
+                        r"\b(?:erkek|kadın|kadin)\w*\b",
+                        aday["baglam"],
+                        flags=re.IGNORECASE
+                    ):
+                        nufus_baglam_puani = min(
+                            nufus_baglam_puani,
+                            0
+                        )
+
+                if nufus_sorusu and aday["birim"] in ("%", "yüzde"):
+                    nufus_baglam_puani = min(
+                        nufus_baglam_puani,
+                        0
+                    )
+
                 if aday["ondalik"]:
                     ondalik_puani = max(
                         ondalik_puani,
                         1
+                    )
+
+                # Nüfus sorularında küçük ondalıklı değerler
+                # (ör. 2.1, 1.27) nüfus adayı değildir.
+                if nufus_sorusu and aday["ondalik"]:
+                    nufus_baglam_puani = min(
+                        nufus_baglam_puani,
+                        0
                     )
 
                 if kur_sorusu and aday["birim"]:
@@ -860,6 +979,8 @@ class EagleMerkezMotoru:
             puan = (
                 kur_karsilik_puani,
                 hedef_birim_puani,
+                nufus_guclu_puani,
+                nufus_baglam_puani,
                 yakin_birim_puani,
                 ondalik_puani,
                 kaynak_sayisi,
@@ -873,6 +994,7 @@ class EagleMerkezMotoru:
             key=lambda x: x[0],
             reverse=True
         )
+
 
         # -------------------------------------------------
         # 6) En güçlü gerçek değeri seç.
@@ -907,10 +1029,25 @@ class EagleMerkezMotoru:
 
                 secilen = hedef_birimli[0]
             else:
-                if not yakin_birimli:
-                    continue
-
-                secilen = yakin_birimli[0]
+                if nufus_sorusu:
+                    nufus_guclu_adaylari = [
+                        x for x in grup
+                        if x["nufus_guclu"]
+                    ]
+                    if nufus_guclu_adaylari:
+                        secilen = nufus_guclu_adaylari[0]
+                    else:
+                        nufus_adaylari = [
+                            x for x in grup
+                            if x["nufus_baglam"]
+                        ]
+                        if not nufus_adaylari:
+                            continue
+                        secilen = nufus_adaylari[0]
+                else:
+                    if not yakin_birimli:
+                        continue
+                    secilen = yakin_birimli[0]
 
             kaynak_sayisi = len({
                 x["kaynak"]
