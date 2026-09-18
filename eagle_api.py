@@ -3674,6 +3674,7 @@ def sofascore_takim_bul(sorgu):
                 timeout=10,
             )
 
+            print(f"[SofaScore] takım arama: {q} -> HTTP {r.status_code}", flush=True)
             if r.status_code != 200:
                 return []
 
