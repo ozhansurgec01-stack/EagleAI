@@ -103,6 +103,10 @@ class EagleMerkezMotoru:
         "sonuc",
         "kaç kaç",
         "ne oldu",
+        "nüfus",
+        "nüfusu",
+        "nufus",
+        "nufusu",
     )
 
     def __init__(self):
@@ -522,7 +526,7 @@ class EagleMerkezMotoru:
         return None, 0.0
 
     @classmethod
-    def net_sayisal_cevap(cls, mesaj, veriler):
+    def net_sayisal_cevap(cls, mesaj, veriler, web_arayici=None):
         """
         Web verisinden kullanıcının gerçekten sorduğu sayısal
         değeri çıkarır.
@@ -625,6 +629,26 @@ class EagleMerkezMotoru:
                     )
 
 
+        # Nüfus sorusunu önce belirle.
+        nufus_sorusu = bool(
+            re.search(
+                r"\bnüfus\b|\bnufus\b|\bpopulation\b|"
+                r"\bnüfusu\b|\bnufusu\b",
+                mesaj_norm,
+                flags=re.IGNORECASE
+            )
+        )
+
+        # "Almanya'nın nüfusu yüzde kaç?" gibi soruları ayır.
+        nufus_yuzde_sorusu = bool(
+            nufus_sorusu
+            and re.search(
+                r"\b(?:yüzde|yuzde|percent)\b|%",
+                mesaj_norm,
+                flags=re.IGNORECASE
+            )
+        )
+
         hedef_birimler = []
 
         if re.search(
@@ -663,6 +687,9 @@ class EagleMerkezMotoru:
                 "gbp", "sterlin"
             ])
 
+        if nufus_yuzde_sorusu:
+            hedef_birimler.extend(["%", "yüzde"])
+
         birim_regex = (
             r"TL|₺|USD|EUR|GBP|TRY|dolar|euro|sterlin|"
             r"altın|gram|kg|%|yüzde"
@@ -670,14 +697,6 @@ class EagleMerkezMotoru:
 
         # Nüfus sorularında yüzdeler gibi yardımcı sayılar yerine,
         # nüfus/kişi bağlamındaki gerçek toplam değeri önceliklendir.
-        nufus_sorusu = bool(
-            re.search(
-                r"\bnüfus\b|\bnufus\b|\bpopulation\b|"
-                r"\bnüfusu\b|\bnufusu\b",
-                mesaj_norm,
-                flags=re.IGNORECASE
-            )
-        )
 
         sayi_regex = re.compile(
             r"(?<![\w])"
@@ -712,7 +731,7 @@ class EagleMerkezMotoru:
 
                 # Nüfus sorusunda açıkça yüzde olarak kullanılan
                 # yardımcı değerleri aday havuzuna alma.
-                if nufus_sorusu and re.search(
+                if nufus_sorusu and not nufus_yuzde_sorusu and re.search(
                     r"%\s*" + re.escape(deger) +
                     r"|yüzde\s*" + re.escape(deger) +
                     r"|yuzde\s*" + re.escape(deger),
@@ -742,7 +761,7 @@ class EagleMerkezMotoru:
                 ]
 
                 birim_sonrasi = re.match(
-                    rf"\s*({birim_regex})\b",
+                    rf"\s*({birim_regex})(?!\w)",
                     sonrasi,
                     flags=re.IGNORECASE
                 )
@@ -767,6 +786,15 @@ class EagleMerkezMotoru:
                     birim = birim_oncesi.group(1)
 
                 yakin_birim = bool(birim)
+                # Normal nüfus sorusunda yüzde değerleri toplam nüfus adayı değildir.
+                if (
+                    nufus_sorusu
+                    and not nufus_yuzde_sorusu
+                    and cls.normalize(birim) in ("%", "yüzde")
+                ):
+                    continue
+
+
 
                 yuzde_degeri = bool(
                     re.search(
@@ -825,6 +853,7 @@ class EagleMerkezMotoru:
                     ),
                     "nufus_guclu": bool(
                         nufus_sorusu
+                        and not nufus_yuzde_sorusu
                         and not yuzde_degeri
                         and len(re.sub(r"[^0-9]", "", deger)) >= 5
                     ),
@@ -897,7 +926,7 @@ class EagleMerkezMotoru:
             )
 
             for aday in grup:
-                if nufus_sorusu and aday["nufus_guclu"]:
+                if nufus_sorusu and not nufus_yuzde_sorusu and aday["nufus_guclu"]:
                     nufus_guclu_puani = max(
                         nufus_guclu_puani,
                         25
@@ -912,10 +941,21 @@ class EagleMerkezMotoru:
                 if birim_eslesiyor_mu(
                     aday["birim"]
                 ):
-                    hedef_birim_puani = max(
-                        hedef_birim_puani,
-                        10
-                    )
+                    if not (
+                        nufus_yuzde_sorusu
+                        and aday["birim"] in ("%", "yüzde")
+                        and re.search(
+                            r"\bkentsel\b|\burban\b|\byoğunluk\b|\byogunluk\b|"
+                            r"\bdensity\b|\bnüfus yoğunluğu\b|\bnufus yogunlugu\b|"
+                            r"\berkek\w*\b|\bkadın\w*\b|\bkadin\w*\b",
+                            aday["baglam"],
+                            flags=re.IGNORECASE
+                        )
+                    ):
+                        hedef_birim_puani = max(
+                            hedef_birim_puani,
+                            10
+                        )
 
                 if nufus_sorusu and aday["nufus_baglam"]:
                     nufus_baglam_puani = max(
@@ -936,10 +976,22 @@ class EagleMerkezMotoru:
                         )
 
                 if nufus_sorusu and aday["birim"] in ("%", "yüzde"):
-                    nufus_baglam_puani = min(
-                        nufus_baglam_puani,
-                        0
+                    # Kentsel nüfus oranı gibi alt istatistikleri
+                    # dünya nüfusundaki pay olarak değerlendirme.
+                    alt_nufus_istatistigi = bool(
+                        re.search(
+                            r"\bkentsel\b|\burban\b|\byoğunluk\b|\byogunluk\b|"
+                            r"\bdensity\b|\bnüfus yoğunluğu\b|\bnufus yogunlugu\b|"
+                            r"\berkek\w*\b|\bkadın\w*\b|\bkadin\w*\b",
+                            aday["baglam"],
+                            flags=re.IGNORECASE
+                        )
                     )
+                    if alt_nufus_istatistigi:
+                        nufus_baglam_puani = min(
+                            nufus_baglam_puani,
+                            0
+                        )
 
                 if aday["ondalik"]:
                     ondalik_puani = max(
@@ -1023,13 +1075,13 @@ class EagleMerkezMotoru:
 
             # Kullanıcı belirli bir birim istediyse
             # başka birimin sayısını seçme.
-            elif hedef_birimler:
+            elif hedef_birimler and not nufus_yuzde_sorusu:
                 if not hedef_birimli:
                     continue
 
                 secilen = hedef_birimli[0]
             else:
-                if nufus_sorusu:
+                if nufus_sorusu and not nufus_yuzde_sorusu:
                     nufus_guclu_adaylari = [
                         x for x in grup
                         if x["nufus_guclu"]
@@ -1045,9 +1097,31 @@ class EagleMerkezMotoru:
                             continue
                         secilen = nufus_adaylari[0]
                 else:
-                    if not yakin_birimli:
-                        continue
-                    secilen = yakin_birimli[0]
+                    if nufus_yuzde_sorusu:
+                        dunya_payi_adayi = [
+                            x for x in grup
+                            if x["birim"] in ("%", "yüzde")
+                            and re.search(
+                                r"dünya nüfus|dunya nufus|world population|"
+                                r"world's population|global population|"
+                                r"nüfusunun dünya|nufusunun dunya",
+                                x["baglam"],
+                                flags=re.IGNORECASE
+                            )
+                            and not re.search(
+                                r"kentsel|urban|density|yoğunluk|yogunluk|"
+                                r"erkek|kadın|kadin",
+                                x["baglam"],
+                                flags=re.IGNORECASE
+                            )
+                        ]
+                        if not dunya_payi_adayi:
+                            continue
+                        secilen = dunya_payi_adayi[0]
+                    else:
+                        if not yakin_birimli:
+                            continue
+                        secilen = yakin_birimli[0]
 
             kaynak_sayisi = len({
                 x["kaynak"]
@@ -1074,6 +1148,56 @@ class EagleMerkezMotoru:
                 sonuc_degeri,
                 guven
             )
+
+        # Nüfusun dünya nüfusundaki payı soruluyorsa ve mevcut
+        # sonuçlarda bu bilgi yoksa, aynı ülkeyi hedefleyen daha
+        # açık bir web sorgusu yap.
+        if web_arayici and nufus_yuzde_sorusu:
+            dunya_payi_var = any(
+                x["birim"] in ("%", "yüzde")
+                and re.search(
+                    r"dünya nüfus|dunya nufus|world population|"
+                    r"global population|world's population",
+                    x["baglam"],
+                    flags=re.IGNORECASE
+                )
+                and not re.search(
+                    r"kentsel|urban|density|yoğunluk|yogunluk|"
+                    r"erkek|kadın|kadin",
+                    x["baglam"],
+                    flags=re.IGNORECASE
+                )
+                for _, _, grup in sirali
+                for x in grup
+            )
+
+            if not dunya_payi_var:
+                hedefli_sorgu = (
+                    f"{mesaj} dünya nüfusunun yüzde kaçı "
+                    f"world population share"
+                )
+                try:
+                    ek_veriler = web_arayici(
+                        hedefli_sorgu,
+                        limit=8
+                    )
+                except Exception as hata:
+                    print(
+                        "⚠️ Nüfus payı ek web araması hatası:",
+                        hata,
+                        flush=True
+                    )
+                    ek_veriler = []
+
+                if ek_veriler:
+                    ek_temiz = cls.temizle_web_verisi(ek_veriler)
+                    yeni_cevap, yeni_guven = cls.net_sayisal_cevap(
+                        mesaj,
+                        list(veriler or []) + ek_temiz,
+                        web_arayici=None
+                    )
+                    if yeni_cevap:
+                        return yeni_cevap, yeni_guven
 
         # -------------------------------------------------
         # 7) Son güvenli fallback:
@@ -2199,9 +2323,11 @@ class EagleMerkezMotoru:
 
         # 6. Kısa sayısal/güncel cevap adayı.
         if karar.get("intent") != "spor" and self.deger_sorusu_mu(mesaj):
+            sayisal_veriler = veriler
             cevap, guven = self.net_sayisal_cevap(
                 mesaj,
-                veriler
+                sayisal_veriler,
+                web_arayici=web_arayici
             )
 
             if cevap and guven >= 0.75:
