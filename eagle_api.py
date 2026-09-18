@@ -3807,6 +3807,8 @@ def sofascore_takimlar_arasi_mac_getir(takim1, takim2):
         id1 = takim1.get("id")
         id2 = takim2.get("id")
 
+        ortak_maclar = []
+
         for event in bulunan.values():
             ev_id = (event.get("homeTeam") or {}).get("id")
             dep_id = (event.get("awayTeam") or {}).get("id")
@@ -3814,20 +3816,64 @@ def sofascore_takimlar_arasi_mac_getir(takim1, takim2):
             if {ev_id, dep_id} != {id1, id2}:
                 continue
 
-            durum = event.get("status") or {}
-            skor_ev = (event.get("homeScore") or {}).get("current")
-            skor_dep = (event.get("awayScore") or {}).get("current")
+            ortak_maclar.append(event)
 
-            return {
-                "id": event.get("id"),
-                "ev": (event.get("homeTeam") or {}).get("name"),
-                "deplasman": (event.get("awayTeam") or {}).get("name"),
-                "ev_skor": skor_ev,
-                "deplasman_skor": skor_dep,
-                "durum": durum.get("type") or "",
-                "durum_adi": durum.get("description") or "",
-                "timestamp": event.get("startTimestamp"),
-            }
+        if not ortak_maclar:
+            return None
+
+        import time
+        simdi = time.time()
+
+        canli = [
+            x for x in ortak_maclar
+            if (x.get("status") or {}).get("type") in ("inprogress", "live")
+        ]
+
+        if canli:
+            secilen = max(
+                canli,
+                key=lambda x: x.get("startTimestamp") or 0,
+            )
+        else:
+            biten = [
+                x for x in ortak_maclar
+                if (x.get("status") or {}).get("type") == "finished"
+                and (x.get("startTimestamp") or 0) <= simdi
+            ]
+
+            if biten:
+                secilen = max(
+                    biten,
+                    key=lambda x: x.get("startTimestamp") or 0,
+                )
+            else:
+                gelecek = [
+                    x for x in ortak_maclar
+                    if (x.get("startTimestamp") or 0) > simdi
+                ]
+
+                if not gelecek:
+                    return None
+
+                secilen = min(
+                    gelecek,
+                    key=lambda x: x.get("startTimestamp") or 0,
+                )
+
+        durum = secilen.get("status") or {}
+        skor_ev = (secilen.get("homeScore") or {}).get("current")
+        skor_dep = (secilen.get("awayScore") or {}).get("current")
+
+        return {
+            "id": secilen.get("id"),
+            "ev": (secilen.get("homeTeam") or {}).get("name"),
+            "deplasman": (secilen.get("awayTeam") or {}).get("name"),
+            "ev_skor": skor_ev,
+            "deplasman_skor": skor_dep,
+            "durum": durum.get("type") or "",
+            "durum_adi": durum.get("description") or "",
+            "timestamp": secilen.get("startTimestamp"),
+        }
 
         return None
 
@@ -6402,6 +6448,7 @@ def sohbet():
     # Genel web aramasına düşmeden gerçek maç verisini kullan.
     if karar.get("intent") == "spor":
         mesaj_kf = str(mesaj or "").casefold().replace("\u0307", "")
+        mesaj_kf = re.sub(r"[^\w\s]", " ", mesaj_kf)
 
         skor_istegi = any(k in mesaj_kf for k in (
             "canlı sonuç", "canli sonuc",
@@ -6413,7 +6460,7 @@ def sohbet():
 
         mac_ifadesi = "maç" in mesaj_kf or "mac" in mesaj_kf
 
-        if skor_istegi and mac_ifadesi:
+        if skor_istegi:
             temiz_mesaj = re.sub(
                 r"\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|bitti|sonucu)\b",
                 " ",
@@ -6943,6 +6990,7 @@ def sohbet():
         # 🏟️ İki takım + skor/canlı sonuç sorgularını doğrudan SofaScore'dan çöz.
     if karar.get("intent") == "spor":
         mesaj_kf = str(mesaj or "").casefold().replace("\u0307", "")
+        mesaj_kf = re.sub(r"[^\w\s]", " ", mesaj_kf)
         skor_istegi = any(k in mesaj_kf for k in (
             "canlı sonuç", "canli sonuc", "canlı skor", "canli skor",
             "maç sonucu", "mac sonucu", "kaç kaç", "kac kac",
