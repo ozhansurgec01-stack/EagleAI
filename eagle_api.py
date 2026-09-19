@@ -3710,13 +3710,35 @@ def sofascore_takim_bul(sorgu):
 
             if ad_norm == norm:
                 puan += 100
-            if norm and norm in ad_norm:
-                puan += 70
+
+            # Kısa takım adı aramalarında gerçek takım adının başında
+            # ayrı bir kelime olarak eşleşmesini tercih et.
+            if norm and ad_norm.startswith(norm):
+                puan += 90
+
+            # "Çorum" -> "Corumbaense" gibi kelime içinde tesadüfi
+            # eşleşmeler, gerçek takım adı başlangıcından daha düşük olsun.
+            if norm and re.search(rf"\b{re.escape(norm)}\b", ad_norm):
+                puan += 20
+
             if ad_norm and ad_norm in norm:
                 puan += 60
 
+            # Kısa isim belirsizliğinde SofaScore kullanıcı sayısı,
+            # daha bilinen ana takımı tercih etmek için yardımcı kriterdir.
+            try:
+                puan += min(25, int(entity.get("userCount") or 0) // 2000)
+            except (TypeError, ValueError):
+                pass
+
             if alt_takim:
                 puan -= 80
+
+            # Sayılı takım adlarını çıplak şehir/kulüp kısa adı aramalarında
+            # ana takımın gerisine bırak.
+            if norm and re.fullmatch(r"[a-z0-9çğıöşü]+", norm):
+                if re.search(r"\b\d+\b", ad_norm):
+                    puan -= 25
 
             return puan
 
