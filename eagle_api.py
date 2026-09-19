@@ -2629,7 +2629,7 @@ def super_lig_getir(mesaj=""):
                         "ev_skor": ev_skor,
                         "deplasman_skor": deplasman_skor,
                         "skor": f"{ev_skor}-{deplasman_skor}",
-                        "oynandi": True,
+                        "oynandi": oynandi,
                         "hafta": hafta,
                         "_tarih": dt
                     })
@@ -2741,6 +2741,7 @@ def super_lig_getir(mesaj=""):
 
         # Sonuç sorgusunda en güncel oynanan maçlar önde olsun.
         if sonuc_istegi:
+            maclar = [m for m in maclar if m.get("oynandi")]
             maclar = maclar[-8:]
             maclar.reverse()
             maclar = maclar[-8:]
@@ -2765,7 +2766,7 @@ def super_lig_getir(mesaj=""):
                 "ev_skor": mac["ev_skor"],
                 "deplasman_skor": mac["deplasman_skor"],
                 "skor": mac["skor"],
-                "oynandi": True,
+                "oynandi": mac["oynandi"],
                 "hafta": mac["hafta"],
                 "_tarih": mac["_tarih"]
             })
@@ -4057,7 +4058,7 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
         "Kasımpaşa", "Antalyaspor", "Alanyaspor", "Adana Demirspor",
         "Gaziantep FK", "Kayserispor", "Konyaspor", "Samsunspor",
         "Çaykur Rizespor", "Rizespor", "Göztepe", "Eyüpspor",
-        "Gençlerbirliği", "Bodrum FK", "Eintracht Frankfurt",
+        "Gençlerbirliği", "Bodrum FK", "Çorum FK", "Eintracht Frankfurt",
         "Sporting Lizbon", "Sporting CP", "Türkiye", "İtalya"
     ]
 
@@ -6487,9 +6488,23 @@ def sohbet():
     cevap = ""
     live_sports_debug = False
 
+    # 🇹🇷 Süper Lig sorgularında SofaScore takım aramasına girme.
+    # Resmi TFF verisi aşağıdaki Süper Lig akışından alınır.
+    mesaj_spor_oncesi = str(mesaj or "").lower().replace("\u0307", "")
+    super_lig_oncesi = any(k in mesaj_spor_oncesi for k in [
+        "süper lig",
+        "super lig"
+    ])
+
+    if super_lig_oncesi:
+        print(
+            "🇹🇷 SÜPER LİG: SofaScore atlanıyor, resmi TFF verisi kullanılacak",
+            flush=True
+        )
+
     # 🏟️ İki takım + skor/canlı sonuç: önce doğrudan SofaScore.
     # Genel web aramasına düşmeden gerçek maç verisini kullan.
-    if karar.get("intent") == "spor":
+    if karar.get("intent") == "spor" and not super_lig_oncesi:
         live_sports_debug = True
         print(
             "🧪 LIVE DEBUG: SofaScore spor bloğuna girildi",
@@ -6746,6 +6761,17 @@ def sohbet():
                 "puan tablosu"
             ])
 
+            super_lig_sonuc_istegi = any(k in mesaj_spor for k in [
+                "sonuç", "sonuc", "sonuçları", "sonuclari",
+                "maç sonucu", "mac sonucu",
+                "maç sonuçları", "mac sonuclari",
+                "oynanan maç", "oynanan mac",
+                "oynanan maçlar", "oynanan maclar",
+                "skor", "skorları", "skorlari",
+                "kaç kaç", "kac kac", "kaç kaç bitti", "kac kac bitti"
+            ])
+
+
             if super_lig_mi and puan_durumu_istegi and not web_verisi:
                 web_verisi = super_lig_puan_durumu_getir()
             elif super_lig_mi or (
@@ -6757,18 +6783,39 @@ def sohbet():
                 # Sonuç/oynanan maç veya takım fikstürü isteğinde resmi TFF verisini kullan.
                 # Fikstür/zaman kapsamı isteğinde ise güncel web araması yap;
                 # böylece sistem yalnızca geçmiş sonuçlara kilitlenmez.
-                super_lig_sonuc_istegi = any(k in mesaj_spor for k in [
-                    "sonuç", "sonuc", "sonuçları", "sonuclari",
-                    "maç sonucu", "mac sonucu",
-                    "maç sonuçları", "mac sonuclari",
-                    "oynanan maç", "oynanan mac",
-                    "oynanan maçlar", "oynanan maclar",
-                    "skor", "skorları", "skorlari",
-                    "kaç kaç", "kac kac", "kaç kaç bitti", "kac kac bitti"
-                ])
 
                 # Süper Lig sonuç/fikstür sorgularında resmi TFF verisini kullan.
                 web_verisi = super_lig_getir(mesaj)
+
+            # 🇹🇷 Genel Süper Lig sonuçlarını resmi TFF verisinden doğrudan cevapla.
+            # Takım adı aranmaz; yapılandırılmış TFF maç kayıtları kullanılır.
+            if super_lig_sonuc_istegi and web_verisi:
+                satirlar = ["🇹🇷 SÜPER LİG SONUÇLARI"]
+
+                for mac in web_verisi:
+                    ev = str(mac.get("ev", "")).strip()
+                    deplasman = str(mac.get("deplasman", "")).strip()
+                    ev_skor = mac.get("ev_skor")
+                    deplasman_skor = mac.get("deplasman_skor")
+
+                    if (
+                        ev
+                        and deplasman
+                        and ev_skor is not None
+                        and deplasman_skor is not None
+                    ):
+                        satirlar.append(
+                            f"{ev} {ev_skor}-{deplasman_skor} {deplasman}"
+                        )
+
+                if len(satirlar) > 1:
+                    return jsonify({
+                        "ok": True,
+                        "answer": "\n".join(satirlar),
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
 
             # 🏐 Türkiye-İtalya voleybol sonucu: TVF resmi haber
             mesaj_kucuk = mesaj.lower().replace("\u0307", "")
