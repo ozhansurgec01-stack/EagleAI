@@ -7019,12 +7019,12 @@ def sohbet():
 
         if skor_istegi and "maç" in mesaj_kf or skor_istegi and "mac" in mesaj_kf:
             temiz_mesaj = re.sub(
-                r"\\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|kaç kaç|kac kac|bitti|sonucu)\\b",
+                r"\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|kaç kaç|kac kac|bitti|sonucu)\b",
                 " ",
                 mesaj_kf,
                 flags=re.IGNORECASE
             )
-            kelimeler = [x for x in re.split(r"\\s+", temiz_mesaj.strip()) if x]
+            kelimeler = [x for x in re.split(r"\s+", temiz_mesaj.strip()) if x]
 
             adaylar = []
             gorulen = set()
