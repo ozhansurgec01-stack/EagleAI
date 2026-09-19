@@ -6467,6 +6467,10 @@ def sohbet():
     # 🏟️ İki takım + skor/canlı sonuç: önce doğrudan SofaScore.
     # Genel web aramasına düşmeden gerçek maç verisini kullan.
     if karar.get("intent") == "spor":
+        print(
+            "🧪 LIVE DEBUG: SofaScore spor bloğuna girildi",
+            flush=True
+        )
         mesaj_kf = str(mesaj or "").casefold().replace("\u0307", "")
         mesaj_kf = re.sub(r"[^\w\s]", " ", mesaj_kf)
 
