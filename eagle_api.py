@@ -6505,6 +6505,10 @@ def sohbet():
                 for i in range(len(kelimeler) - uzunluk + 1):
                     parca = " ".join(kelimeler[i:i + uzunluk]).strip()
 
+                    # Takım adları arasındaki bağlaçları takım adayı olarak arama.
+                    if uzunluk == 1 and parca in {"ile", "ve", "veya"}:
+                        continue
+
                     if not parca or parca in gorulen:
                         continue
 
