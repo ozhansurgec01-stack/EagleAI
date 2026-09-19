@@ -6463,10 +6463,12 @@ def sohbet():
     # 🌐 Güncel bilgi gerekiyorsa ücretsiz web araştırması yap
     web_verisi = []
     cevap = ""
+    live_sports_debug = False
 
     # 🏟️ İki takım + skor/canlı sonuç: önce doğrudan SofaScore.
     # Genel web aramasına düşmeden gerçek maç verisini kullan.
     if karar.get("intent") == "spor":
+        live_sports_debug = True
         print(
             "🧪 LIVE DEBUG: SofaScore spor bloğuna girildi",
             flush=True
@@ -7378,7 +7380,8 @@ def sohbet():
         ),
         "eagle_direct": True,
         "web_search": False,
-        "memory_count": len(hafiza_yukle())
+        "memory_count": len(hafiza_yukle()),
+        "live_sports_debug": live_sports_debug
     })
 
 
