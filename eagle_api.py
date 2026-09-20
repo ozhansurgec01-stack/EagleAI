@@ -7064,18 +7064,6 @@ def sohbet():
             flush=True
         )
 
-    # 🌐 KB sonucu yoksa genel bilgi isteğini web ile tamamla.
-    if (
-        not bilgi_sonuclari
-        and not autofix_istegi
-        and karar.get("arac") == "eagle_sohbet"
-        and karar.get("intent") != "basit_sohbet"
-    ):
-        print("🌐 KB SONUÇSUZ — WEB ARAŞTIRMASINA GEÇİLİYOR", flush=True)
-        print(f"🌐 WEB SORGU: {mesaj!r}", flush=True)
-        web_verisi = web_arastir(mesaj)
-        print(f"🌐 WEB SONUÇ: {len(web_verisi)}", flush=True)
-
     # 🗣️ Genel sohbet modülü
     if karar.get("arac") == "eagle_sohbet" and not web_verisi:
         cevap = genel_sohbet(
