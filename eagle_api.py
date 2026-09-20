@@ -2739,12 +2739,13 @@ def super_lig_getir(mesaj=""):
                 and mac["_tarih"] >= simdi
             ]
 
-        # Sonuç sorgusunda en güncel oynanan maçlar önde olsun.
+        # Sonuç sorgusunda yalnızca en son oynanan maç gününü göster.
         if sonuc_istegi:
             maclar = [m for m in maclar if m.get("oynandi")]
-            maclar = maclar[-8:]
-            maclar.reverse()
-            maclar = maclar[-8:]
+            if maclar:
+                son_tarih = max(m["_tarih"].date() for m in maclar)
+                maclar = [m for m in maclar if m["_tarih"].date() == son_tarih]
+                maclar.sort(key=lambda x: x["_tarih"], reverse=True)
 
         sonuc = []
 
