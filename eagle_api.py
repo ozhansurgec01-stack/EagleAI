@@ -6903,8 +6903,7 @@ def sohbet():
                     gecmis=gecmis,
                     hafiza=kalici_hafiza,
                     karar=karar_ogrenilmis,
-                    baglam=akil_plani.get("baglam", {}).get("son_mesaj", "")
-                )
+                        )
 
                 return jsonify({
                     "ok": True,
@@ -7071,7 +7070,6 @@ def sohbet():
             gecmis=gecmis,
             hafiza=kalici_hafiza,
             karar=karar,
-            baglam=akil_plani.get("baglam", {}).get("son_mesaj", "")
         )
 
         # Başarılı genel sohbeti kalıcı sohbet hafızasına kaydet.
