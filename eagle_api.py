@@ -1658,6 +1658,11 @@ def spor_arama_sorgusu(mesaj):
 
 
 
+
+    # 🌍 Genel takım karşılaşması — ülke/lig adı belirtilmese de sorgu üretir.
+    # Örn: "Barcelona Galatasaray maçı ne zaman?"
+    return f"{mesaj.strip()} maç fikstür güncel"
+
 def sembolik_denklem_coz(metin):
     """Güvenli biçimde basit sembolik denklemleri çözer."""
     try:
@@ -4651,9 +4656,12 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "kaç kaç", "kac kac"
     ])
 
+    zaman_sorusu = "ne zaman" in mesaj_norm
+
     if (
         not bugun_mu
         and not sonuc_mu
+        and not zaman_sorusu
         and zaman_kapsami not in ("bu_hafta", "gelecek_hafta", "dun", "yarin")
     ):
         return ""
@@ -4937,6 +4945,68 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         return satirlar
 
+    # Soru belirli iki takım içeriyorsa bunları web sonuçlarını
+    # süzmek için kullan.
+    soru_takimlari = re.findall(
+        r"\b[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü0-9&.'’-]{2,}\b",
+        str(mesaj)
+    )
+    soru_takimlari = [
+        norm(x) for x in soru_takimlari
+        if norm(x) not in {"maci", "maç", "ne", "zaman"}
+    ]
+    soru_takimlari = list(dict.fromkeys(soru_takimlari))
+
+    # Belirli iki takım için "ne zaman?" sorularında,
+    # arama sonucunun başlık/snippet bilgisindeki doğrudan tarih-saat
+    # bilgisini kullan. Sayfa içi genel fikstür parser'ı alakasız maçlar
+    # üretebildiği için bu yol önceliklidir.
+    if zaman_sorusu and len(soru_takimlari) >= 2:
+        aylar = (
+            "ocak", "şubat", "mart", "nisan", "mayıs", "haziran",
+            "temmuz", "ağustos", "eylül", "ekim", "kasım", "aralık"
+        )
+        tarih_re = re.compile(
+            r"\b(\d{1,2})\s+(" + "|".join(aylar) + r")\s+(\d{4})\b",
+            re.IGNORECASE
+        )
+        saat_re = re.compile(
+            r"\b([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)\b"
+        )
+
+        for sonuc in web_verisi:
+            kaynak_metin = norm(
+                f"{sonuc.get('title', '')} {sonuc.get('snippet', '')}"
+            )
+
+            if not all(takim in kaynak_metin for takim in soru_takimlari[:2]):
+                continue
+
+            tarih_eslesme = tarih_re.search(kaynak_metin)
+            saat_eslesme = saat_re.search(kaynak_metin)
+
+            if tarih_eslesme and saat_eslesme:
+                gun = int(tarih_eslesme.group(1))
+                ay = tarih_eslesme.group(2).lower()
+                yil = int(tarih_eslesme.group(3))
+                saat = (
+                    f"{int(saat_eslesme.group(1)):02d}:"
+                    f"{saat_eslesme.group(2)}"
+                )
+
+                # Soru içindeki takım sırasını koru.
+                takim1 = soru_takimlari[0]
+                takim2 = soru_takimlari[1]
+
+                baslik = (
+                    f"🏟️ EAGLE SPOR\n\n"
+                    f"📅 MAÇ ZAMANI\n\n"
+                    f"⚽ FUTBOL\n"
+                    f"⚽ {takim1.title()} - {takim2.title()} "
+                    f"{gun} {ay.title()} {yil} — {saat}"
+                )
+                return baslik
+
     # Yapılandırılmış spor verisini doğrudan kullan.
     # Böylece takım adları regex tarafından kesilmez.
     yapilandirilmis = []
@@ -5009,6 +5079,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         # Web sayfası başlıkları, lig açıklamaları ve arayüz metinleri
         # maç olarak kabul edilmez. Takım/lig/site hardcode edilmez.
         takim_metin = f"{ev} {deplasman}".casefold()
+
 
         sahte_mac_ifadeleri = (
             "maç", "mac", "bilgi", "detay", "ilgini çekebilir",
@@ -5183,6 +5254,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
             # Navigasyon / takvim ifadelerini maç olarak alma.
             ham_norm = norm(ham_satir)
+
             if any(k in ham_norm for k in (
                 "yaklaşan maç",
                 "yaklasan mac",
@@ -5338,6 +5410,8 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         (
             "📅 MAÇ SONUÇLARI"
             if sonuc_mu
+            else "📅 MAÇ ZAMANI"
+            if zaman_sorusu
             else {
                 "bu_hafta": "📅 BU HAFTANIN MAÇLARI",
                 "gelecek_hafta": "📅 GELECEK HAFTANIN MAÇLARI",
