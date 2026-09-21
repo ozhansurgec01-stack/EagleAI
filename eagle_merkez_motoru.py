@@ -1756,68 +1756,68 @@ class EagleMerkezMotoru:
                     for kelime in eslesen
                 )
 
-            if yonlendirme_sorusu:
-                uzmanlik_norm = cls.normalize(f"{baslik} {cumle}")
-                if re.search(
-                    r"\b("
-                    r"çocuk endokrin|cocuk endokrin|"
-                    r"endokrinoloji|pediatri|"
-                    r"çocuk doktoru|cocuk doktoru"
-                    r")\b",
-                    uzmanlik_norm
-                ):
-                    puan += 200
-
-                if yonlendirme_sorusu and re.search(
-                    r"\b("
-                    r"bölüm\w*|bolum\w*|"
-                    r"birim\w*|"
-                    r"poliklinik\w*|"
-                    r"çocuk endokrinolojisi|"
-                    r"cocuk endokrinolojisi|"
-                    r"pediatri|"
-                    r"endokrinoloji|"
-                    r"doktor|uzman"
-                    r")\b",
-                    norm
-                ):
-                    puan += 35
-
-                    baslik_norm = cls.normalize(baslik)
+                if yonlendirme_sorusu:
+                    uzmanlik_norm = cls.normalize(f"{baslik} {cumle}")
                     if re.search(
                         r"\b("
-                        r"poliklinik|"
+                        r"çocuk endokrin|cocuk endokrin|"
+                        r"endokrinoloji|pediatri|"
+                        r"çocuk doktoru|cocuk doktoru"
+                        r")\b",
+                        uzmanlik_norm
+                    ):
+                        puan += 200
+
+                    if yonlendirme_sorusu and re.search(
+                        r"\b("
+                        r"bölüm\w*|bolum\w*|"
+                        r"birim\w*|"
+                        r"poliklinik\w*|"
+                        r"çocuk endokrinolojisi|"
+                        r"cocuk endokrinolojisi|"
                         r"pediatri|"
                         r"endokrinoloji|"
-                        r"çocuk|cocuk|"
-                        r"uzman|doktor"
+                        r"doktor|uzman"
                         r")\b",
-                        baslik_norm
+                        norm
                     ):
-                        puan += 60
+                        puan += 35
 
+                        baslik_norm = cls.normalize(baslik)
                         if re.search(
                             r"\b("
-                            r"çocuk endokrin|cocuk endokrin|"
+                            r"poliklinik|"
+                            r"pediatri|"
                             r"endokrinoloji|"
-                            r"pediatri"
+                            r"çocuk|cocuk|"
+                            r"uzman|doktor"
                             r")\b",
                             baslik_norm
                         ):
-                            puan += 80
+                            puan += 60
 
-                    if re.search(
-                        r"\b(randevu|telefon|iletişim|iletisim)\b",
-                        norm
-                    ) and not re.search(
-                        r"\b("
-                        r"bölüm|bolum|"
-                        r"poliklinik|pediatri|endokrinoloji|"
-                        r"çocuk|cocuk"
-                        r")\b",
-                        baslik_norm
-                    ):
-                        puan -= 35
+                            if re.search(
+                                r"\b("
+                                r"çocuk endokrin|cocuk endokrin|"
+                                r"endokrinoloji|"
+                                r"pediatri"
+                                r")\b",
+                                baslik_norm
+                            ):
+                                puan += 80
+
+                        if re.search(
+                            r"\b(randevu|telefon|iletişim|iletisim)\b",
+                            norm
+                        ) and not re.search(
+                            r"\b("
+                            r"bölüm|bolum|"
+                            r"poliklinik|pediatri|endokrinoloji|"
+                            r"çocuk|cocuk"
+                            r")\b",
+                            baslik_norm
+                        ):
+                            puan -= 35
 
                 # İşlem sorularında gerçek adım cümlelerini öne çıkar.
                 bilgi_fiili = bool(
