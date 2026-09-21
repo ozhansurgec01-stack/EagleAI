@@ -2,6 +2,7 @@ from eagle_merkez_motoru import eagle_merkez_motorunu_kur
 from eagle_akil_motoru import eagle_akil_motorunu_kur
 from eagle_autofix import EagleAutoFixEngine
 from eagle_genel_sohbet import genel_sohbet
+from eagle_cevap_motoru import _soru_gibi_mi
 from flask import Flask, request, jsonify
 import os
 
@@ -3481,11 +3482,90 @@ def web_arastir(sorgu, limit=6):
             )
 
         if tum_sonuclar:
+            ilk_sonuclar = tum_sonuclar[:limit * 3]
+
+            # Uzun doğal dil sorularında arama motorları bazen
+            # soruyla ilgisiz sonuçlar döndürebiliyor. Mevcut
+            # genel normalize/etkisiz kelime mantığıyla tek
+            # bir kısa sorgu denemesi yap.
+            soru = str(sorgu or "").casefold()
+
+            # Arama sorgusunun bilgi çekirdeğini çıkarırken soru
+            # amacını taşıyan yapıları ayrıca koru.
+            etkisiz = {
+                "bir", "bu", "şu", "ve", "ile", "için",
+                "nasıl", "neden", "ne", "nedir", "mi", "mı",
+                "mu", "mü", "kaç", "olan", "olarak",
+                "hangisi", "hangisidir", "hangileri", "hangileridir"
+            }
+
+            kelimeler = [
+                k for k in re.findall(r"[a-z0-9çğıöşü]+", soru)
+                if len(k) >= 3 and k not in etkisiz
+            ]
+
+            kısa_kelimeler = kelimeler[:8]
+
+            # "hangi bölüm", "hangi doktor", "hangi birim" gibi
+            # yönlendirme amacı taşıyan soru kalıbını koru.
+            amac = re.search(
+                r"\bhangi\s+(bölüm\w*|bolum\w*|"
+                r"doktor\w*|birim\w*|poliklinik\w*)\b",
+                soru
+            )
+
+            if amac:
+                amac_metin = amac.group(0)
+
+                for kelime in amac_metin.split():
+                    if kelime not in kısa_kelimeler:
+                        kısa_kelimeler.append(kelime)
+
+            kısa_sorgu = " ".join(kısa_kelimeler).strip()
+
+            if (
+                kısa_sorgu
+                and kısa_sorgu != soru
+                and len(kelimeler) >= 4
+            ):
+                sorgu_kelime = set(kelimeler)
+
+                ilgili_sonuc = 0
+                for sonuc in ilk_sonuclar:
+                    metin = (
+                        f"{sonuc.get('title', '')} "
+                        f"{sonuc.get('snippet', '')}"
+                    ).casefold()
+
+                    if any(
+                        kelime in metin
+                        for kelime in sorgu_kelime
+                        if len(kelime) >= 4
+                    ):
+                        ilgili_sonuc += 1
+
+                if ilgili_sonuc < 2:
+                    print(
+                        f"🔄 GENEL WEB KISA SORGU: {kısa_sorgu!r}",
+                        flush=True
+                    )
+                    ikinci = web_arastir(
+                        kısa_sorgu,
+                        limit=limit
+                    )
+
+                    if ikinci:
+                        print(
+                            f"🧠 Kısa sorgu sonucu: {len(ikinci)}",
+                            flush=True
+                        )
+                        return ikinci
+
             print(
-                f"🧠 Web toplam: {len(tum_sonuclar)} sonuç (çoklu kaynak)",
+                f"🧠 Web toplam: {len(ilk_sonuclar)} sonuç (çoklu kaynak)",
                 flush=True
             )
-            return tum_sonuclar[:limit * 3]
+            return ilk_sonuclar
 
         return []
 
@@ -7060,6 +7140,41 @@ def sohbet():
     if ogrenilmis_karar:
         print(
             "🧠 ÖĞRENİLMİŞ DAVRANIŞ KAYDI HAZIR — ROUTING DEĞERLENDİRMESİ",
+            flush=True
+        )
+
+    # 🌐 Karar motoru basit_sohbet dediği halde mesaj gerçek bir bilgi
+    # sorusuysa mevcut web araştırma zincirine geçir.
+    # Sosyal sohbet soruları burada web'e gönderilmez.
+    if (
+        karar.get("intent") in ("basit_sohbet", "sohbet")
+        and karar.get("arac") == "eagle_sohbet"
+        and not web_verisi
+        and _soru_gibi_mi(str(mesaj or "").casefold().strip())
+        and not any(
+            ifade in str(mesaj or "").casefold()
+            for ifade in (
+                "nasılsın",
+                "nasilsin",
+                "iyi misin",
+                "nasıl gidiyor",
+                "nasil gidiyor",
+                "ne yapıyorsun",
+                "ne yapiyorsun",
+                "ne düşünüyorsun",
+                "ne dusunuyorsun",
+                "sence",
+                "fikrin ne",
+            )
+        )
+    ):
+        print(
+            "🌐 GENEL BİLGİ SORUSU — WEB ARAŞTIRMASINA GEÇİLİYOR",
+            flush=True
+        )
+        web_verisi = web_arastir(mesaj)
+        print(
+            f"🌐 WEB SONUÇ: {len(web_verisi)}",
             flush=True
         )
 
