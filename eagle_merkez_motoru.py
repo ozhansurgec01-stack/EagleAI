@@ -1562,7 +1562,7 @@ class EagleMerkezMotoru:
         Genel web sorularında kaynak sayfalarını okuyup,
         soruyla ilgili gerçek bilgi cümlelerinden kısa cevap çıkarır.
         """
-        if not mesaj or not veriler:
+        if not mesaj:
             return "", 0.0
 
         soru = cls.normalize(mesaj)
@@ -1621,6 +1621,42 @@ class EagleMerkezMotoru:
                 soru
             )
         )
+
+        # Çocuk sağlık yönlendirmelerinde arama motorunun
+        # ilgisiz sonuçlarına güvenme; açık uzmanlık eşleşmelerini
+        # doğrudan ve kısa cevapla.
+        if yonlendirme_sorusu:
+            saglik_yonlendirme = (
+                (
+                    re.search(r"\b(astım|astim)\b", soru)
+                    and "Çocuk Göğüs Hastalıkları; gerektiğinde Çocuk Alerji ve İmmünoloji"
+                )
+                or (
+                    re.search(r"\b(epilepsi|nöbet|norbet)\b", soru)
+                    and "Çocuk Nörolojisi"
+                )
+                or (
+                    re.search(r"\b(baş ağrısı|bas agrisi)\b", soru)
+                    and "Çocuk Nörolojisi"
+                )
+                or (
+                    re.search(r"\b(karın ağrısı|karin agrisi)\b", soru)
+                    and "Çocuk Sağlığı ve Hastalıkları (Pediatri); gerekirse Çocuk Gastroenterolojisi"
+                )
+                or (
+                    re.search(r"\b(tiroid|tiroit)\b", soru)
+                    and "Çocuk Endokrinolojisi"
+                )
+                or (
+                    re.search(
+                        r"\b(büyüme|buyume|gelişme|gelisme|boy uzaması|boy uzamasi)\b",
+                        soru
+                    )
+                    and "Çocuk Endokrinolojisi; gerekirse Çocuk Sağlığı ve Hastalıkları (Pediatri)"
+                )
+            )
+            if saglik_yonlendirme:
+                return saglik_yonlendirme, 0.90
 
         adaylar = []
 
@@ -2035,12 +2071,12 @@ class EagleMerkezMotoru:
             secilen.append(cumle)
             kullanilan_kaynaklar.add(kaynak_no)
 
-            if len(secilen) >= (1 if cok_parcali_soru else 3):
+            if len(secilen) >= (1 if (yonlendirme_sorusu or cok_parcali_soru) else 3):
                 break
 
         # Farklı kaynak şartı fazla katı kaldıysa,
         # kalan en iyi adaylarla üç cümleye tamamla.
-        if len(secilen) < 2 and not cok_parcali_soru:
+        if len(secilen) < 2 and not cok_parcali_soru and not yonlendirme_sorusu:
             for _, _, _, cumle in adaylar:
                 if cumle in secilen:
                     continue
@@ -2416,6 +2452,25 @@ class EagleMerkezMotoru:
         # 3. Web sonucu yoksa Gemini'ye doğrudan atlama.
         # Önce diğer mevcut motorların sonucu beklenir.
         if not veriler:
+            # Web sonucu bulunmasa bile genel yönlendirme soruları
+            # mevcut güvenli cevap motorundan doğrudan çözülebilir.
+            genel_cevap, genel_guven = self.genel_web_cevabi(
+                mesaj,
+                [],
+                sayfa_okuyucu=sayfa_okuyucu
+            )
+
+            if genel_cevap and genel_guven >= 0.75:
+                return EagleMerkezSonuc(
+                    ok=True,
+                    cevap=genel_cevap,
+                    guven=genel_guven,
+                    kaynak_sayisi=0,
+                    gemini_gerekli=False,
+                    kaynak_goster=False,
+                    neden="Web sonucu yok; genel yönlendirme cevabı doğrudan üretildi."
+                )
+
             return EagleMerkezSonuc(
                 ok=False,
                 cevap="",
