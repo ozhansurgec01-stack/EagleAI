@@ -1609,9 +1609,22 @@ class EagleMerkezMotoru:
             )
         )
 
+        yonlendirme_sorusu = bool(
+            re.search(
+                r"\b("
+                r"hangi bölüm\w*|hangi bolum\w*|"
+                r"hangi birim\w*|hangi poliklinik\w*|"
+                r"nereye gitmeliyim|"
+                r"nereye başvurmalıyım|nereye basvurmalıyım|"
+                r"hangi doktora|hangi doktora gitmeliyim"
+                r")\b",
+                soru
+            )
+        )
+
         adaylar = []
 
-        for kaynak_no, veri in enumerate(veriler[:4]):
+        for kaynak_no, veri in enumerate(veriler[:8]):
             if not isinstance(veri, dict):
                 continue
 
@@ -1636,7 +1649,24 @@ class EagleMerkezMotoru:
             # cevap adayı olarak kullanılmaz.
             # Sayfa okunabildiyse asıl bilgi kaynağı sayfa metnidir.
             # Sayfa okunamadıysa snippet kullanılabilir.
-            kaynak = sayfa if sayfa else ozet
+            kaynak = ozet if ozet else sayfa
+
+            # Yönlendirme sorularında, ilgili resmi sayfanın
+            # asıl içeriğini snippet yerine değerlendirmeye al.
+            if yonlendirme_sorusu and sayfa:
+                sayfa_norm = cls.normalize(f"{baslik} {sayfa}")
+                if re.search(
+                    r"\b("
+                    r"çocuk endokrin|cocuk endokrin|"
+                    r"endokrinoloji|"
+                    r"pediatri|"
+                    r"çocuk poliklinik|cocuk poliklinik|"
+                    r"büyüme|buyume|"
+                    r"gelişme|gelisme"
+                    r")\b",
+                    sayfa_norm
+                ):
+                    kaynak = sayfa
 
             if not kaynak:
                 continue
@@ -1679,6 +1709,17 @@ class EagleMerkezMotoru:
                     )
                 )
 
+                # Yönlendirme sorularında kaynak başlığı da
+                # bölüm/birim eşleşmesi için değerlendirmeye alınsın.
+                if yonlendirme_sorusu:
+                    baslik_norm = cls.normalize(baslik)
+                    metin_kelime.update(
+                        re.findall(
+                            r"[a-z0-9çğıöşü]+",
+                            baslik_norm
+                        )
+                    )
+
                 eslesen = [
                     kelime
                     for kelime in soru_kelime
@@ -1686,7 +1727,23 @@ class EagleMerkezMotoru:
                 ]
 
                 if not eslesen:
-                    continue
+                    # Yönlendirme sorularında uzmanlık alanını açıkça
+                    # belirten kaynaklar, soru kelimeleri birebir
+                    # eşleşmese bile bilgi adayı olarak korunur.
+                    uzmanlik_kaynagi = (
+                        yonlendirme_sorusu
+                        and re.search(
+                            r"\b("
+                            r"çocuk endokrin|cocuk endokrin|"
+                            r"endokrinoloji|pediatri|"
+                            r"çocuk doktoru|cocuk doktoru"
+                            r")\b",
+                            cls.normalize(f"{baslik} {cumle}")
+                        )
+                    )
+
+                    if not uzmanlik_kaynagi:
+                        continue
 
                 # Mekanizma sorularında soru/başlık cümlelerini
                 # cevap adayı olarak kullanma.
@@ -1698,6 +1755,69 @@ class EagleMerkezMotoru:
                     min(len(kelime), 12)
                     for kelime in eslesen
                 )
+
+            if yonlendirme_sorusu:
+                uzmanlik_norm = cls.normalize(f"{baslik} {cumle}")
+                if re.search(
+                    r"\b("
+                    r"çocuk endokrin|cocuk endokrin|"
+                    r"endokrinoloji|pediatri|"
+                    r"çocuk doktoru|cocuk doktoru"
+                    r")\b",
+                    uzmanlik_norm
+                ):
+                    puan += 200
+
+                if yonlendirme_sorusu and re.search(
+                    r"\b("
+                    r"bölüm\w*|bolum\w*|"
+                    r"birim\w*|"
+                    r"poliklinik\w*|"
+                    r"çocuk endokrinolojisi|"
+                    r"cocuk endokrinolojisi|"
+                    r"pediatri|"
+                    r"endokrinoloji|"
+                    r"doktor|uzman"
+                    r")\b",
+                    norm
+                ):
+                    puan += 35
+
+                    baslik_norm = cls.normalize(baslik)
+                    if re.search(
+                        r"\b("
+                        r"poliklinik|"
+                        r"pediatri|"
+                        r"endokrinoloji|"
+                        r"çocuk|cocuk|"
+                        r"uzman|doktor"
+                        r")\b",
+                        baslik_norm
+                    ):
+                        puan += 60
+
+                        if re.search(
+                            r"\b("
+                            r"çocuk endokrin|cocuk endokrin|"
+                            r"endokrinoloji|"
+                            r"pediatri"
+                            r")\b",
+                            baslik_norm
+                        ):
+                            puan += 80
+
+                    if re.search(
+                        r"\b(randevu|telefon|iletişim|iletisim)\b",
+                        norm
+                    ) and not re.search(
+                        r"\b("
+                        r"bölüm|bolum|"
+                        r"poliklinik|pediatri|endokrinoloji|"
+                        r"çocuk|cocuk"
+                        r")\b",
+                        baslik_norm
+                    ):
+                        puan -= 35
 
                 # İşlem sorularında gerçek adım cümlelerini öne çıkar.
                 bilgi_fiili = bool(
@@ -1767,8 +1887,9 @@ class EagleMerkezMotoru:
                     puan -= 25
 
                 adaylar.append(
-                    (puan, kaynak_no, cumle)
+                    (puan, kaynak_no, baslik, cumle)
                 )
+
 
         if not adaylar:
             return "", 0.0
@@ -1784,11 +1905,11 @@ class EagleMerkezMotoru:
             gruplanmis = []
 
             for kaynak_no in sorted(
-                {no for _, no, _ in adaylar}
+                {no for _, no, _, _ in adaylar}
             ):
                 kaynak_adaylari = [
-                    (puan, cumle)
-                    for puan, no, cumle in adaylar
+                    (puan, baslik, cumle)
+                    for puan, no, baslik, cumle in adaylar
                     if no == kaynak_no
                 ]
 
@@ -1800,7 +1921,7 @@ class EagleMerkezMotoru:
                 karsilanan = set()
                 toplam_puan = 0
 
-                for puan, cumle in kaynak_adaylari:
+                for puan, baslik, cumle in kaynak_adaylari:
                     cumle_norm = cls.normalize(cumle)
                     cumle_kelime = set(
                         re.findall(
@@ -1814,7 +1935,23 @@ class EagleMerkezMotoru:
                     ) - karsilanan
 
                     if not yeni_soru_kelime:
-                        continue
+                        # Yönlendirme sorularında uzmanlık alanını açıkça
+                        # belirten başlık/cümleleri yalnızca birebir soru
+                        # kelimesi eşleşmedi diye eleme.
+                        uzmanlik_adayi = (
+                            yonlendirme_sorusu
+                            and re.search(
+                                r"\b("
+                                r"çocuk endokrin|cocuk endokrin|"
+                                r"endokrinoloji|pediatri|"
+                                r"çocuk doktoru|cocuk doktoru"
+                                r")\b",
+                                cls.normalize(f"{baslik} {cumle}")
+                            )
+                        )
+
+                        if not uzmanlik_adayi:
+                            continue
 
                     secilecek.append(cumle)
                     karsilanan.update(yeni_soru_kelime)
@@ -1828,6 +1965,7 @@ class EagleMerkezMotoru:
                         (
                             toplam_puan,
                             kaynak_no,
+                            kaynak_adaylari[0][1],
                             " ".join(secilecek)
                         )
                     )
@@ -1842,7 +1980,7 @@ class EagleMerkezMotoru:
         secilen = []
         kullanilan_kaynaklar = set()
 
-        for _, kaynak_no, cumle in adaylar:
+        for _, kaynak_no, baslik, cumle in adaylar:
             norm = cls.normalize(cumle)
             yeni_kelime = set(
                 re.findall(
@@ -1883,6 +2021,17 @@ class EagleMerkezMotoru:
             ):
                 continue
 
+            if yonlendirme_sorusu:
+                baslik_norm = cls.normalize(baslik)
+                if re.search(
+                    r"\b("
+                    r"çocuk endokrin|cocuk endokrin|"
+                    r"endokrinoloji|pediatri"
+                    r")\b",
+                    baslik_norm
+                ):
+                    cumle = f"{baslik}: {cumle}"
+
             secilen.append(cumle)
             kullanilan_kaynaklar.add(kaynak_no)
 
@@ -1892,7 +2041,7 @@ class EagleMerkezMotoru:
         # Farklı kaynak şartı fazla katı kaldıysa,
         # kalan en iyi adaylarla üç cümleye tamamla.
         if len(secilen) < 2 and not cok_parcali_soru:
-            for _, _, cumle in adaylar:
+            for _, _, _, cumle in adaylar:
                 if cumle in secilen:
                     continue
                 secilen.append(cumle)
