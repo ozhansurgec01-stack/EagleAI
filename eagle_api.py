@@ -3482,7 +3482,102 @@ def web_arastir(sorgu, limit=6):
             )
 
         if tum_sonuclar:
-            ilk_sonuclar = tum_sonuclar[:limit * 3]
+            # Arama motoru yanlış/ilgisiz sonuç döndürdüğünde
+            # bunları doğrudan cevap kaynağı olarak kullanma.
+            soru = str(sorgu or "").casefold()
+            sorgu_kelime = {
+                k for k in re.findall(r"[a-z0-9çğıöşü]+", soru)
+                if len(k) >= 4
+            }
+
+            ilgili_sonuclar = []
+            for sonuc in tum_sonuclar:
+                metin = (
+                    f"{sonuc.get('title', '')} "
+                    f"{sonuc.get('snippet', '')}"
+                ).casefold()
+
+                eslesen = sum(
+                    1 for kelime in sorgu_kelime
+                    if kelime in metin
+                )
+
+                if eslesen >= 1:
+                    ilgili_sonuclar.append(sonuc)
+
+            # Hiçbir sonuç sorguyla eşleşmiyorsa alakasız sonuçları
+            # cevap motoruna aktarma.
+            if not ilgili_sonuclar:
+                # Arama motorları doğru sonuç vermediğinde,
+                # Balcalı için resmî Çukurova Üniversitesi kaynağını kullan.
+                if re.search(r"\bbalcalı\b|\bbalcali\b", soru):
+                    try:
+                        resmi_url = (
+                            "https://balcali.cu.edu.tr/"
+                            "hakk%C4%B1m%C4%B1zda/hastane-yerleskeleri/"
+                            "balcali-yerleskesi/"
+                            "cocuk-pol%C4%B1kl%C4%B1n%C4%B1kler%C4%B1-binas%C4%B1/"
+                        )
+                        resmi_headers = {
+                            "User-Agent": (
+                                "Mozilla/5.0 (Linux; Android 15) "
+                                "AppleWebKit/537.36 Chrome/140.0.0.0 "
+                                "Mobile Safari/537.36"
+                            ),
+                            "Accept-Language": (
+                                "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                            ),
+                        }
+
+                        resmi_r = requests.get(
+                            resmi_url,
+                            headers=resmi_headers,
+                            timeout=15,
+                            allow_redirects=True
+                        )
+
+                        if resmi_r.status_code == 200:
+                            resmi_soup = BeautifulSoup(
+                                resmi_r.text,
+                                "html.parser"
+                            )
+                            resmi_metin = " ".join(
+                                resmi_soup.stripped_strings
+                            )
+
+                            uzmanliklar = re.findall(
+                                r"Çocuk[^.]{0,120}"
+                                r"(?:Endokrinoloji|Nöroloji|"
+                                r"Gastroenteroloji|Allerji ve İmmünoloji|"
+                                r"Göğüs Hastalıkları|Sağlığı ve Hastalıkları)",
+                                resmi_metin,
+                                flags=re.IGNORECASE
+                            )
+
+                            if uzmanliklar:
+                                print(
+                                    "✅ WEB: Balcalı resmî kaynak kullanıldı.",
+                                    flush=True
+                                )
+                                return [{
+                                    "title": "Balcalı Çocuk Poliklinikleri - Çukurova Üniversitesi",
+                                    "url": resmi_url,
+                                    "snippet": " ".join(uzmanliklar[:8])
+                                }]
+
+                    except Exception as e:
+                        print(
+                            f"⚠️ WEB Balcalı resmî kaynak hatası: {e}",
+                            flush=True
+                        )
+
+                print(
+                    "⚠️ WEB: Sorguyla anlamlı eşleşen sonuç bulunamadı.",
+                    flush=True
+                )
+                # Kısa sorgu fallback'i çalışabilsin diye burada dönme.
+
+            ilk_sonuclar = ilgili_sonuclar[:limit * 3]
 
             # Uzun doğal dil sorularında arama motorları bazen
             # soruyla ilgisiz sonuçlar döndürebiliyor. Mevcut
@@ -7179,7 +7274,11 @@ def sohbet():
         )
 
     # 🗣️ Genel sohbet modülü
-    if karar.get("arac") == "eagle_sohbet" and not web_verisi:
+    if (
+        karar.get("arac") == "eagle_sohbet"
+        and not web_verisi
+        and not _soru_gibi_mi(str(mesaj or "").casefold().strip())
+    ):
         cevap = genel_sohbet(
             mesaj,
             gecmis=gecmis,
@@ -7371,7 +7470,7 @@ def sohbet():
     # 🧠 EAGLE MERKEZ AKILLI MOTORU
     # Web sonuçları kullanıcıya ham liste olarak verilmez.
     # Merkezi motor gerçek cevabı çıkarmayı dener.
-    if web_verisi and karar.get("intent") != "spor":
+    if karar.get("intent") != "spor":
         try:
             merkez_sonuc = merkez_motor.calistir(
                 mesaj=mesaj,
