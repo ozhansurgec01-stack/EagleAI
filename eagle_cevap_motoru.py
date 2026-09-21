@@ -375,6 +375,17 @@ def _soru_gibi_mi(metin):
     if metin.endswith((" mi", " mı", " mu", " mü")):
         return True
 
+    # Genel bilgi talepleri soru işareti taşımayabilir.
+    # Cümlenin bilgi isteme yapısını kontrol et.
+    if (
+        "hakkında bilgi" in metin
+        or "bilgi verir misin" in metin
+        or "bilgi verir mısın" in metin
+        or metin.endswith(" nedir")
+        or metin.endswith(" nedir?")
+    ):
+        return True
+
     # Doğrudan soru yapıları; geniş kelime listesi yerine cümle yapısına bak.
     soru_yapilari = (
         "ne yaparsın",
