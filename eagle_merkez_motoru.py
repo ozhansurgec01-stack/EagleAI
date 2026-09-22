@@ -1851,6 +1851,52 @@ class EagleMerkezMotoru:
                 ]
 
                 if not eslesen:
+                    # Ekonomi sorularında web kaynakları farklı bir dilde
+                    # gelebilir. Soru kalıbına özel tetikleyici eklemek
+                    # yerine temel ekonomi kavramlarını dil bağımsız
+                    # eşleştir.
+                    ekonomi_cok_dilli = False
+                    ekonomi_eslesen = []
+
+                    if ekonomi_sorusu:
+                        ekonomi_kavramlari = (
+                            (
+                                r"\b(faiz|faizler|politika faizi)\b",
+                                r"\b(interest rate|interest rates|interest|rate hike|rate hikes)\b",
+                            ),
+                            (
+                                r"\b(enflasyon|enflasyonu)\b",
+                                r"\b(inflation|inflationary)\b",
+                            ),
+                            (
+                                r"\b(büyüme|büyümeyi|ekonomik büyüme)\b",
+                                r"\b(growth|economic growth|economic activity)\b",
+                            ),
+                            (
+                                r"\b(ekonomi|ekonomide|ekonomiye)\b",
+                                r"\b(economy|economic|economies)\b",
+                            ),
+                            (
+                                r"\b(talep|tüketim|harcama|yatırım)\b",
+                                r"\b(demand|consumption|spending|investment)\b",
+                            ),
+                            (
+                                r"\b(döviz kuru|kur|ithalat|ihracat)\b",
+                                r"\b(exchange rate|currency|imports|exports)\b",
+                            ),
+                        )
+
+                        for soru_deseni, kaynak_deseni in ekonomi_kavramlari:
+                            if re.search(soru_deseni, soru) and re.search(
+                                kaynak_deseni, norm
+                            ):
+                                ekonomi_eslesen.append(soru_deseni)
+
+                        ekonomi_cok_dilli = len(ekonomi_eslesen) >= 1
+
+                    if ekonomi_cok_dilli:
+                        eslesen = ekonomi_eslesen
+
                     # Yönlendirme sorularında uzmanlık alanını açıkça
                     # belirten kaynaklar, soru kelimeleri birebir
                     # eşleşmese bile bilgi adayı olarak korunur.
@@ -1866,7 +1912,7 @@ class EagleMerkezMotoru:
                         )
                     )
 
-                    if not uzmanlik_kaynagi:
+                    if not eslesen and not uzmanlik_kaynagi:
                         continue
 
                 # Mekanizma sorularında soru/başlık cümlelerini
@@ -2229,6 +2275,13 @@ class EagleMerkezMotoru:
         if not secilen:
             return "", 0.0
 
+        # Genel ekonomi sorularında web kaynaklarından seçilen ham
+        # cümleleri doğrudan kullanıcıya verme. Bilinen mekanizma
+        # soruları yukarıdaki doğrudan cevaplardan döner; diğer
+        # ekonomi soruları mevcut Gemini web-sentez fallback'ine gider.
+        if ekonomi_sorusu:
+            return "", 0.0
+
         return " ".join(secilen).strip(), (
             0.86 if sayfa_okuyucu else 0.76
         )
@@ -2552,6 +2605,16 @@ class EagleMerkezMotoru:
         mevcut_cevap = str(
             mevcut_cevap or ""
         ).strip()
+
+        ekonomi_sorusu = bool(
+            re.search(
+                r"\b(faiz|faizler|politika faizi|enflasyon|enflasyonu|"
+                r"büyüme|büyümeyi|ekonomik büyüme|döviz kuru|kur|"
+                r"ithalat|ihracat|yatırım|tüketim|talep|ekonomi|"
+                r"ekonomide|ekonomiye)\b",
+                self.normalize(mesaj),
+            )
+        )
 
         veriler = self.temizle_web_verisi(
             web_verisi
