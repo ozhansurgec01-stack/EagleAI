@@ -3321,6 +3321,58 @@ def web_arastir(sorgu, limit=6):
     try:
         sorgu = sorgu[:400]
 
+        # ========================================================
+        # EKONOMİ ARAMA BAĞLAMI
+        # ========================================================
+        arama_sorgusu = sorgu
+        ekonomi_arama = bool(
+            re.search(
+                r"\b("
+                r"faiz|faizler|politika faizi|"
+                r"enflasyon|enflasyonu|"
+                r"büyüme|büyümeyi|ekonomik büyüme|"
+                r"döviz kuru|kur|ithalat|ihracat|"
+                r"yatırım|tüketim|talep|"
+                r"merkez bankası|para politikası|"
+                r"taylor kuralı|taylor rule"
+                r")\b",
+                str(sorgu).casefold()
+            )
+        )
+
+        if ekonomi_arama:
+            soru_norm = str(sorgu).casefold()
+
+            if re.search(r"\btaylor\b", soru_norm):
+                arama_sorgusu = (
+                    '"Taylor rule" monetary policy '
+                    '"inflation target" "policy rate" '
+                    'site:federalreserve.gov OR site:stlouisfed.org'
+                )
+            elif (
+                re.search(r"\b(enflasyon|enflasyonu)\b", soru_norm)
+                and re.search(r"\b(büyüme|büyümeyi|ekonomik büyüme)\b", soru_norm)
+            ):
+                arama_sorgusu = (
+                    '"interest rate" inflation "economic growth" '
+                    '"monetary policy" '
+                    'site:federalreserve.gov OR site:imf.org'
+                )
+            elif re.search(
+                r"\b(döviz kuru|kur|ithalat|ithalat fiyatları)\b",
+                soru_norm
+            ):
+                arama_sorgusu = (
+                    '"interest rate" "exchange rate" "import prices" '
+                    '"monetary policy" '
+                    'site:federalreserve.gov OR site:imf.org'
+                )
+            else:
+                arama_sorgusu = (
+                    "central bank raises interest rates economy "
+                    "economic activity inflation"
+                )
+
         # 🧠 Tüm başarılı arama kaynaklarını tek havuzda topla.
         # Bir kaynak başarısız olsa bile diğerleri devam eder.
         tum_sonuclar = []
@@ -3342,7 +3394,7 @@ def web_arastir(sorgu, limit=6):
 
         ddg_url = (
             "https://html.duckduckgo.com/html/?q="
-            + quote(sorgu)
+            + quote(arama_sorgusu)
         )
 
         try:
@@ -3393,7 +3445,7 @@ def web_arastir(sorgu, limit=6):
 
             google_url = (
                 "https://www.google.com/search?q="
-                + quote(sorgu)
+                + quote(arama_sorgusu)
                 + "&hl=tr&gl=tr"
             )
 
@@ -3445,7 +3497,7 @@ def web_arastir(sorgu, limit=6):
 
             bing_url = (
                 "https://www.bing.com/search?q="
-                + quote(sorgu)
+                + quote(arama_sorgusu)
                 + "&setlang=tr-TR"
                 + "&count=20"
                 + "&first=0"
@@ -3489,7 +3541,14 @@ def web_arastir(sorgu, limit=6):
         if tum_sonuclar:
             # Arama motoru yanlış/ilgisiz sonuç döndürdüğünde
             # bunları doğrudan cevap kaynağı olarak kullanma.
-            soru = str(sorgu or "").casefold()
+            # Ekonomi sorularında arama motoruna gönderilen
+            # İngilizce/ek bağlam da sonuç filtresine dahil edilir.
+            filtre_sorgusu = (
+                arama_sorgusu
+                if ekonomi_arama
+                else sorgu
+            )
+            soru = str(filtre_sorgusu or "").casefold()
             sorgu_kelime = {
                 k for k in re.findall(r"[a-z0-9çğıöşü]+", soru)
                 if len(k) >= 4
@@ -3627,6 +3686,7 @@ def web_arastir(sorgu, limit=6):
                 kısa_sorgu
                 and kısa_sorgu != soru
                 and len(kelimeler) >= 4
+                and not ekonomi_arama
             ):
                 sorgu_kelime = set(kelimeler)
 
