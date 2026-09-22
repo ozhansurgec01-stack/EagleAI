@@ -1224,6 +1224,21 @@ class EagleMerkezMotoru:
         """
         mesaj_norm = cls.normalize(mesaj)
 
+        ekonomi_mekanizma = bool(
+            re.search(
+                r"\b(faiz|politika faizi|enflasyon|büyüme|ekonomik büyüme|"
+                r"ithalat|ihracat)\b",
+                mesaj_norm
+            )
+            and re.search(
+                r"\b(nasıl|neden|etkiler|etkileyebilir|etki|mekanizma)\b",
+                mesaj_norm
+            )
+        )
+
+        if ekonomi_mekanizma:
+            return None, 0.0
+
         genel_doviz = bool(
             re.search(
                 r"\bdoviz\b|\bdöviz\b|\bdövizleri\b|"
@@ -1609,6 +1624,79 @@ class EagleMerkezMotoru:
             )
         )
 
+        # ============================================================
+        # SORU SINIFLANDIRMA: EKONOMİ
+        # ============================================================
+        ekonomi_sorusu = bool(
+            re.search(
+                r"\b("
+                r"faiz|faizler|politika faizi|"
+                r"enflasyon|enflasyonu|"
+                r"büyüme|büyümeyi|ekonomik büyüme|"
+                r"döviz kuru|kur|ithalat|ihracat|"
+                r"yatırım|tüketim|talep"
+                r")\b",
+                soru
+            )
+        )
+
+        ekonomi_mekanizma = bool(
+            re.search(
+                r"\b("
+                r"nasıl|neden|etkiler|etkileyebilir|"
+                r"yardımcı|sonuç|etki|sebep|mekanizma"
+                r")\b",
+                soru
+            )
+        )
+
+        # ============================================================
+        # EKONOMİ MEKANİZMA CEVAPLARI
+        # Arama motorunun alakasız sonuçları yerine temel ekonomik
+        # neden-sonuç ilişkilerini doğrudan cevapla.
+        # ============================================================
+        if ekonomi_sorusu and ekonomi_mekanizma:
+            if re.search(r"\btaylor\b", soru) and re.search(
+                r"enflasyon.*hedef|hedef.*enflasyon",
+                soru
+            ):
+                return (
+                    "Taylor kuralına göre, diğer koşullar sabitken enflasyon "
+                    "hedefin üzerine çıktığında politika faizi artırılması "
+                    "yönünde ayarlanır. Amaç, para politikasını sıkılaştırarak "
+                    "talep ve fiyat baskılarını azaltmaktır.",
+                    0.95
+                )
+
+            if (
+                re.search(r"\bfaiz\b", soru)
+                and re.search(r"\benflasyon\w*\b", soru)
+                and re.search(r"\b(büyüme|büyümeyi|ekonomik büyüme)\b", soru)
+            ):
+                return (
+                    "Faiz artışı borçlanma maliyetini yükselterek tüketim ve "
+                    "yatırım talebini azaltabilir; bu da enflasyon üzerindeki "
+                    "baskıyı düşürür. Ancak aynı mekanizma ekonomik büyümeyi "
+                    "yavaşlatabilir, çünkü toplam harcama ve yatırım azalabilir.",
+                    0.95
+                )
+
+            if (
+                re.search(r"\bfaiz\b", soru)
+                and re.search(r"\b(döviz kuru|kur\w*)\b", soru)
+                and re.search(r"\bithalat\b", soru)
+            ):
+                return (
+                    "Faiz artışı, diğer koşullar sabitken yerel para cinsinden "
+                    "varlıkların getirisini artırarak döviz talebi ve sermaye "
+                    "akımları üzerinden yerel paranın değer kazanmasına katkı "
+                    "sağlayabilir. Daha güçlü bir kur, ithal malların yerel "
+                    "para cinsinden fiyatını düşürerek ithalat kaynaklı "
+                    "enflasyon baskısını azaltabilir.",
+                    0.95
+                )
+
+
         yonlendirme_sorusu = bool(
             re.search(
                 r"\b("
@@ -1854,6 +1942,60 @@ class EagleMerkezMotoru:
                             baslik_norm
                         ):
                             puan -= 35
+
+                # ========================================================
+                # EKONOMİ ADAY PUANLAMA
+                # ========================================================
+                if ekonomi_sorusu and ekonomi_mekanizma:
+                    ekonomi_kavramlari = {
+                        "faiz": bool(re.search(
+                            r"\b(faiz|faizler|politika faizi|borçlanma maliyeti)\b",
+                            norm
+                        )),
+                        "enflasyon": bool(re.search(
+                            r"\b(enflasyon|fiyatlar|fiyat baskısı|fiyat baskilari)\b",
+                            norm
+                        )),
+                        "buyume": bool(re.search(
+                            r"\b(büyüme|üretim|gsyh|gayrisafi|ekonomik faaliyet)\b",
+                            norm
+                        )),
+                        "talep": bool(re.search(
+                            r"\b(talep|tüketim|harcama|yatırım)\b",
+                            norm
+                        )),
+                        "kur": bool(re.search(
+                            r"\b(döviz kuru|kur|ithalat|ihracat)\b",
+                            norm
+                        )),
+                    }
+
+                    kavram_sayisi = sum(ekonomi_kavramlari.values())
+
+                    if kavram_sayisi >= 3:
+                        puan += 80
+                    elif kavram_sayisi == 2:
+                        puan += 40
+
+                    if re.search(
+                        r"\b("
+                        r"azaltır|azaltir|düşürür|dusurur|"
+                        r"artırır|artirir|yükseltir|yukseltir|"
+                        r"yavaşlatır|yavaslatir|"
+                        r"teşvik eder|tesvik eder|"
+                        r"neden olur|yol açar|yol acar|"
+                        r"böylece|boylece|sonucunda|"
+                        r"bu nedenle|dolayısıyla|dolayisiyla"
+                        r")\b",
+                        norm
+                    ):
+                        puan += 45
+
+                    if (
+                        ekonomi_kavramlari["enflasyon"]
+                        and ekonomi_kavramlari["buyume"]
+                    ):
+                        puan += 70
 
                 # İşlem sorularında gerçek adım cümlelerini öne çıkar.
                 bilgi_fiili = bool(
@@ -2633,6 +2775,7 @@ class EagleMerkezMotoru:
         if (
             tekrar_skoru >= 0.60
             and not cok_parcali_soru
+            and not ekonomi_sorusu
             and karar.get("intent") != "spor"
             and not bool(
                 re.search(
