@@ -137,14 +137,11 @@ class EagleMerkezMotoru:
             # "kur" ve "kuru" yalnızca bağımsız kelime olarak
             # değer/kur sorusu kabul edilir.
             # Böylece "kurulur" ve "kurulum" yanlış eşleşmez.
-            if ifade in ("kur", "kuru"):
-                if re.search(
-                    rf"(?<!\w){re.escape(ifade)}(?!\w)",
-                    metin,
-                    flags=re.IGNORECASE
-                ):
-                    return True
-            elif ifade in metin:
+            if re.search(
+                rf"(?<!\w){re.escape(ifade)}(?!\w)",
+                metin,
+                flags=re.IGNORECASE
+            ):
                 return True
 
         return False

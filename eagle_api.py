@@ -721,10 +721,15 @@ def bilgi_bankasi_ara(mesaj):
         "ebob", "ekok", "denklem"
     )
 
-    if any(k in metin for k in matematik_oncelik):
+    def konu_terimi_eslesiyor(k):
+        if k == "%":
+            return "%" in metin
+        return bool(re.search(rf"(?<!\w){re.escape(k)}(?!\w)", metin, re.IGNORECASE))
+
+    if any(konu_terimi_eslesiyor(k) for k in matematik_oncelik):
         konu = "matematik"
         for ad, kelimeler in konu_eslesmeleri.items():
-            if any(k in metin for k in kelimeler):
+            if any(konu_terimi_eslesiyor(k) for k in kelimeler):
                 konu = ad
                 break
 
@@ -792,8 +797,21 @@ def bilgi_bankasi_ara(mesaj):
         }
 
         secilen = None
+
+        def matematik_terimi_eslesiyor(k):
+            # Matematik terimleri alt dize olarak değil, tam kelime/ifade
+            # olarak eşleşsin. Böylece "oran", "oranlarının" içinde
+            # yanlışlıkla eşleşmez; "oran" ve "orantı" da karışmaz.
+            if k == "%":
+                return "%" in metin
+            return bool(re.search(
+                rf"(?<!\w){re.escape(k)}(?!\w)",
+                metin,
+                re.IGNORECASE,
+            ))
+
         for alt_konu, kelimeler in matematik_eslesmeleri.items():
-            if any(k in metin for k in kelimeler):
+            if any(matematik_terimi_eslesiyor(k) for k in kelimeler):
                 secilen = alt_konu
                 break
 
