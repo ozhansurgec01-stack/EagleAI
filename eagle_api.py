@@ -7325,6 +7325,20 @@ def sohbet():
                 # Süper Lig sonuç/fikstür sorgularında resmi TFF verisini kullan.
                 web_verisi = super_lig_getir(mesaj)
 
+                # 🇹🇷 TFF'de istenen hafta için maç yoksa bunu doğrudan bildir.
+                super_lig_hafta_sorgusu = any(k in mesaj_spor for k in [
+                    "bu hafta", "bu haftanın", "bu haftaki",
+                    "gelecek hafta", "gelecek haftanın", "gelecek haftaki"
+                ])
+                if super_lig_mi and super_lig_hafta_sorgusu and not web_verisi:
+                    return jsonify({
+                        "ok": True,
+                        "answer": "🇹🇷 SÜPER LİG\n\n❌ Bu hafta Süper Lig'de maç yok.",
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
             # 🇹🇷 Genel Süper Lig sonuçlarını resmi TFF verisinden doğrudan cevapla.
             # Takım adı aranmaz; yapılandırılmış TFF maç kayıtları kullanılır.
             if super_lig_sonuc_istegi and web_verisi:
