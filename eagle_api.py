@@ -7018,9 +7018,19 @@ def sohbet():
             return jsonify({
                 "ok": True,
                 "answer": (
-                    f"```{program_sonuc.get('dil', '')}\n"
-                    f"{program_sonuc.get('kod', '')}\n"
-                    "```"
+                    (
+                        str(program_sonuc.get("aciklama", "")).strip()
+                        or "Tabii! İstediğin programı hazırladım. 👇"
+                    )
+                    + "\n\n"
+                    + f"```{program_sonuc.get('dil', '')}\n"
+                    + f"{program_sonuc.get('kod', '')}\n"
+                    + "```"
+                    + (
+                        "\n\n**Kontrol:** Python sözdizimi kontrolünden geçti."
+                        if program_sonuc.get("syntax_ok") is True
+                        else ""
+                    )
                 ),
                 "kod": program_sonuc.get("kod", ""),
                 "dil": program_sonuc.get("dil"),

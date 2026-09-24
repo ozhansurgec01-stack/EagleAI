@@ -82,6 +82,8 @@ class EagleProgramUretmeMotoru:
 
         kod, dil = self._kodu_ayikla(metin)
 
+        aciklama = self._program_aciklamasi(metin)
+
         if not kod:
             return {
                 "ok": False,
@@ -93,6 +95,7 @@ class EagleProgramUretmeMotoru:
             "ok": True,
             "kod": kod,
             "dil": dil,
+            "aciklama": aciklama,
             "syntax_ok": None,
             "analiz": [],
         }
@@ -115,11 +118,12 @@ class EagleProgramUretmeMotoru:
             "Kullanıcının istediği programı üret.\n\n"
             "Kurallar:\n"
             "1. Kullanıcının istediği programlama dilini kullan.\n"
-            "2. Gereksiz açıklama yazma.\n"
-            "3. Çalıştırılabilir ve düzenli kod üretmeye çalış.\n"
-            "4. Kod dışında uzun açıklamalar ekleme.\n"
-            "5. Cevabı tek bir kod bloğu içinde ver.\n"
-            "6. Kod bloğunun dil etiketini doğru belirt.\n\n"
+            "2. Kodu tek ve eksiksiz bir kod bloğu içinde ver.\n"
+            "3. Koddan önce kısa ve doğal bir giriş cümlesi yaz.\n"
+            "4. Koddan sonra kısa bir açıklama yaz; kodun ne yaptığını ve önemli bölümlerini anlaşılır şekilde anlat.\n"
+            "5. Gereksiz uzun açıklamalar, tekrarlar veya konu dışı bilgiler ekleme.\n"
+            "6. Çalıştırılabilir ve düzenli kod üretmeye çalış.\n"
+            "7. Kod bloğunun dil etiketini doğru belirt.\n\n"
             f"KULLANICI İSTEĞİ:\n{mesaj}"
         )
 
@@ -138,6 +142,18 @@ class EagleProgramUretmeMotoru:
             for part in parts
             if isinstance(part, dict) and part.get("text")
         ).strip()
+
+    @staticmethod
+    def _program_aciklamasi(metin):
+        parcalar = re.split(
+            r"```[A-Za-z0-9_+#.-]*\s*\n.*?```",
+            metin,
+            flags=re.DOTALL,
+        )
+        aciklama = " ".join(
+            parca.strip() for parca in parcalar if parca.strip()
+        ).strip()
+        return aciklama
 
     @staticmethod
     def _kodu_ayikla(metin):
