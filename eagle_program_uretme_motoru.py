@@ -33,91 +33,13 @@ class EagleProgramUretmeMotoru:
         if yerel_sonuc is not None:
             return yerel_sonuc
 
-        if not self.gemini_key:
-            return {
-                "ok": False,
-                "error": "GEMINI_API_KEY bulunamadı.",
-            }
-
-        prompt = self._prompt_olustur(mesaj)
-
-        try:
-            response = requests.post(
-                self.GEMINI_URL,
-                params={"key": self.gemini_key},
-                json={
-                    "contents": [
-                        {
-                            "parts": [
-                                {"text": prompt}
-                            ]
-                        }
-                    ]
-                },
-                timeout=30,
-            )
-        except Exception as exc:
-            return {
-                "ok": False,
-                "error": f"Program üretim bağlantı hatası: {exc}",
-            }
-
-        if not response.ok:
-            return {
-                "ok": False,
-                "error": (
-                    f"Program üretim servisi HTTP {response.status_code} "
-                    "döndürdü."
-                ),
-            }
-
-        try:
-            data = response.json()
-        except Exception:
-            return {
-                "ok": False,
-                "error": "Program üretim servisi geçersiz JSON döndürdü.",
-            }
-
-        metin = self._gemini_metin(data)
-
-        if not metin:
-            return {
-                "ok": False,
-                "error": "Program üretim servisi boş cevap döndürdü.",
-            }
-
-        kod, dil = self._kodu_ayikla(metin)
-
-        aciklama = self._program_aciklamasi(metin)
-
-        if not kod:
-            return {
-                "ok": False,
-                "error": "Üretilen cevapta kod bulunamadı.",
-                "ham_cevap": metin,
-            }
-
-        sonuc = {
-            "ok": True,
-            "kod": kod,
-            "dil": dil,
-            "aciklama": aciklama,
-            "syntax_ok": None,
-            "analiz": [],
+        return {
+            "ok": False,
+            "error": (
+                "Bu program türü için Eagle'ın yerel üretim şablonu "
+                "henüz hazır değil."
+            ),
         }
-
-        if dil == "python":
-            syntax_ok, syntax_hatasi = self._python_kontrol(kod)
-            sonuc["syntax_ok"] = syntax_ok
-
-            if not syntax_ok:
-                sonuc["syntax_hatasi"] = syntax_hatasi
-
-            analiz = EagleKodAnalizMotoru().analiz_et(kod)
-            sonuc["analiz"] = analiz
-
-        return sonuc
 
     def _prompt_olustur(self, mesaj):
         return (
@@ -208,6 +130,122 @@ class EagleProgramUretmeMotoru:
         Tanınmayan isteklerde None döndürür.
         """
         k = mesaj.lower().strip()
+
+        if "haber" in k and any(x in k for x in (
+            "program", "oluştur", "olustur", "yaz", "yap",
+            "geliştir", "gelistir"
+        )):
+            kod = """haberler = [
+    {"baslik": "Yapay zeka alanında yeni gelişmeler",
+     "kategori": "Teknoloji", "tarih": "2026-09-24"},
+    {"baslik": "Bilim dünyasından güncel gelişmeler",
+     "kategori": "Bilim", "tarih": "2026-09-23"},
+    {"baslik": "Spor dünyasından son haberler",
+     "kategori": "Spor", "tarih": "2026-09-22"},
+]
+
+
+def haberleri_listele(liste):
+    if not liste:
+        print("\\nHaber bulunamadı.")
+        return
+
+    print("\\n--- HABERLER ---")
+    for i, haber in enumerate(liste, 1):
+        print(
+            f"{i}. [{haber['kategori']}] "
+            f"{haber['baslik']} - {haber['tarih']}"
+        )
+
+
+def kategori_filtrele(liste):
+    kategori = input("Kategori adı: ").strip().lower()
+    sonuc = [
+        haber for haber in liste
+        if haber["kategori"].lower() == kategori
+    ]
+    haberleri_listele(sonuc)
+
+
+def haber_ara(liste):
+    arama = input("Aranacak kelime: ").strip().lower()
+    sonuc = [
+        haber for haber in liste
+        if arama in haber["baslik"].lower()
+    ]
+    haberleri_listele(sonuc)
+
+
+def tarihe_gore_sirala(liste):
+    sirali = sorted(
+        liste,
+        key=lambda haber: haber["tarih"],
+        reverse=True,
+    )
+    haberleri_listele(sirali)
+
+
+def main():
+    while True:
+        print("\\n=== EAGLE HABER PROGRAMI ===")
+        print("1 - Tüm haberleri göster")
+        print("2 - Kategoriye göre filtrele")
+        print("3 - Haber ara")
+        print("4 - Tarihe göre sırala")
+        print("5 - Kategorileri göster")
+        print("0 - Çıkış")
+
+        secim = input("Seçiminiz: ").strip()
+
+        if secim == "1":
+            haberleri_listele(haberler)
+        elif secim == "2":
+            kategori_filtrele(haberler)
+        elif secim == "3":
+            haber_ara(haberler)
+        elif secim == "4":
+            tarihe_gore_sirala(haberler)
+        elif secim == "5":
+            kategoriler = sorted({
+                haber["kategori"] for haber in haberler
+            })
+            print("\\nKategoriler:")
+            for kategori in kategoriler:
+                print("-", kategori)
+        elif secim == "0":
+            print("Program kapatıldı.")
+            break
+        else:
+            print("Geçersiz seçim.")
+
+
+if __name__ == "__main__":
+    main()
+"""
+            syntax_ok, syntax_hatasi = (
+                EagleProgramUretmeMotoru._python_kontrol(kod)
+            )
+
+            sonuc = {
+                "ok": syntax_ok,
+                "kod": kod,
+                "dil": "python",
+                "aciklama": (
+                    "Tabii! Haber programını Eagle'ın yerel üretim "
+                    "motoruyla hazırladım. Haberleri listeleyebilir, "
+                    "kategoriye göre filtreleyebilir, arayabilir ve "
+                    "tarihe göre sıralayabilirsin."
+                ),
+                "syntax_ok": syntax_ok,
+                "analiz": [],
+            }
+
+            if not syntax_ok:
+                sonuc["syntax_hatasi"] = syntax_hatasi
+            else:
+                sonuc["analiz"] = EagleKodAnalizMotoru().analiz_et(kod)
+
+            return sonuc
 
         if (
             "merhaba dünya" in k
