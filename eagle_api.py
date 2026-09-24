@@ -3,6 +3,7 @@ from eagle_akil_motoru import eagle_akil_motorunu_kur
 from eagle_autofix import EagleAutoFixEngine
 from eagle_genel_sohbet import genel_sohbet
 from eagle_cevap_motoru import _soru_gibi_mi
+from eagle_program_uretme_motoru import EagleProgramUretmeMotoru
 from flask import Flask, request, jsonify
 import os
 
@@ -2066,6 +2067,38 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             "neden": "Python bilgi sorusu algılandı; bilgi bankasına yönlendirilecek.",
             "arac": "bilgi_bankasi",
             "islem": "cevapla"
+        })
+        return karar
+
+    # 💻 PROGRAM YAZMA
+    # Açıkça yeni bir program/kod/script/uygulama oluşturulması istendiğinde
+    # mevcut kod analizinden ayrı bir üretim akışına yönlendir.
+    program_yazma_hedefleri = [
+        "program", "kod", "script", "uygulama"
+    ]
+    program_yazma_filleri = [
+        "yaz", "oluştur", "olustur", "üret", "uret",
+        "geliştir", "gelistir", "hazırla", "hazirla"
+    ]
+
+    program_yazma_istegi = (
+        any(
+            re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+            for x in program_yazma_hedefleri
+        )
+        and any(
+            re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+            for x in program_yazma_filleri
+        )
+    )
+
+    if program_yazma_istegi:
+        karar.update({
+            "intent": "program_yazma",
+            "guven": "yüksek",
+            "neden": "Yeni bir program/kod/script/uygulama oluşturma isteği algılandı.",
+            "arac": "program_yazma",
+            "islem": "program_uret"
         })
         return karar
 
@@ -5961,6 +5994,7 @@ def eagle_baglam_yonlendir(mesaj, karar, sohbet_baglam, borc_modulu, gecmis=None
         "spor_kaynaklari",
         "kod_analiz",
         "hafiza",
+        "program_yazma",
     }
 
     if karar.get("arac") in yeni_konu_araclari:
@@ -6813,6 +6847,59 @@ def sohbet():
 
     # 🌐 Güncel bilgi gerekiyorsa ücretsiz web araştırması yap
     web_verisi = []
+    # 💻 PROGRAM YAZMA
+    # Program üretimi web/merkez/Gemini son-çare zincirine düşmez.
+    if karar.get("arac") == "program_yazma":
+        try:
+            program_motoru = EagleProgramUretmeMotoru()
+            program_sonuc = program_motoru.uret(mesaj)
+
+            if not program_sonuc.get("ok"):
+                return jsonify({
+                    "ok": False,
+                    "answer": (
+                        "🦅 Program üretilemedi. "
+                        + str(
+                            program_sonuc.get(
+                                "error",
+                                "Bilinmeyen üretim hatası."
+                            )
+                        )
+                    ),
+                    "eagle_direct": True,
+                    "web_search": False,
+                    "program_yazma": True,
+                    "memory_count": len(hafiza_yukle())
+                })
+
+            return jsonify({
+                "ok": True,
+                "answer": program_sonuc.get("kod", ""),
+                "kod": program_sonuc.get("kod", ""),
+                "dil": program_sonuc.get("dil"),
+                "syntax_ok": program_sonuc.get("syntax_ok"),
+                "analiz": program_sonuc.get("analiz", []),
+                "eagle_direct": True,
+                "web_search": False,
+                "program_yazma": True,
+                "memory_count": len(hafiza_yukle())
+            })
+
+        except Exception as program_hatasi:
+            print(
+                "⚠️ Program üretim motoru hatası:",
+                program_hatasi,
+                flush=True
+            )
+            return jsonify({
+                "ok": False,
+                "answer": "🦅 Program üretim motorunda beklenmeyen bir hata oluştu.",
+                "eagle_direct": True,
+                "web_search": False,
+                "program_yazma": True,
+                "memory_count": len(hafiza_yukle())
+            })
+
     cevap = ""
     live_sports_debug = False
 
@@ -7357,7 +7444,7 @@ def sohbet():
 
     # 🧠 Eagle teknik bilgi bankası — doğrudan cevap
     bilgi_sonuclari = []
-    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api", "guvenli_hesaplama", "kod_analiz") and not autofix_istegi:
+    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api", "guvenli_hesaplama", "kod_analiz", "program_yazma") and not autofix_istegi:
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
     if bilgi_sonuclari:

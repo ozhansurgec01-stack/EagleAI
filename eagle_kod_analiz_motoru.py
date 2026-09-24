@@ -670,7 +670,8 @@ class EagleKodAnalizMotoru:
                     "str", "int", "float",
                     "list", "dict", "set", "tuple",
                     "open", "enumerate", "zip",
-                    "sum", "min", "max", "abs", "isinstance"
+                    "sum", "min", "max", "abs", "isinstance",
+                    "input", "exit"
                 })
 
                 if node.id not in tanimli_isimler and node.id not in bilinen:
