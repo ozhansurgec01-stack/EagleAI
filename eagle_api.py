@@ -1813,7 +1813,20 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "ne yapabilirsin"
     ]
 
-    if any(x in k for x in basit_sohbet_kelimeleri):
+    if (
+        any(x in k for x in basit_sohbet_kelimeleri)
+        and not (
+            "program" in k
+            and (
+                "yap" in k
+                or "yaz" in k
+                or "oluştur" in k
+                or "olustur" in k
+                or "geliştir" in k
+                or "gelistir" in k
+            )
+        )
+    ):
         karar.update({
             "intent": "basit_sohbet",
             "guven": "yüksek",
@@ -7004,7 +7017,11 @@ def sohbet():
 
             return jsonify({
                 "ok": True,
-                "answer": program_sonuc.get("kod", ""),
+                "answer": (
+                    f"```{program_sonuc.get('dil', '')}\n"
+                    f"{program_sonuc.get('kod', '')}\n"
+                    "```"
+                ),
                 "kod": program_sonuc.get("kod", ""),
                 "dil": program_sonuc.get("dil"),
                 "syntax_ok": program_sonuc.get("syntax_ok"),
