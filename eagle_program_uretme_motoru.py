@@ -26,6 +26,13 @@ class EagleProgramUretmeMotoru:
                 "error": "Program üretimi için istek boş olamaz.",
             }
 
+        # 🦅 EAGLE YEREL PROGRAM ÜRETİMİ
+        # Basit Python programları Gemini'ye gönderilmeden doğrudan Eagle
+        # tarafından üretilir.
+        yerel_sonuc = self._yerel_program_uret(mesaj)
+        if yerel_sonuc is not None:
+            return yerel_sonuc
+
         if not self.gemini_key:
             return {
                 "ok": False,
@@ -192,6 +199,54 @@ class EagleProgramUretmeMotoru:
 
         dil = dil_eslemesi.get(etiket, etiket or "bilinmiyor")
         return kod, dil
+
+    @staticmethod
+    def _yerel_program_uret(mesaj):
+        """
+        Basit Python programlarını Eagle'ın kendi kurallarıyla üretir.
+        Gemini veya internet gerektirmez.
+        Tanınmayan isteklerde None döndürür.
+        """
+        k = mesaj.lower().strip()
+
+        if (
+            "merhaba dünya" in k
+            or "merhaba dunya" in k
+        ) and any(x in k for x in (
+            "ekrana",
+            "yazdır",
+            "yazdir",
+            "print"
+        )):
+            kod = 'print("Merhaba Dünya")'
+
+            syntax_ok, syntax_hatasi = (
+                EagleProgramUretmeMotoru._python_kontrol(kod)
+            )
+
+            sonuc = {
+                "ok": syntax_ok,
+                "kod": kod,
+                "dil": "python",
+                "aciklama": (
+                    "Tabii! İstediğin basit Python programını hazırladım. "
+                    'Bu kod, print() fonksiyonuyla "Merhaba Dünya" '
+                    "yazısını ekrana çıkarır."
+                ),
+                "syntax_ok": syntax_ok,
+                "analiz": [],
+            }
+
+            if not syntax_ok:
+                sonuc["syntax_hatasi"] = syntax_hatasi
+            else:
+                sonuc["analiz"] = (
+                    EagleKodAnalizMotoru().analiz_et(kod)
+                )
+
+            return sonuc
+
+        return None
 
     @staticmethod
     def _python_kontrol(kod):
