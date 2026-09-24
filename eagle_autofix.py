@@ -6,6 +6,7 @@ from pathlib import Path
 import time
 
 from eagle_kod_analiz_motoru import EagleKodAnalizMotoru
+from eagle_kod_calistirici import secure_run
 
 class EagleAutoFixEngine:
     def __init__(self, project_root=".", max_attempts=10):
@@ -212,17 +213,15 @@ class EagleAutoFixEngine:
             "suggestion": suggestion
         }
 
-    def run_file(self, file_path: Path) -> tuple[bool, str]:
-        """Python dosyasını çalıştırır ve hata çıktısını yakalar; dosyayı değiştirmez."""
+    def run_file(
+        self,
+        file_path: Path,
+        working_dir: Path | None = None
+    ) -> tuple[bool, str]:
+        """Python dosyasını güvenli runner üzerinden çalıştırır."""
         try:
-            result = subprocess.run(
-                ["python3", str(file_path)],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            output = (result.stdout or "") + "\n" + (result.stderr or "")
-            return result.returncode == 0, output.strip()
+            workspace = Path(working_dir).resolve() if working_dir else self.project_root
+            return secure_run(Path(file_path), workspace, timeout=10)
         except Exception as e:
             return False, str(e)
 
@@ -255,7 +254,11 @@ class EagleAutoFixEngine:
                 "findings": []
             }
 
-    def repair_loop(self, target_file: Path) -> dict:
+    def repair_loop(
+        self,
+        target_file: Path,
+        run_cwd: Path | None = None
+    ) -> dict:
         """Statik analiz + mantık + güvenli düzeltme + doğrulama döngüsü."""
         target_file = Path(target_file)
 
@@ -416,7 +419,7 @@ class EagleAutoFixEngine:
                             syntax_ok, syntax_msg = self.check_syntax(target_file)
 
                             if syntax_ok:
-                                run_ok, run_output = self.run_file(target_file)
+                                run_ok, run_output = self.run_file(target_file, working_dir=run_cwd)
 
                                 history[-1]["verification"] = {
                                     "syntax_ok": syntax_ok,
@@ -458,7 +461,7 @@ class EagleAutoFixEngine:
                                     "backup": str(backup_path),
                                 }
 
-                            run_ok, run_output = self.run_file(target_file)
+                            run_ok, run_output = self.run_file(target_file, working_dir=run_cwd)
                             history[-1]["logic_fix"] = fix
                             history[-1]["verification"] = {
                                 "syntax_ok": syntax_ok,
@@ -517,7 +520,7 @@ class EagleAutoFixEngine:
                                 }
                                 continue
 
-                            run_ok, run_output = self.run_file(target_file)
+                            run_ok, run_output = self.run_file(target_file, working_dir=run_cwd)
                             history[-1]["verification"] = {
                                 "syntax_ok": syntax_ok,
                                 "run_ok": run_ok,
@@ -612,7 +615,7 @@ class EagleAutoFixEngine:
 
                                     # Gerçek dosya testi.
                                     run_ok, run_output = (
-                                        self.run_file(target_file)
+                                        self.run_file(target_file, working_dir=run_cwd)
                                     )
 
                                     history[-1]["verification"] = {
@@ -648,7 +651,7 @@ class EagleAutoFixEngine:
                 else:
                     # Mantıksal otomatik düzeltme yoksa mevcut
                     # runtime analizine geç.
-                    output_ok, output = self.run_file(target_file)
+                    output_ok, output = self.run_file(target_file, working_dir=run_cwd)
 
                     if output_ok:
                         return {

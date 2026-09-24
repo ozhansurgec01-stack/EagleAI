@@ -4,6 +4,8 @@ from eagle_autofix import EagleAutoFixEngine
 from eagle_genel_sohbet import genel_sohbet
 from eagle_cevap_motoru import _soru_gibi_mi
 from eagle_program_uretme_motoru import EagleProgramUretmeMotoru
+from eagle_kod_guvenlik_motoru import EagleKodGuvenlikMotoru
+from eagle_kod_calistirici import secure_run
 from flask import Flask, request, jsonify
 import os
 
@@ -6461,14 +6463,33 @@ def sohbet():
                 encoding="utf-8"
             )
 
+            guvenlik_sonucu = EagleKodGuvenlikMotoru().kontrol_et(aktif_kod)
+            if not guvenlik_sonucu.get("guvenli"):
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🛡️ EAGLE KOD ÇALIŞTIRMA ENGELLENDİ\n\n"
+                        + "\n".join(
+                            f"• {bulgu}"
+                            for bulgu in guvenlik_sonucu.get("bulgular", [])
+                        )
+                    ),
+                    "eagle_direct": True,
+                    "code_analysis": True,
+                    "code_execution": False,
+                    "security_blocked": True,
+                    "security_findings": guvenlik_sonucu.get("bulgular", []),
+                    "memory_count": len(hafiza_yukle())
+                })
+
             try:
-                sonuc = subprocess.run(
-                    [sys.executable, str(calisma_dosyasi)],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    cwd=str(calisma_klasoru)
+                calisma_ok, calisma_output = secure_run(
+                    calisma_dosyasi,
+                    calisma_klasoru,
+                    timeout=5
                 )
+                stdout = calisma_output.strip()
+                stderr = ""
 
                 stdout = (sonuc.stdout or "").strip()
                 stderr = (sonuc.stderr or "").strip()
@@ -6640,15 +6661,41 @@ def sohbet():
                 encoding="utf-8"
             )
 
+            guvenlik_sonucu = EagleKodGuvenlikMotoru().kontrol_et(kaynak_kod)
+            if not guvenlik_sonucu.get("guvenli"):
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🛡️ EAGLE KOD ÇALIŞTIRMA ENGELLENDİ\n\n"
+                        + "\n".join(
+                            f"• {bulgu}"
+                            for bulgu in guvenlik_sonucu.get("bulgular", [])
+                        )
+                    ),
+                    "eagle_direct": True,
+                    "code_analysis": True,
+                    "code_execution": False,
+                    "security_blocked": True,
+                    "security_findings": guvenlik_sonucu.get("bulgular", []),
+                    "memory_count": len(hafiza_yukle())
+                })
+
             try:
-                # Yapıştırılmış Python kodunun gerçek çalışma çıktısını al.
-                calisma_sonucu = subprocess.run(
-                    [sys.executable, str(gecici_dosya)],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    cwd=str(gecici_klasor)
+                # Yapıştırılmış Python kodunun güvenli çalışma çıktısını al.
+                calisma_ok, calisma_output = secure_run(
+                    gecici_dosya,
+                    gecici_klasor,
+                    timeout=5
                 )
+                calisma_sonucu = type(
+                    "SecureRunResult",
+                    (),
+                    {
+                        "returncode": 0 if calisma_ok else 1,
+                        "stdout": calisma_output if calisma_ok else "",
+                        "stderr": "" if calisma_ok else calisma_output,
+                    }
+                )()
                 gercek_cikti = (calisma_sonucu.stdout or "").strip()
                 gercek_hata = (calisma_sonucu.stderr or "").strip()
 
