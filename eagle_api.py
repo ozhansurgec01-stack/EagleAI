@@ -2100,9 +2100,15 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
             for x in program_yazma_hedefleri
         )
-        and any(
-            re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
-            for x in program_yazma_filleri
+        and (
+            any(
+                re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+                for x in program_yazma_filleri
+            )
+            or (
+                "yap" in k
+                and any(x in k for x in ("python", "python'da", "python ile", "kodlama"))
+            )
         )
     )
 
@@ -6452,6 +6458,7 @@ def sohbet():
     # genel sohbet kararında öğrenilmiş aracı devreye al.
     if (
         ogrenilmis_karar
+        and karar.get("intent") != "basit_sohbet"
         and (
             karar.get("arac") == "eagle_sohbet"
             or (
@@ -7413,8 +7420,14 @@ def sohbet():
                 )
 
             # 🌐 Güncel spor soruları için yalnızca veri yoksa genel web araması yap.
-            # Mevcut resmi/özel veri tekrar ezilmez.
-            if not web_verisi:
+            # Süper Lig resmi TFF sonucu boşsa bu, "bu hafta maç yok" anlamına gelebilir.
+            if not web_verisi and not (
+                super_lig_mi
+                and any(k in mesaj_spor for k in [
+                    "bu hafta", "bu haftanın", "bu haftaki",
+                    "gelecek hafta", "gelecek haftanın", "gelecek haftaki"
+                ])
+            ):
                 arama_sorgusu = spor_arama_sorgusu(mesaj)
                 web_verisi = web_arastir(
                     arama_sorgusu,
