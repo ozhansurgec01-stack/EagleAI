@@ -1568,6 +1568,14 @@ def spor_arama_sorgusu(mesaj):
         return f"Türkiye voleybol {dun} maç sonuçları"
 
     # ⚽ Futbol
+    # 🇹🇷 A Milli Futbol Takımı — U21 ve diğer milli takımlarla karışmaması için
+    a_milli_mi = any(k in mesaj_kucuk for k in [
+        "a milli",
+        "a-milli",
+        "a millî",
+        "a-millî",
+    ])
+
     futbol_mu = any(k in mesaj_kucuk for k in [
         "futbol", "football",
         "süper lig", "super lig",
@@ -1590,7 +1598,11 @@ def spor_arama_sorgusu(mesaj):
         return f"{mesaj.strip()} maç sonucu skor güncel"
 
     # 🇹🇷 Türkiye
-    if any(k in mesaj_kucuk for k in turkiye_kelimeleri):
+    if any(k in mesaj_kucuk for k in turkiye_kelimeleri) or a_milli_mi:
+        # A Milli Futbol Takımı sorgularını U21 ve diğer milli takımlardan ayır.
+        if a_milli_mi:
+            return f"A Milli Futbol Takımı {zaman_eki} maç programı Türkiye"
+
         if voleybol_mu:
             if gecmis_mac:
                 dun = (datetime.now() - timedelta(days=1)).strftime("%d.%m.%Y")
@@ -4726,6 +4738,56 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
     mesaj_norm = str(mesaj).casefold().replace("\u0307", "")
 
+    # 🇹🇷 A Milli Futbol Takımı sorgusu:
+    # U21, Ümit Milli ve diğer milli takım sayfalarının maçlarını
+    # genel Türkiye fikstürüyle karıştırma.
+    a_milli_mi = any(k in mesaj_norm for k in (
+        "a milli",
+        "a millî",
+        "a-milli",
+        "a-millî",
+    ))
+
+    # 🇹🇷 A MİLLİ RESMİ FİKSTÜR
+    # Web sayfasındaki haber başlıklarının maç gibi okunmasını engelle.
+    if a_milli_mi:
+        from datetime import datetime
+
+        milli_fikstur = [
+            ("2026-09-25", "21:45", "Türkiye", "Fransa"),
+            ("2026-09-28", "21:45", "Türkiye", "İtalya"),
+            ("2026-10-02", "21:45", "Belçika", "Türkiye"),
+            ("2026-10-05", "21:45", "İtalya", "Türkiye"),
+            ("2026-11-12", "20:00", "Türkiye", "Belçika"),
+            ("2026-11-15", "22:45", "Fransa", "Türkiye"),
+        ]
+
+        simdi = datetime.now()
+        gelecek = [
+            x for x in milli_fikstur
+            if datetime.strptime(
+                f"{x[0]} {x[1]}", "%Y-%m-%d %H:%M"
+            ) >= simdi
+        ]
+
+        if gelecek:
+            # Tekil "maçı ne zaman" → yalnızca sıradaki maç.
+            cogul = any(k in mesaj_norm for k in (
+                "maçları", "maçlari", "fikstür", "fikstur", "programı", "programi"
+            ))
+
+            secilecek = gelecek if cogul else gelecek[:1]
+
+            satirlar = []
+            for tarih, saat, ev, dep in secilecek:
+                dt = datetime.strptime(tarih, "%Y-%m-%d")
+                tarih_yazi = dt.strftime("%d.%m.%Y")
+                satirlar.append(
+                    f"⚽ {ev} - {dep} — {tarih_yazi} {saat}"
+                )
+
+            return "🏟️ EAGLE SPOR\n\n📅 A MİLLİ TAKIM\n\n" + "\n".join(satirlar)
+
     # Genel zaman kapsamını tek noktadan belirle.
     # Böylece bugün/yarın/dün/bu hafta/gelecek hafta/oynananlar
     # ayrı ayrı fikstür dalları gerektirmeden aynı akıştan geçer.
@@ -5355,6 +5417,20 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
 
         for ev, deplasman, ham_satir in maclar:
+            # 🇹🇷 A Milli Futbol Takımı: yalnızca Türkiye'nin A Milli
+            # maçlarını bırak; diğer milli takım/lig maçlarını alma.
+            if a_milli_mi:
+                mac_norm = norm(f"{ev} {deplasman}")
+                if "türkiye" not in mac_norm and "turkiye" not in mac_norm:
+                    continue
+
+                # Haber/editör başlıklarını maç olarak alma.
+                if any(k in mac_norm for k in (
+                    "haber", "editör", "editor", "giriş", "giris",
+                    "son dakika", "haberleri",
+                )):
+                    continue
+
             # Maç satırında gerçek saat yoksa maçı alma.
             saat_eslesme = re.search(
                 r"\b([01]?\d|2[0-3])\s*[:.]\s*([0-5]\d)\b",
@@ -7560,10 +7636,31 @@ def sohbet():
         )
 
     # 🗣️ Genel sohbet modülü
+    mesaj_sohbet_kucuk = str(mesaj or "").casefold().strip()
+    sosyal_sohbet = any(
+        ifade in mesaj_sohbet_kucuk
+        for ifade in (
+            "nasılsın",
+            "nasilsin",
+            "iyi misin",
+            "nasıl gidiyor",
+            "nasil gidiyor",
+            "ne yapıyorsun",
+            "ne yapiyorsun",
+            "ne düşünüyorsun",
+            "ne dusunuyorsun",
+            "sence",
+            "fikrin ne",
+        )
+    )
+
     if (
         karar.get("arac") == "eagle_sohbet"
         and not web_verisi
-        and not _soru_gibi_mi(str(mesaj or "").casefold().strip())
+        and (
+            not _soru_gibi_mi(mesaj_sohbet_kucuk)
+            or sosyal_sohbet
+        )
     ):
         cevap = genel_sohbet(
             mesaj,
