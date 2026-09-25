@@ -7828,9 +7828,11 @@ def sohbet():
             f"• {madde}" for madde in bilgi_sonuclari
         )
 
-        # 🦅 /brief: bilgi bankasından yalnızca en güçlü ilk cevabı göster.
-        if karar.get("komut") == "brief":
-            cevap = f"🦅 {bilgi_sonuclari[0]}"
+        # 🦅 Slash komutlarını bilgi bankası cevabına da uygula.
+        cevap = _slash_komut_uygula(
+            cevap,
+            karar.get("komut", "")
+        )
 
         return jsonify({
             "ok": True,
