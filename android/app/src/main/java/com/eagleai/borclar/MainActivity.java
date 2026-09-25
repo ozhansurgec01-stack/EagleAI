@@ -309,6 +309,8 @@ public class MainActivity extends Activity {
         menuBtn.setOnClickListener(v -> {
             PopupMenu popup = new PopupMenu(this, menuBtn);
             popup.getMenu().add("🧠 Hafıza");
+            popup.getMenu().add("➕ Hafızaya Ekle");
+            popup.getMenu().add("🗑️ Hafızadan Çıkar");
             popup.getMenu().add("❓ Yardım");
             popup.getMenu().add("🆕 Yeni");
               popup.getMenu().add("🕘 Son Sohbetler");
@@ -319,7 +321,7 @@ public class MainActivity extends Activity {
             popup.setOnMenuItemClickListener(item -> {
                 String secim = item.getTitle().toString();
 
-                if (secim.contains("Hafıza")) {
+                if (secim.equals("🧠 Hafıza")) {
                     yerelMesajEkle("🧠 Eagle-AI hafızası yükleniyor...");
 
                     executor.execute(() -> {
@@ -339,6 +341,10 @@ public class MainActivity extends Activity {
                             );
                         });
                     });
+                } else if (secim.equals("➕ Hafızaya Ekle")) {
+                    hafizayaEkleDialogGoster();
+                } else if (secim.equals("🗑️ Hafızadan Çıkar")) {
+                    hafizadanCikarDialogGoster();
                 } else if (secim.contains("Yardım")) {
                     yerelMesajEkle(
                             "❓ YARDIM\n\n" +
@@ -466,6 +472,143 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void hafizayaEkleDialogGoster() {
+        EditText giris = new EditText(this);
+        giris.setHint("Hafızaya eklenecek bilgi");
+        giris.setSingleLine(false);
+
+        new AlertDialog.Builder(this)
+                .setTitle("➕ Hafızaya Ekle")
+                .setView(giris)
+                .setNegativeButton("İptal", null)
+                .setPositiveButton("Ekle", (dialog, which) -> {
+                    String bilgi = giris.getText().toString().trim();
+
+                    if (bilgi.isEmpty()) {
+                        Toast.makeText(this, "Hafıza bilgisi boş olamaz.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    executor.execute(() -> {
+                        String sonuc = hafizaDegistirIstek(MEMORY_URL, bilgi);
+
+                        runOnUiThread(() -> {
+                            yerelMesajEkle(sonuc);
+                            kaydirma.post(() ->
+                                    kaydirma.fullScroll(View.FOCUS_DOWN)
+                            );
+                        });
+                    });
+                })
+                .show();
+    }
+
+    private void hafizadanCikarDialogGoster() {
+        EditText giris = new EditText(this);
+        giris.setHint("Silinecek hafıza kaydını aynen yaz");
+        giris.setSingleLine(false);
+
+        new AlertDialog.Builder(this)
+                .setTitle("🗑️ Hafızadan Çıkar")
+                .setView(giris)
+                .setNegativeButton("İptal", null)
+                .setPositiveButton("Çıkar", (dialog, which) -> {
+                    String bilgi = giris.getText().toString().trim();
+
+                    if (bilgi.isEmpty()) {
+                        Toast.makeText(this, "Silinecek bilgi boş olamaz.", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
+
+                    executor.execute(() -> {
+                        String sonuc = hafizaDegistirIstek(
+                                MEMORY_URL + "/sil",
+                                bilgi
+                        );
+
+                        runOnUiThread(() -> {
+                            yerelMesajEkle(sonuc);
+                            kaydirma.post(() ->
+                                    kaydirma.fullScroll(View.FOCUS_DOWN)
+                            );
+                        });
+                    });
+                })
+                .show();
+    }
+
+    private String hafizaDegistirIstek(String adres, String bilgi) {
+        HttpURLConnection baglanti = null;
+
+        try {
+            URL url = new URL(adres);
+            baglanti = (HttpURLConnection) url.openConnection();
+            baglanti.setRequestMethod("POST");
+            baglanti.setConnectTimeout(10000);
+            baglanti.setReadTimeout(15000);
+            baglanti.setDoOutput(true);
+            baglanti.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+
+            JSONObject veri = new JSONObject();
+            veri.put("memory", bilgi);
+
+            byte[] veriBytes =
+                    veri.toString().getBytes(StandardCharsets.UTF_8);
+
+            OutputStream cikti = baglanti.getOutputStream();
+            cikti.write(veriBytes);
+            cikti.flush();
+            cikti.close();
+
+            int kod = baglanti.getResponseCode();
+
+            InputStream akis =
+                    kod >= 200 && kod < 300
+                            ? baglanti.getInputStream()
+                            : baglanti.getErrorStream();
+
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(akis, StandardCharsets.UTF_8)
+            );
+
+            StringBuilder sonuc = new StringBuilder();
+            String satir;
+
+            while ((satir = reader.readLine()) != null) {
+                sonuc.append(satir);
+            }
+
+            reader.close();
+
+            JSONObject json = new JSONObject(sonuc.toString());
+
+            if (kod >= 200 && kod < 300 && json.optBoolean("ok", false)) {
+                if (json.optBoolean("added", false)) {
+                    return "🧠 Hafızaya eklendi.";
+                }
+
+                if (json.optBoolean("removed", false)) {
+                    return "🗑️ Hafızadan çıkarıldı.";
+                }
+
+                return json.optString(
+                        "message",
+                        "🧠 İşlem tamamlandı."
+                );
+            }
+
+            return "❌ Hafıza işlemi başarısız: " +
+                    json.optString("error", "Bilinmeyen hata.");
+
+        } catch (Exception e) {
+            return "Bağlantı hatası: " + e.getMessage();
+        } finally {
+            if (baglanti != null) {
+                baglanti.disconnect();
+            }
+        }
+    }
+
     private String hafizaIstek() {
         HttpURLConnection baglanti = null;
 
@@ -503,20 +646,27 @@ public class MainActivity extends Activity {
                     kod < 300 &&
                     json.optBoolean("ok", false)) {
 
-                JSONArray memory =
-                        json.optJSONArray("memory");
+                JSONObject memory =
+                        json.optJSONObject("memory");
 
-                if (memory == null || memory.length() == 0) {
+                if (memory == null) {
                     return "Hafıza şu anda boş.";
+                }
+
+                JSONArray kullanici =
+                        memory.optJSONArray("kullanici");
+
+                if (kullanici == null || kullanici.length() == 0) {
+                    return "Kullanıcı hafızası şu anda boş.";
                 }
 
                 StringBuilder metin =
                         new StringBuilder();
 
-                for (int i = 0; i < memory.length(); i++) {
+                for (int i = 0; i < kullanici.length(); i++) {
                     metin.append("• ")
-                         .append(memory.optString(i))
-                         .append("\\n");
+                         .append(kullanici.optString(i))
+                         .append("\n");
                 }
 
                 return metin.toString().trim();
@@ -1849,8 +1999,15 @@ private void sohbetYukle(String id) {
             return;
         }
 
+        // Skorları TTS için doğal okut: 2-0 / 2–0 -> 2 0
+        // Görünen cevapta 2-0 aynen korunur.
+        String sesMetni = temizMetin.replaceAll(
+                "(.+?)\\s+(\\d{1,3})\\s*[-–]\\s*(\\d{1,3})\\s+(.+)",
+                "$1 $2 $4 $3"
+        );
+
         konusmaMotoru.speak(
-                temizMetin,
+                sesMetni,
                 TextToSpeech.QUEUE_FLUSH,
                 null,
                 "eagle_cevap"
