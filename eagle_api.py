@@ -3693,7 +3693,11 @@ def web_arastir(sorgu, limit=6):
                 flush=True
             )
 
-        if tum_sonuclar:
+        taylor_arama = bool(
+            re.search(r"\btaylor\b", str(sorgu).casefold())
+        )
+
+        if tum_sonuclar or taylor_arama:
             # Arama motoru yanlış/ilgisiz sonuç döndürdüğünde
             # bunları doğrudan cevap kaynağı olarak kullanma.
             # Ekonomi sorularında arama motoruna gönderilen
@@ -3710,10 +3714,6 @@ def web_arastir(sorgu, limit=6):
             }
 
             ilgili_sonuclar = []
-            taylor_arama = bool(
-                re.search(r"\btaylor\b", str(sorgu).casefold())
-            )
-
             for sonuc in tum_sonuclar:
                 metin = (
                     f"{sonuc.get('title', '')} "
