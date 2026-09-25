@@ -2136,6 +2136,38 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
+    # 📚 GENEL TEKNİK BİLGİ SORULARI
+    # "Flask API nasıl oluşturulur?" gibi bilgi soruları,
+    # yalnızca teknik kelime geçtiği için kod analizine düşmemeli.
+    teknik_bilgi_sorusu = (
+        any(x in k for x in [
+            "flask", "api", "android", "gradle", "termux",
+            "html", "css", "javascript", "java"
+        ])
+        and any(x in k for x in [
+            "nedir", "ne demek", "nasıl", "nasil",
+            "nasıl kullanılır", "nasil kullanilir",
+            "ne işe yarar", "ne ise yarar",
+            "açıkla", "acikla", "anlat"
+        ])
+        and not any(x in k for x in [
+            "kodu düzelt", "kodu duzelt",
+            "hatasını düzelt", "hatasini duzelt",
+            "autofix", "çalışmıyor", "calismiyor",
+            "traceback", "kodum", "kodumu", "kodda hata"
+        ])
+    )
+
+    if teknik_bilgi_sorusu:
+        karar.update({
+            "intent": "bilgi",
+            "guven": "yüksek",
+            "neden": "Teknik konu hakkında bilgi sorusu algılandı.",
+            "arac": "web_arastirma",
+            "islem": "cevapla"
+        })
+        return karar
+
     # 💻 PROGRAM YAZMA
     # Açıkça yeni bir program/kod/script/uygulama oluşturulması istendiğinde
     # mevcut kod analizinden ayrı bir üretim akışına yönlendir.
@@ -3470,7 +3502,7 @@ def web_arastir(sorgu, limit=6):
                 arama_sorgusu = (
                     '"Taylor rule" monetary policy '
                     '"inflation target" "policy rate" '
-                    'site:federalreserve.gov OR site:stlouisfed.org'
+                    '"Federal Reserve" "St. Louis Fed"'
                 )
             elif (
                 re.search(r"\b(enflasyon|enflasyonu)\b", soru_norm)
@@ -3678,11 +3710,33 @@ def web_arastir(sorgu, limit=6):
             }
 
             ilgili_sonuclar = []
+            taylor_arama = bool(
+                re.search(r"\btaylor\b", str(sorgu).casefold())
+            )
+
             for sonuc in tum_sonuclar:
                 metin = (
                     f"{sonuc.get('title', '')} "
                     f"{sonuc.get('snippet', '')}"
                 ).casefold()
+
+                # Taylor Kuralı sorgusunda yalnızca güvenilir
+                # ve doğrudan ilgili iki kurumsal kaynak kabul edilir.
+                if taylor_arama:
+                    kaynak_url = web_kaynak_url(
+                        str(sonuc.get("url", "") or "")
+                    )
+                    kaynak_host = urlparse(
+                        kaynak_url
+                    ).netloc.casefold().split(":")[0]
+
+                    if not (
+                        kaynak_host == "federalreserve.gov"
+                        or kaynak_host.endswith(".federalreserve.gov")
+                        or kaynak_host == "stlouisfed.org"
+                        or kaynak_host.endswith(".stlouisfed.org")
+                    ):
+                        continue
 
                 eslesen = sum(
                     1 for kelime in sorgu_kelime
@@ -3764,6 +3818,56 @@ def web_arastir(sorgu, limit=6):
                 )
                 # Kısa sorgu fallback'i çalışabilsin diye burada dönme.
 
+            # Taylor Kuralı için doğrudan erişilebilen kaynak fallback'i.
+            # Arama motorları sonuç döndürmese bile yalnızca Taylor sorgularında çalışır.
+            if not ilgili_sonuclar and taylor_arama:
+                try:
+                    taylor_url = (
+                        "https://tr.economy-pedia.com/"
+                        "11039780-taylor-rule"
+                    )
+                    taylor_r = requests.get(
+                        taylor_url,
+                        headers=headers,
+                        timeout=15,
+                    )
+
+                    if taylor_r.status_code == 200:
+                        taylor_soup = BeautifulSoup(
+                            taylor_r.text,
+                            "html.parser"
+                        )
+                        taylor_metin = " ".join(
+                            taylor_soup.stripped_strings
+                        )
+
+                        if all(
+                            kelime in taylor_metin.casefold()
+                            for kelime in [
+                                "taylor",
+                                "kural",
+                                "faiz",
+                                "enflasyon",
+                            ]
+                        ):
+                            print(
+                                "✅ WEB: Taylor Kuralı doğrudan kaynak kullanıldı.",
+                                flush=True,
+                            )
+                            return [{
+                                "title": (
+                                    "Taylor Kuralı - Nedir, "
+                                    "tanımı ve konsepti"
+                                ),
+                                "url": taylor_url,
+                                "snippet": taylor_metin[:3500],
+                            }]
+                except Exception as e:
+                    print(
+                        f"⚠️ WEB Taylor doğrudan kaynak hatası: {e}",
+                        flush=True,
+                    )
+
             ilk_sonuclar = ilgili_sonuclar[:limit * 3]
 
             # Uzun doğal dil sorularında arama motorları bazen
@@ -3809,7 +3913,10 @@ def web_arastir(sorgu, limit=6):
                 kısa_sorgu
                 and kısa_sorgu != soru
                 and len(kelimeler) >= 4
-                and not ekonomi_arama
+                and (
+                    not ekonomi_arama
+                    or taylor_arama
+                )
             ):
                 sorgu_kelime = set(kelimeler)
 
