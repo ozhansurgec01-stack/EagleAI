@@ -6076,6 +6076,46 @@ def hafiza_api_ekle():
     })
 
 
+@app.post("/api/hafiza/sil")
+def hafiza_api_sil():
+    data = request.get_json(silent=True) or {}
+    bilgi = str(data.get("memory", "")).strip()
+
+    if not bilgi:
+        return jsonify({
+            "ok": False,
+            "error": "Silinecek hafıza bilgisi boş."
+        }), 400
+
+    veri = hafiza_yukle()
+
+    if not isinstance(veri, dict):
+        veri = {
+            "kullanici": [],
+            "eagle_ogrenme": [],
+            "sohbet": []
+        }
+
+    kullanici = veri.setdefault("kullanici", [])
+
+    if bilgi not in kullanici:
+        return jsonify({
+            "ok": True,
+            "removed": False,
+            "message": "Hafıza kaydı bulunamadı.",
+            "memory": veri
+        })
+
+    kullanici.remove(bilgi)
+    hafiza_kaydet(veri)
+
+    return jsonify({
+        "ok": True,
+        "removed": True,
+        "memory": hafiza_yukle()
+    })
+
+
 @app.post("/api/hafiza/temizle")
 def hafiza_temizle():
     hafiza_kaydet([])
