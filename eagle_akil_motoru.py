@@ -17,11 +17,15 @@ from typing import Any, Dict, Optional
 @dataclass
 class EagleAkilKarari:
     intent: str = "sohbet"
+    komut: str = ""
+    komut_metni: str = ""
 
     def get(self, anahtar, varsayilan=None):
         """Eski sözlük tabanlı EagleAI koduyla geriye dönük uyumluluk."""
         eslesme = {
             "intent": self.intent,
+            "komut": self.komut,
+            "komut_metni": self.komut_metni,
             "arac": self.arac,
             "islem": self.islem,
             "guven": self.guven,
@@ -160,6 +164,14 @@ class EagleAkilMotoru:
                         intent=ham_karar.get(
                             "intent",
                             "sohbet"
+                        ),
+                        komut=ham_karar.get(
+                            "komut",
+                            ""
+                        ),
+                        komut_metni=ham_karar.get(
+                            "komut_metni",
+                            ""
                         ),
                         arac=ham_karar.get(
                             "arac",

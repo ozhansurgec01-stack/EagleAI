@@ -73,6 +73,58 @@ def _hafizaya_kaydet(yeni_bilgi):
 
 # -*- coding: utf-8 -*-
 
+def _slash_komut_uygula(cevap, komut):
+    """Slash komutlarını harici modele ihtiyaç duymadan yerel olarak uygular."""
+    cevap = str(cevap or "").strip()
+    komut = str(komut or "").strip().lower()
+
+    if not cevap or not komut:
+        return cevap
+
+    # Motorun kendi etiketini dönüşümden önce kaldır.
+    temiz = re.sub(r"^🦅\s*", "", cevap).strip()
+    temiz = re.sub(r"^Bilgi bankama göre:\s*", "", temiz).strip()
+
+    # Cümleleri ayır.
+    cumleler = [
+        x.strip()
+        for x in re.split(r"(?<=[.!?])\s+", temiz)
+        if x.strip()
+    ]
+
+    if komut == "brief":
+        # İlk anlamlı cümle: mümkün olan en kısa yerel cevap.
+        return f"🦅 {cumleler[0] if cumleler else temiz}"
+
+    if komut == "summarize":
+        # Bilgi bankasının temel maddelerinden kısa özet.
+        secilen = cumleler[:2]
+        return "🦅 " + " ".join(secilen)
+
+    if komut == "stepbystep":
+        if not cumleler:
+            return f"🦅 1. {temiz}"
+
+        adimlar = []
+        for i, cumle in enumerate(cumleler, 1):
+            adimlar.append(f"{i}. {cumle}")
+        return "🦅 " + "\n".join(adimlar)
+
+    if komut == "eli5":
+        # Yerel sadeleştirme: gereksiz teknik parantezleri kaldır,
+        # açıklamayı kısa cümlelere böl ve temel anlamı koru.
+        basit = re.sub(r"\([^()]{1,120}\)", "", temiz)
+        basit = re.sub(r"\s+", " ", basit).strip()
+        return f"🦅 Basitçe: {basit}"
+
+    if komut == "expert":
+        # Yeni bilgi uydurmadan mevcut bilgiyi daha teknik ve düzenli sun.
+        if len(cumleler) > 1:
+            return "🦅 " + " ".join(cumleler)
+        return f"🦅 Teknik açıklama: {temiz}"
+
+    return cevap
+
 def eagle_cevap_uret(mesaj, gecmis=None, hafiza=None, karar=None, baglam=None):
     """
     EagleAI yerel doğal cevap motoru.
@@ -88,7 +140,23 @@ def eagle_cevap_uret(mesaj, gecmis=None, hafiza=None, karar=None, baglam=None):
     karar = karar if isinstance(karar, dict) else {}
     baglam = str(baglam or '').strip()
 
+    # 🦅 Slash komutu varsa komut önekini cevap motorundan ayır.
+    # Komut yoksa mesaj aynen korunur.
+    komut = str(karar.get("komut", "") or "").strip().lower()
+    komut_metni = str(karar.get("komut_metni", "") or "").strip()
+
+    if komut in {
+        "brief",
+        "expert",
+        "eli5",
+        "stepbystep",
+        "summarize",
+    }:
+        mesaj = komut_metni
+
     if not mesaj:
+        if komut:
+            return f"🦅 /{komut} için bir mesaj yazmalısın."
         return "🦅 Buradayım."
 
     if karar.get("arac") and karar.get("arac") != "eagle_sohbet":
@@ -117,7 +185,7 @@ def eagle_cevap_uret(mesaj, gecmis=None, hafiza=None, karar=None, baglam=None):
 
     durum = _konusma_durumu_analiz_et(gecmis, mesaj)
 
-    return _yerel_cevap(
+    cevap = _yerel_cevap(
         mesaj=mesaj,
         son_kullanici=son_kullanici,
         son_eagle=son_eagle,
@@ -126,6 +194,8 @@ def eagle_cevap_uret(mesaj, gecmis=None, hafiza=None, karar=None, baglam=None):
         baglam=baglam,
         durum=durum,
     )
+
+    return _slash_komut_uygula(cevap, komut)
 
 
 

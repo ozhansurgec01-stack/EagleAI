@@ -2,7 +2,7 @@ from eagle_merkez_motoru import eagle_merkez_motorunu_kur
 from eagle_akil_motoru import eagle_akil_motorunu_kur
 from eagle_autofix import EagleAutoFixEngine
 from eagle_genel_sohbet import genel_sohbet
-from eagle_cevap_motoru import _soru_gibi_mi
+from eagle_cevap_motoru import _soru_gibi_mi, _slash_komut_uygula
 from eagle_program_uretme_motoru import EagleProgramUretmeMotoru
 from eagle_kod_guvenlik_motoru import EagleKodGuvenlikMotoru
 from eagle_kod_calistirici import secure_run
@@ -1801,6 +1801,45 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             "arac": "yok"
         })
         return karar
+
+    # 🦅 SLASH KOMUTLARI
+    # Komutlar mevcut "arac" routing sisteminden bağımsızdır.
+    # Komut yoksa mevcut davranış aynen korunur.
+    slash_komutlari = {
+        "brief": "brief",
+        "expert": "expert",
+        "eli5": "eli5",
+        "stepbystep": "stepbystep",
+        "summarize": "summarize",
+    }
+
+    slash_eslesme = re.match(
+        r"^/(brief|expert|eli5|stepbystep|summarize)(?:\s+(.*))?$",
+        metin,
+        flags=re.IGNORECASE | re.DOTALL
+    )
+
+    if slash_eslesme:
+        komut = slash_eslesme.group(1).lower()
+        komut_metni = (slash_eslesme.group(2) or "").strip()
+
+        karar["komut"] = slash_komutlari[komut]
+        karar["komut_metni"] = komut_metni
+
+        # Routing, slash komutunun kendisini değil,
+        # komuttan sonraki gerçek kullanıcı mesajını değerlendirsin.
+        metin = komut_metni
+        k = metin.lower()
+
+        if not metin:
+            karar.update({
+                "intent": "komut",
+                "guven": "yüksek",
+                "neden": f"/{komut} komutu algılandı ancak mesaj verilmedi.",
+                "arac": "eagle_sohbet",
+                "islem": "cevapla",
+            })
+            return karar
 
     # 🧠 HAFIZA
     # 🗣️ Basit sohbetleri doğrudan Eagle cevaplasın
@@ -6355,6 +6394,19 @@ def sohbet():
     akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
 
+    # 🦅 Slash komutlarında downstream katmanlara gerçek kullanıcı mesajını ver.
+    # Böylece bilgi bankası / web araştırması "/brief" gibi komut öneklerini sorgulamaz.
+    if karar.get("komut") in {
+        "brief",
+        "expert",
+        "eli5",
+        "stepbystep",
+        "summarize",
+    }:
+        komut_metni = str(karar.get("komut_metni", "") or "").strip()
+        if komut_metni:
+            mesaj = komut_metni
+
     # 🧠 ÖĞRENİLMİŞ DAVRANIŞ ADAYI
     # Öğrenilmiş kayıt kararın yerine geçmez; yalnızca güvenli bir aday olarak tutulur.
     ogrenilmis_karar = eagle_ogrenme_ara(mesaj_karar)
@@ -7628,6 +7680,11 @@ def sohbet():
         cevap = "🦅 EAGLE BİLGİ BANKASI\n\n" + "\n".join(
             f"• {madde}" for madde in bilgi_sonuclari
         )
+
+        # 🦅 /brief: bilgi bankasından yalnızca en güçlü ilk cevabı göster.
+        if karar.get("komut") == "brief":
+            cevap = f"🦅 {bilgi_sonuclari[0]}"
+
         return jsonify({
             "ok": True,
             "answer": cevap,
@@ -7932,6 +7989,10 @@ def sohbet():
                     merkez_sonuc.get("ok")
                     and merkez_cevap
                 ):
+                    merkez_cevap = _slash_komut_uygula(
+                        merkez_cevap,
+                        karar.get("komut", "")
+                    )
                     return jsonify({
                         "ok": True,
                         "answer": merkez_cevap,
@@ -8039,6 +8100,10 @@ def sohbet():
                                     ).strip()
 
                                     if gemini_cevap:
+                                        gemini_cevap = _slash_komut_uygula(
+                                            gemini_cevap,
+                                            karar.get("komut", "")
+                                        )
                                         return jsonify({
                                             "ok": True,
                                             "answer": gemini_cevap,
