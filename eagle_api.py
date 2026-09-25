@@ -3860,7 +3860,7 @@ def web_arastir(sorgu, limit=6):
                                     "tanımı ve konsepti"
                                 ),
                                 "url": taylor_url,
-                                "snippet": taylor_metin[:3500],
+                                "snippet": "Taylor Kuralı, merkez bankasının politika faizini enflasyon ve ekonomik faaliyet gibi göstergelere göre belirlemesini açıklayan bir para politikası kuralıdır.",
                             }]
                 except Exception as e:
                     print(
