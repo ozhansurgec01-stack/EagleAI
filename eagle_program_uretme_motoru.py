@@ -284,6 +284,51 @@ if __name__ == "__main__":
 
             return sonuc
 
+        if (
+            "iki sayı" in k
+            and any(x in k for x in (
+                "toplam", "fark", "çarp", "carp", "böl", "bol"
+            ))
+        ):
+            kod = """sayi1 = float(input("Birinci sayıyı girin: "))
+sayi2 = float(input("İkinci sayıyı girin: "))
+
+print("Toplam:", sayi1 + sayi2)
+print("Fark:", sayi1 - sayi2)
+print("Çarpım:", sayi1 * sayi2)
+
+if sayi2 != 0:
+    print("Bölüm:", sayi1 / sayi2)
+else:
+    print("Bölüm: Tanımsız (ikinci sayı 0 olamaz).")
+"""
+
+            syntax_ok, syntax_hatasi = (
+                EagleProgramUretmeMotoru._python_kontrol(kod)
+            )
+
+            sonuc = {
+                "ok": syntax_ok,
+                "kod": kod,
+                "dil": "python",
+                "aciklama": (
+                    "Tabii! İki sayı alan ve toplam, fark, çarpım "
+                    "ve bölüm sonuçlarını hesaplayan Python programını "
+                    "Eagle'ın yerel üretim motoruyla hazırladım."
+                ),
+                "syntax_ok": syntax_ok,
+                "analiz": [],
+            }
+
+            if not syntax_ok:
+                sonuc["syntax_hatasi"] = syntax_hatasi
+            else:
+                sonuc["analiz"] = (
+                    EagleKodAnalizMotoru().analiz_et(kod)
+                )
+
+            return sonuc
+
         return None
 
     @staticmethod
