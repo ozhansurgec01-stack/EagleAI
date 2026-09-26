@@ -329,6 +329,211 @@ else:
 
             return sonuc
 
+        def sonuc_olustur(kod, aciklama):
+            syntax_ok, syntax_hatasi = (
+                EagleProgramUretmeMotoru._python_kontrol(kod)
+            )
+
+            sonuc = {
+                "ok": syntax_ok,
+                "kod": kod,
+                "dil": "python",
+                "aciklama": aciklama,
+                "syntax_ok": syntax_ok,
+                "analiz": [],
+            }
+
+            if not syntax_ok:
+                sonuc["syntax_hatasi"] = syntax_hatasi
+            else:
+                sonuc["analiz"] = (
+                    EagleKodAnalizMotoru().analiz_et(kod)
+                )
+
+            return sonuc
+
+        # Sayıların ortalaması
+        if "ortalama" in k and "liste" not in k and "not" not in k:
+            kod = """sayilar = input("Sayıları boşlukla ayırın: ").split()
+sayilar = [float(sayi) for sayi in sayilar]
+
+if sayilar:
+    print("Ortalama:", sum(sayilar) / len(sayilar))
+else:
+    print("En az bir sayı girilmelidir.")
+"""
+            return sonuc_olustur(
+                kod,
+                "Sayıların ortalamasını hesaplayan Python programını hazırladım."
+            )
+
+        # Tek / çift
+        if "tek" in k and "çift" in k:
+            kod = """sayi = int(input("Bir sayı girin: "))
+
+if sayi % 2 == 0:
+    print("Çift sayı.")
+else:
+    print("Tek sayı.")
+"""
+            return sonuc_olustur(
+                kod,
+                "Girilen sayının tek mi çift mi olduğunu kontrol eden programı hazırladım."
+            )
+
+        # Faktöriyel
+        if "faktöriyel" in k or "faktoriyel" in k:
+            kod = """sayi = int(input("Bir sayı girin: "))
+
+if sayi < 0:
+    print("Negatif sayıların faktöriyeli tanımlı değildir.")
+else:
+    faktoriyel = 1
+    for i in range(2, sayi + 1):
+        faktoriyel *= i
+    print("Faktöriyel:", faktoriyel)
+"""
+            return sonuc_olustur(
+                kod,
+                "Girilen sayının faktöriyelini hesaplayan Python programını hazırladım."
+            )
+
+        # Asal sayı
+        if "asal" in k and "sayı" in k:
+            kod = """sayi = int(input("Bir sayı girin: "))
+
+if sayi < 2:
+    print("Asal değil.")
+else:
+    asal = True
+    for i in range(2, int(sayi ** 0.5) + 1):
+        if sayi % i == 0:
+            asal = False
+            break
+
+    print("Asal sayı." if asal else "Asal değil.")
+"""
+            return sonuc_olustur(
+                kod,
+                "Girilen sayının asal olup olmadığını kontrol eden programı hazırladım."
+            )
+
+        # En büyük / en küçük
+        if (
+            ("en büyük" in k or "en buyuk" in k)
+            and ("en küçük" in k or "en kucuk" in k)
+        ):
+            kod = """sayilar = [float(x) for x in input("Sayıları boşlukla ayırın: ").split()]
+
+if sayilar:
+    print("En büyük:", max(sayilar))
+    print("En küçük:", min(sayilar))
+else:
+    print("En az bir sayı girilmelidir.")
+"""
+            return sonuc_olustur(
+                kod,
+                "Sayılar arasındaki en büyük ve en küçük değeri bulan programı hazırladım."
+            )
+
+        # Not ortalaması / geçme
+        if (
+            ("not ortalaması" in k or "not ortalamasi" in k)
+            or (("geçme" in k or "gecme" in k) and "not" in k)
+        ):
+            kod = """notlar = [
+    float(input(f"{i}. notu girin: "))
+    for i in range(1, 4)
+]
+
+ortalama = sum(notlar) / len(notlar)
+
+print("Ortalama:", ortalama)
+print("Durum:", "Geçti" if ortalama >= 50 else "Kaldı")
+"""
+            return sonuc_olustur(
+                kod,
+                "Üç notun ortalamasını ve geçme durumunu hesaplayan programı hazırladım."
+            )
+
+        # Hesap makinesi
+        if "hesap makinesi" in k:
+            kod = """sayi1 = float(input("Birinci sayıyı girin: "))
+islem = input("İşlem (+, -, *, /): ").strip()
+sayi2 = float(input("İkinci sayıyı girin: "))
+
+if islem == "+":
+    sonuc = sayi1 + sayi2
+elif islem == "-":
+    sonuc = sayi1 - sayi2
+elif islem == "*":
+    sonuc = sayi1 * sayi2
+elif islem == "/":
+    if sayi2 == 0:
+        print("Hata: Sıfıra bölme yapılamaz.")
+        sonuc = None
+    else:
+        sonuc = sayi1 / sayi2
+else:
+    print("Geçersiz işlem.")
+    sonuc = None
+
+if sonuc is not None:
+    print("Sonuç:", sonuc)
+"""
+            return sonuc_olustur(
+                kod,
+                "Dört temel işlemi destekleyen basit bir hesap makinesi hazırladım."
+            )
+
+        # Liste toplamı / ortalaması
+        if (
+            "liste" in k
+            and ("toplam" in k or "ortalama" in k)
+        ):
+            kod = """sayilar = [
+    float(x)
+    for x in input("Sayıları boşlukla ayırın: ").split()
+]
+
+if sayilar:
+    print("Toplam:", sum(sayilar))
+    print("Ortalama:", sum(sayilar) / len(sayilar))
+else:
+    print("Liste boş.")
+"""
+            return sonuc_olustur(
+                kod,
+                "Listedeki sayıların toplamını ve ortalamasını hesaplayan programı hazırladım."
+            )
+
+        # Kelime / karakter sayacı
+        if "kelime say" in k or "karakter say" in k:
+            kod = """metin = input("Bir metin girin: ")
+
+print("Karakter sayısı:", len(metin))
+print("Kelime sayısı:", len(metin.split()))
+"""
+            return sonuc_olustur(
+                kod,
+                "Metnin kelime ve karakter sayısını hesaplayan programı hazırladım."
+            )
+
+        # Kare / küp
+        if (
+            "kare" in k
+            and ("küp" in k or "kup" in k)
+        ):
+            kod = """sayi = float(input("Bir sayı girin: "))
+
+print("Karesi:", sayi ** 2)
+print("Küpü:", sayi ** 3)
+"""
+            return sonuc_olustur(
+                kod,
+                "Girilen sayının karesini ve küpünü hesaplayan programı hazırladım."
+            )
+
         return None
 
     @staticmethod
