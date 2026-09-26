@@ -2103,6 +2103,34 @@ class EagleMerkezMotoru:
                 ):
                     puan += 15
 
+                # Tanım sorularında doğrudan kavramı tanımlayan cümleleri
+                # tarihçe/SEO girişlerinden belirgin biçimde öne çıkar.
+                if tanim_sorusu and re.search(
+                    r"\b(bir kripto para\w*|"
+                    r"dijital bir para birimi\w*|"
+                    r"bir dijital para birimi\w*|"
+                    r"bir dijital varlık\w*|"
+                    r"bir ödeme ağı\w*|"
+                    r"bir ödeme sistemi\w*)\b",
+                    norm
+                ):
+                    puan += 80
+
+                elif tanim_sorusu and re.search(
+                    r"\b(kripto para\w*|dijital para\w*|"
+                    r"dijital varlık\w*|ödeme ağı\w*|"
+                    r"ödeme sistemi\w*|"
+                    r"açık kaynaklı yazılım\w*|"
+                    r"açık kaynak kodlu bir yazılım\w*|"
+                    r"merkeziyetsiz sistem\w*)\b",
+                    norm
+                ) and not re.search(
+                    r"\b(tarihçesi|tarihçe|kurucusu|çıkış amacı|"
+                    r"nedenleri|değerli olmasının)\b",
+                    norm
+                ):
+                    puan += 20
+
                 # Kaynağın ilk cümlesi çoğunlukla giriş/SEO metnidir.
                 if cumle_no == 0:
                     puan -= 25
@@ -2256,12 +2284,25 @@ class EagleMerkezMotoru:
             secilen.append(cumle)
             kullanilan_kaynaklar.add(kaynak_no)
 
-            if len(secilen) >= (1 if (yonlendirme_sorusu or cok_parcali_soru) else 3):
+            if len(secilen) >= (
+                1
+                if (
+                    yonlendirme_sorusu
+                    or cok_parcali_soru
+                    or tanim_sorusu
+                )
+                else 3
+            ):
                 break
 
         # Farklı kaynak şartı fazla katı kaldıysa,
         # kalan en iyi adaylarla üç cümleye tamamla.
-        if len(secilen) < 2 and not cok_parcali_soru and not yonlendirme_sorusu:
+        if (
+            len(secilen) < 2
+            and not cok_parcali_soru
+            and not yonlendirme_sorusu
+            and not tanim_sorusu
+        ):
             for _, _, _, cumle in adaylar:
                 if cumle in secilen:
                     continue
