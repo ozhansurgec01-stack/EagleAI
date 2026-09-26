@@ -8008,8 +8008,185 @@ def sohbet():
                     })
 
 
-    if cevap and str(cevap).strip():
-        sohbet_hafizaya_ekle(mesaj, cevap, konu="genel_sohbet")
+        if karar.get("intent") == "spor" and web_verisi:
+            # 🌐 İki takımlı maç sonucu: web kaynaklarından dinamik skor sentezi.
+            # Takım adı listesi kullanılmaz; kaynaklarda ortak geçen skor oylanır.
+            if karar.get("intent") == "spor" and web_verisi:
+                try:
+                    ham_mesaj = str(mesaj or "").strip()
+
+                    parcalar = re.split(
+                        r"\s*(?:[-–—]|\bvs\.?\b|\bile\b)\s*",
+                        ham_mesaj,
+                        flags=re.IGNORECASE
+                    )
+
+                    if len(parcalar) >= 2:
+                        def spor_temizle(x):
+                            x = re.sub(
+                                r"\b(?:maç|maci|maçı|sonuç|sonucu|sonuc|skor|"
+                                r"kaç|kac|bitti|canlı|canli|milli)\b",
+                                " ",
+                                str(x or "").casefold()
+                            )
+                            return re.sub(r"\s+", " ", x).strip()
+
+                        takim1_q = spor_temizle(parcalar[0])
+                        takim2_q = spor_temizle(parcalar[1])
+
+                        def skor_norm(x):
+                            return (
+                                str(x or "").casefold()
+                                .replace("\u0307", "")
+                                .replace("ı", "i")
+                                .replace("ğ", "g")
+                                .replace("ü", "u")
+                                .replace("ş", "s")
+                                .replace("ö", "o")
+                                .replace("ç", "c")
+                            )
+
+                        t1 = skor_norm(takim1_q)
+                        t2 = skor_norm(takim2_q)
+
+                        if t1 and t2:
+                            hedef_web_sorgu = f'"{takim1_q}" "{takim2_q}" maç sonucu'
+                            hedef_web_verisi = web_arastir(
+                                hedef_web_sorgu,
+                                limit=8
+                            )
+
+                            if hedef_web_verisi:
+                                web_verisi_sentez = hedef_web_verisi
+                            else:
+                                web_verisi_sentez = web_verisi
+
+                            skorlar = {}
+
+                            for kaynak in web_verisi_sentez:
+                                if not isinstance(kaynak, dict):
+                                    continue
+
+                                metin_web = " ".join(
+                                    str(kaynak.get(k) or "")
+                                    for k in (
+                                        "title", "baslik", "snippet",
+                                        "content", "metin", "icerik"
+                                    )
+                                )
+
+                                norm_web = skor_norm(metin_web)
+
+                                p1_all = [
+                                    m.start() for m in re.finditer(
+                                        re.escape(t1), norm_web
+                                    )
+                                ]
+                                p2_all = [
+                                    m.start() for m in re.finditer(
+                                        re.escape(t2), norm_web
+                                    )
+                                ]
+
+                                if not p1_all or not p2_all:
+                                    continue
+
+                                for sm in re.finditer(
+                                    r"\b(\d{1,2})\s*[-–—:]\s*(\d{1,2})\b",
+                                    norm_web
+                                ):
+                                    a, b = sm.groups()
+                                    ps = sm.start()
+
+                                    # Tarih/saat gibi ifadeleri ele.
+                                    cevre_bas = max(0, ps - 220)
+                                    cevre_son = min(
+                                        len(norm_web), sm.end() + 220
+                                    )
+                                    cevre = norm_web[cevre_bas:cevre_son]
+
+                                    if t1 not in cevre or t2 not in cevre:
+                                        continue
+
+                                    p1 = min(
+                                        abs(x - ps) for x in p1_all
+                                        if cevre_bas <= x < cevre_son
+                                    ) if any(
+                                        cevre_bas <= x < cevre_son
+                                        for x in p1_all
+                                    ) else 9999
+
+                                    p2 = min(
+                                        abs(x - ps) for x in p2_all
+                                        if cevre_bas <= x < cevre_son
+                                    ) if any(
+                                        cevre_bas <= x < cevre_son
+                                        for x in p2_all
+                                    ) else 9999
+
+                                    if p1 == 9999 or p2 == 9999:
+                                        continue
+
+                                    # Takım adlarının kaynakta sırasını bul.
+                                    yer1 = min(
+                                        x for x in p1_all
+                                        if cevre_bas <= x < cevre_son
+                                    )
+                                    yer2 = min(
+                                        x for x in p2_all
+                                        if cevre_bas <= x < cevre_son
+                                    )
+
+                                    # Skor iki takım arasında veya sonrasında
+                                    # verilmişse takım sırasını koru.
+                                    if yer1 < yer2:
+                                        skor = f"{a}-{b}"
+                                    else:
+                                        skor = f"{b}-{a}"
+
+                                    skorlar[skor] = skorlar.get(skor, 0) + 1
+                                    break
+
+                            if skorlar:
+                                # En çok bağımsız web kaynağında görülen skor.
+                                kazanan = max(
+                                    skorlar.items(),
+                                    key=lambda x: x[1]
+                                )
+
+                                skor, kanit = kazanan
+
+                                print(
+                                    f"[Spor] Web skor sentezi: "
+                                    f"{takim1_q} {skor} {takim2_q} "
+                                    f"({kanit} kaynak)",
+                                    flush=True
+                                )
+
+                                cevap = (
+                                    f"{takim1_q} "
+                                    f"{skor} "
+                                    f"{takim2_q}"
+                                )
+
+                                return jsonify({
+                                    "ok": True,
+                                    "answer": cevap,
+                                    "web_search": True,
+                                    "eagle_direct": True,
+                                    "merkez_motor": False,
+                                    "memory_count": len(hafiza_yukle())
+                                })
+
+                except Exception as e:
+                    print(
+                        f"[Spor] Web skor sentezi hatası: {e}",
+                        flush=True
+                    )
+
+        if cevap and str(cevap).strip():
+            sohbet_hafizaya_ekle(mesaj, cevap, konu="genel_sohbet")
+
 
         return jsonify({
             "ok": True,
