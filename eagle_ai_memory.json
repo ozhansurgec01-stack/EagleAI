@@ -1,6 +1,11 @@
 {
   "kullanici": [
-    "EagleMusic benim Android müzik çalar projem."
+    "EagleMusic benim Android müzik çalar projem.",
+    "/expert → Uzman seviyesinde yanıtlar ver",
+    "/eli5 → 5 yaşında birine anlatır gibi açıkla",
+    "/summarize → Temel noktaları özetle",
+    "/stepbystep → Adım adım açıkla",
+    "/brief → Mümkün olan en kısa yanıtı ver"
   ],
   "eagle_ogrenme": [
     {
