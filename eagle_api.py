@@ -4980,7 +4980,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
     import re
     from datetime import datetime
 
-    if not mesaj or not web_verisi:
+    if not mesaj:
         return ""
 
     mesaj_norm = str(mesaj).casefold().replace("\u0307", "")
@@ -4994,6 +4994,30 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "a-milli",
         "a-millî",
     ))
+
+    # "Türkiye'nin maçı var mı?" gibi doğal ifadelerde,
+    # açıkça başka bir branş belirtilmiyorsa mevcut A Milli
+    # futbol fikstürü kullanılabilir.
+    turkiye_maci_mi = (
+        any(k in mesaj_norm for k in (
+            "türkiye'nin maçı",
+            "türkiye'nin maci",
+            "türkiye maçı",
+            "turkiye maci",
+        ))
+        and not any(k in mesaj_norm for k in (
+            "basketbol",
+            "voleybol",
+            "tenis",
+        ))
+    )
+
+    if turkiye_maci_mi:
+        a_milli_mi = True
+
+    # A Milli fikstürü yerel/resmî veri olduğundan web verisine bağımlı değil.
+    if not web_verisi and not a_milli_mi:
+        return ""
 
     # 🇹🇷 A MİLLİ RESMİ FİKSTÜR
     # Web sayfasındaki haber başlıklarının maç gibi okunmasını engelle.
@@ -7619,6 +7643,22 @@ def sohbet():
 
             mesaj_spor = mesaj.lower().replace("\u0307", "")
 
+            # 🇹🇷 A Milli fikstürü web aramasından önce dene.
+            # Cevap yoksa mevcut spor akışı aynen devam eder.
+            milli_cevap = spor_fikstur_direkt_cevapla(
+                mesaj,
+                web_verisi=[]
+            )
+            if milli_cevap:
+                return jsonify({
+                    "ok": True,
+                    "answer": milli_cevap,
+                    "web_search": False,
+                    "eagle_direct": True,
+                    "merkez_motor": False,
+                    "memory_count": len(hafiza_yukle())
+                })
+
             # 🏟️ Genel maç sorgusu: kullanıcı açıkça bir lig belirtmediyse
             # UEFA'ya zorla yönlendirme yapma. Takım/oyuncu bağlamı korunur.
             genel_mac_sorgusu = any(k in mesaj_spor for k in [
@@ -8308,13 +8348,12 @@ def sohbet():
         if cevap and str(cevap).strip():
             sohbet_hafizaya_ekle(mesaj, cevap, konu="genel_sohbet")
 
-
-        return jsonify({
-            "ok": True,
-            "answer": cevap,
-            "eagle_direct": True,
-            "memory_count": len(hafiza_yukle())
-        })
+            return jsonify({
+                "ok": True,
+                "answer": cevap,
+                "eagle_direct": True,
+                "memory_count": len(hafiza_yukle())
+            })
 
     # 🏟️ Spor fikstürü — karar/routing dalından bağımsız doğrudan cevapla.
     # Genel "Bugün maç var mı?" sorusu takım belirtmese de mevcut günün
