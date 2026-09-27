@@ -2238,10 +2238,44 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         and program_fili_var
     )
 
+    uygulama_adi_istegi = bool(re.search(
+        r"(?<!\w)"
+        r"(?:[\wçğıöşüÇĞİÖŞÜ]+(?:\s+[\wçğıöşüÇĞİÖŞÜ]+){0,5})"
+        r"\s+uygulaması"
+        r"(?!\w)",
+        k
+    ))
+
+    uygulama_uretim_istegi = (
+        uygulama_adi_istegi
+        and not any(x in k for x in (
+            "uygulaması nedir",
+            "uygulamasi nedir",
+            "uygulaması ne demek",
+            "uygulamasi ne demek",
+        ))
+    )
+
+    uygulama_bilgi_sorusu = (
+        re.search(r"(?<!\w)uygulama(?!\w)", k)
+        and any(x in k for x in (
+            "uygulama nasıl",
+            "uygulama nasil",
+            "uygulama ne demek",
+            "uygulama nedir",
+            "uygulama ne işe yarar",
+            "uygulama ne ise yarar",
+        ))
+    )
+
     program_yazma_istegi = (
-        (program_hedefi_var and program_fili_var)
-        or kapsam_istegi
-        or python_uretim_istegi
+        (
+            (program_hedefi_var and program_fili_var)
+            or kapsam_istegi
+            or python_uretim_istegi
+            or uygulama_uretim_istegi
+        )
+        and not uygulama_bilgi_sorusu
     )
 
     if program_yazma_istegi:

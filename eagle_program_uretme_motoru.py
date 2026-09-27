@@ -4,6 +4,8 @@ import ast
 import requests
 
 from eagle_kod_analiz_motoru import EagleKodAnalizMotoru
+from eagle_uygulama_planlayici import EagleUygulamaPlanlayici
+from eagle_genel_uygulama_uretici import EagleGenelUygulamaUretici
 
 
 class EagleProgramUretmeMotoru:
@@ -78,6 +80,16 @@ class EagleProgramUretmeMotoru:
         ))
 
         if not (proje or modul or sablon):
+            uygulama_planlayici = EagleUygulamaPlanlayici()
+            uygulama_plani = uygulama_planlayici.planla(mesaj)
+
+            if uygulama_plani is not None:
+                uygulama_uretici = EagleGenelUygulamaUretici()
+                uygulama_sonucu = uygulama_uretici.uret(uygulama_plani)
+
+                if uygulama_sonucu is not None:
+                    return uygulama_sonucu
+
             return None
 
         if proje:
@@ -91,6 +103,20 @@ class EagleProgramUretmeMotoru:
 
         if cikti_turu == "modul":
             return self._yerel_modul_sonucu(konu)
+
+        uygulama_planlayici = EagleUygulamaPlanlayici()
+        uygulama_plani = uygulama_planlayici.planla(
+            mesaj,
+            konu=konu,
+            cikti_turu=cikti_turu,
+        )
+
+        if uygulama_plani is not None:
+            uygulama_uretici = EagleGenelUygulamaUretici()
+            uygulama_sonucu = uygulama_uretici.uret(uygulama_plani)
+
+            if uygulama_sonucu is not None:
+                return uygulama_sonucu
 
         return self._yerel_proje_sonucu(konu, cikti_turu)
 
