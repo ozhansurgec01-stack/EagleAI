@@ -402,9 +402,12 @@ public class NewsAlarmReceiver extends BroadcastReceiver {{
 
     @Override
     public void onReceive(Context context, Intent intent) {{
+        final PendingResult pendingResult = goAsync();
+
         NewsSource.fetch(new NewsSource.Callback() {{
             @Override
             public void onSuccess(JSONArray articles) {{
+                try {{
                 SharedPreferences prefs =
                     context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
 
@@ -460,11 +463,15 @@ public class NewsAlarmReceiver extends BroadcastReceiver {{
                     }} catch (Exception ignored) {{
                     }}
                 }}
+                }} finally {{
+                    pendingResult.finish();
+                }}
             }}
 
             @Override
             public void onError(String message) {{
                 // Arka plan kontrol hatası sessizce geçilir.
+                pendingResult.finish();
             }}
         }});
     }}
