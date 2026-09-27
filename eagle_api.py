@@ -2169,38 +2169,86 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         return karar
 
     # 💻 PROGRAM YAZMA
-    # Açıkça yeni bir program/kod/script/uygulama oluşturulması istendiğinde
-    # mevcut kod analizinden ayrı bir üretim akışına yönlendir.
+    # Yeni program üretimi; program/modül/şablon/proje ifadelerini
+    # mevcut kod-hata yönlendirmesinden önce yakalar.
     program_yazma_hedefleri = [
-        "program", "kod", "script", "uygulama"
-    ]
-    program_yazma_filleri = [
-        "yaz", "oluştur", "olustur", "üret", "uret",
-        "geliştir", "gelistir", "hazırla", "hazirla"
+        "program",
+        "kod",
+        "script",
+        "uygulama",
+        "modül",
+        "modul",
+        "modülü",
+        "modulu",
+        "şablon",
+        "sablon",
+        "şablonu",
+        "sablonu",
+        "proje",
+        "projesi",
     ]
 
+    program_yazma_filleri = [
+        "yaz",
+        "oluştur",
+        "olustur",
+        "üret",
+        "uret",
+        "geliştir",
+        "gelistir",
+        "hazırla",
+        "hazirla",
+        "yap",
+    ]
+
+    kapsam_terimleri = [
+        "modül",
+        "modul",
+        "modülü",
+        "modulu",
+        "şablon",
+        "sablon",
+        "şablonu",
+        "sablonu",
+        "proje",
+        "projesi",
+    ]
+
+    program_hedefi_var = any(
+        re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+        for x in program_yazma_hedefleri
+    )
+
+    program_fili_var = any(
+        re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+        for x in program_yazma_filleri
+    )
+
+    kapsam_istegi = any(
+        re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+        for x in kapsam_terimleri
+    ) and program_fili_var
+
+    python_uretim_istegi = (
+        any(x in k for x in (
+            "python'da",
+            "pythonda",
+            "python ile",
+        ))
+        and program_fili_var
+    )
+
     program_yazma_istegi = (
-        any(
-            re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
-            for x in program_yazma_hedefleri
-        )
-        and (
-            any(
-                re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
-                for x in program_yazma_filleri
-            )
-            or (
-                "yap" in k
-                and any(x in k for x in ("python", "python'da", "python ile", "kodlama"))
-            )
-        )
+        (program_hedefi_var and program_fili_var)
+        or kapsam_istegi
+        or python_uretim_istegi
     )
 
     if program_yazma_istegi:
         karar.update({
             "intent": "program_yazma",
             "guven": "yüksek",
-            "neden": "Yeni bir program/kod/script/uygulama oluşturma isteği algılandı.",
+            "neden": "Yeni bir program, modül, şablon veya proje oluşturma isteği algılandı.",
             "arac": "program_yazma",
             "islem": "program_uret"
         })
@@ -7214,6 +7262,32 @@ def sohbet():
                     "memory_count": len(hafiza_yukle())
                 })
 
+            dosyalar = program_sonuc.get("dosyalar", {})
+            cikti_turu = program_sonuc.get("cikti_turu")
+            proje_adi = program_sonuc.get("proje_adi")
+            ana_dosya = program_sonuc.get("ana_dosya")
+
+            dosya_bilgisi = ""
+            if dosyalar:
+                dosya_bilgisi = (
+                    "\n\n**Üretilen dosyalar:**\n"
+                    + "\n".join(f"- `{yol}`" for yol in dosyalar)
+                )
+
+            if cikti_turu in ("proje", "sablon"):
+                kod_gosterimi = (
+                    f"**Ana dosya:** `{ana_dosya}`\n\n"
+                    f"```{program_sonuc.get('dil', '')}\n"
+                    f"{program_sonuc.get('kod', '')}\n"
+                    "```"
+                )
+            else:
+                kod_gosterimi = (
+                    f"```{program_sonuc.get('dil', '')}\n"
+                    f"{program_sonuc.get('kod', '')}\n"
+                    "```"
+                )
+
             return jsonify({
                 "ok": True,
                 "answer": (
@@ -7221,10 +7295,14 @@ def sohbet():
                         str(program_sonuc.get("aciklama", "")).strip()
                         or "Tabii! İstediğin programı hazırladım. 👇"
                     )
+                    + (
+                        f"\n\n**Proje:** {proje_adi}"
+                        if proje_adi
+                        else ""
+                    )
+                    + dosya_bilgisi
                     + "\n\n"
-                    + f"```{program_sonuc.get('dil', '')}\n"
-                    + f"{program_sonuc.get('kod', '')}\n"
-                    + "```"
+                    + kod_gosterimi
                     + (
                         "\n\n**Kontrol:** Python sözdizimi kontrolünden geçti."
                         if program_sonuc.get("syntax_ok") is True
@@ -7234,7 +7312,12 @@ def sohbet():
                 "kod": program_sonuc.get("kod", ""),
                 "dil": program_sonuc.get("dil"),
                 "syntax_ok": program_sonuc.get("syntax_ok"),
+                "syntax_hatalari": program_sonuc.get("syntax_hatalari", {}),
                 "analiz": program_sonuc.get("analiz", []),
+                "cikti_turu": cikti_turu,
+                "proje_adi": proje_adi,
+                "ana_dosya": ana_dosya,
+                "dosyalar": dosyalar,
                 "eagle_direct": True,
                 "web_search": False,
                 "program_yazma": True,
