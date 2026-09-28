@@ -677,5 +677,28 @@
         "x - 8 = 3 ise x = 11"
       ]
     }
-  }
+  },
+  "android": [
+    "Android uygulama üreticisi, planı bağımsız bir Android projesine dönüştürebilir.",
+    "Tam uygulama profilinde model, service, database, api, ui, detail ve tests bileşenleri kullanılabilir.",
+    "Veri tabanlı Android uygulamalarında kalıcı yerel veri için SQLite kullanılabilir.",
+    "Üretilen Android uygulamalar internet olmadan temel yerel veri işlemlerini sürdürebilir.",
+    "Android paket adları oluşturulurken Türkçe karakterler ASCII karşılıklarına dönüştürülmelidir.",
+    "Üretilen Android projelerinde compileSdk, targetSdk ve minSdk proje yapılandırmasına göre oluşturulmalıdır.",
+    "APK üretiminden sonra assembleDebug ile derleme doğrulanabilir.",
+    "Üye takip uygulamasında uye ve odeme temel varlıklardır.",
+    "Üyelik durumları bitiş tarihine göre Aktif, Yaklaşıyor ve Süresi Doldu olarak hesaplanabilir.",
+    "Üyelik bitiş tarihi karşılaştırılırken tarih değerleri gün başlangıcına normalize edilebilir.",
+    "Geçmiş ödeme kayıtları uye_id üzerinden ilgili üyeyle ilişkilendirilebilir.",
+    "Dashboard toplam üye, aktif üye, yaklaşan üyelik ve süresi dolan üyelik sayılarını gösterebilir.",
+    "Üye kartlarında üyelik durumuna göre farklı arka plan renkleri ve durum ikonları kullanılabilir.",
+    "Android'de GradientDrawable kullanılarak kart ve buton görünümleri özelleştirilebilir.",
+    "Yan yana Android Button bileşenlerinin eşit genişlikte hizalanması için LinearLayout weight kullanılabilir.",
+    "Android Button bileşenlerinde setGravity(android.view.Gravity.CENTER) ile içerik merkezlenebilir.",
+    "Generator değişikliklerinden sonra Python dosyaları py_compile ile doğrulanmalıdır.",
+    "Git değişikliklerinden sonra git diff --check çalıştırılmalıdır.",
+    "Üretilen Android projesinin gerçek kaynak çıktısı incelenerek ardından APK derlenmelidir.",
+    "Çalışan özellikler korunmalı ve yeni generator değişiklikleri mümkün olduğunca minimal ve izole yapılmalıdır.",
+    "Görsel Android sorunlarında kod tahmin edilerek değiştirilmemeli, gerçek cihaz çıktısı veya ekran görüntüsü incelenmelidir."
+  ]
 }
