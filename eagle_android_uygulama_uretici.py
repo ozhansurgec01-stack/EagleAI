@@ -46,6 +46,7 @@ class EagleAndroidUygulamaUretici:
             "app/src/main/AndroidManifest.xml": self._manifest(
                 paket,
                 internet=haber_uygulamasi,
+                sms=gelismis_uygulama,
             ),
             "app/src/main/java/"
             + paket.replace(".", "/")
@@ -174,17 +175,21 @@ dependencies {{
 """
 
     @staticmethod
-    def _manifest(paket, internet=False):
+    def _manifest(paket, internet=False, sms=False):
         izin = (
             '    <uses-permission android:name="android.permission.INTERNET" />\\n'
             if internet else ""
+        )
+        sms_izin = (
+            '    <uses-permission android:name="android.permission.SEND_SMS" />\\n'
+            if sms else ""
         )
         bildirim_izin = (
             '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\\n'
             if internet else ""
         )
         return f"""<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-{izin}{bildirim_izin}
+{izin}{sms_izin}{bildirim_izin}
     <application
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:label="Fitness"
@@ -992,6 +997,9 @@ public class MainActivity extends Activity {{
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ContentValues;
+import android.content.Intent;
+import android.net.Uri;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
@@ -1021,6 +1029,12 @@ public class MainActivity extends Activity {{
     private EditText arama;
     private LinearLayout uyelerEkrani;
     private LinearLayout odemelerEkrani;
+
+    private String bekleyenSmsMetni = null;
+    private String bekleyenSmsTelefon = null;
+    private String bekleyenSmsUyeMetni = null;
+    private static final int SMS_IZIN_KODU = 2001;
+    private static final int SMS_UYE_IZIN_KODU = 2002;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {{
@@ -1089,11 +1103,43 @@ public class MainActivity extends Activity {{
         arama.setSingleLine(true);
         uyelerEkrani.addView(arama);
 
+        LinearLayout ustButonlar = new LinearLayout(this);
+        ustButonlar.setOrientation(LinearLayout.HORIZONTAL);
+        ustButonlar.setPadding(0, 4, 0, 8);
+
         Button yeni = new Button(this);
         yeni.setText("➕ Yeni Üye");
         yeni.setAllCaps(false);
-        renkliButon(yeni, Color.rgb(25, 118, 210), Color.WHITE);
-        uyelerEkrani.addView(yeni);
+        renkliButon(yeni, Color.rgb(27, 94, 32), Color.WHITE);
+
+        Button duyuru = new Button(this);
+        duyuru.setText("📩 SMS Duyuru");
+        duyuru.setAllCaps(false);
+        renkliButon(duyuru, Color.rgb(66, 66, 66), Color.WHITE);
+        duyuru.setGravity(android.view.Gravity.CENTER);
+
+        LinearLayout.LayoutParams yeniLp =
+            new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            );
+        yeniLp.setMargins(0, 0, 4, 0);
+
+        LinearLayout.LayoutParams duyuruLp =
+            new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            );
+        duyuruLp.setMargins(4, 0, 0, 0);
+
+        ustButonlar.addView(yeni, yeniLp);
+        ustButonlar.addView(duyuru, duyuruLp);
+        uyelerEkrani.addView(ustButonlar);
+
+        yeni.setOnClickListener(v -> uyeFormu(-1));
+        duyuru.setOnClickListener(v -> smsDuyuru());
 
         ScrollView kaydir = new ScrollView(this);
         liste = new LinearLayout(this);
@@ -1324,6 +1370,11 @@ public class MainActivity extends Activity {{
             gecmis.setAllCaps(false);
             gecmis.setOnClickListener(v -> odemeGecmisi(id));
 
+            Button sms = new Button(this);
+            sms.setText("📩 SMS");
+            sms.setAllCaps(false);
+            sms.setOnClickListener(v -> smsUyeDuyuru(ad, soyad, telefon));
+
             Button sil = new Button(this);
             sil.setText("🗑️ Sil");
             sil.setAllCaps(false);
@@ -1332,12 +1383,13 @@ public class MainActivity extends Activity {{
             renkliButon(yenile, Color.rgb(46, 125, 50), Color.WHITE);
             renkliButon(odeme, Color.rgb(25, 118, 210), Color.WHITE);
             renkliButon(gecmis, Color.rgb(123, 31, 162), Color.WHITE);
+            renkliButon(sms, Color.rgb(66, 66, 66), Color.WHITE);
             renkliButon(sil, Color.rgb(198, 40, 40), Color.WHITE);
 
             sil.setOnClickListener(v -> uyeSil(id));
 
             Button[] butonDizisi = {{
-                duzenle, yenile, odeme, gecmis, sil
+                duzenle, yenile, odeme, gecmis, sms, sil
             }};
 
             for (Button buton : butonDizisi) {{
@@ -1570,9 +1622,13 @@ public class MainActivity extends Activity {{
 
         TextView toplam = kutu("💰 Bu Ay Tahsilat: 0,00 TL");
         TextView adet = kutu("🧾 Bu Ay Ödeme Sayısı: 0");
+        TextView toplamGenel = kutu("💵 Toplam Tahsilat: 0,00 TL");
+        TextView adetGenel = kutu("📋 Toplam Ödeme Sayısı: 0");
 
         ekran.addView(toplam);
         ekran.addView(adet);
+        ekran.addView(toplamGenel);
+        ekran.addView(adetGenel);
 
         TextView sonBaslik = new TextView(this);
         sonBaslik.setText("📋 Son Ödemeler");
@@ -1642,12 +1698,16 @@ public class MainActivity extends Activity {{
         Object[] parcalar = (Object[]) odemelerEkrani.getTag();
         TextView toplam = (TextView) parcalar[0];
         TextView adet = (TextView) parcalar[1];
-        LinearLayout liste = (LinearLayout) parcalar[2];
+        TextView toplamGenel = (TextView) parcalar[2];
+        TextView adetGenel = (TextView) parcalar[3];
+        LinearLayout liste = (LinearLayout) parcalar[4];
 
         liste.removeAllViews();
 
         double toplamTutar = 0.0;
         int odemeSayisi = 0;
+        double genelToplamTutar = 0.0;
+        int genelOdemeSayisi = 0;
 
         java.util.Calendar simdi = java.util.Calendar.getInstance();
         int buYil = simdi.get(java.util.Calendar.YEAR);
@@ -1661,6 +1721,9 @@ public class MainActivity extends Activity {{
         while (toplamCursor.moveToNext()) {{
             String tutarMetni = toplamCursor.getString(0);
             String tarihMetni = toplamCursor.getString(1);
+
+            genelToplamTutar += tutarSayiyaCevir(tutarMetni);
+            genelOdemeSayisi++;
 
             if (tarihMetni == null) continue;
 
@@ -1704,9 +1767,22 @@ public class MainActivity extends Activity {{
 
         adet.setText("🧾 Bu Ay Ödeme Sayısı: " + odemeSayisi);
 
+        toplamGenel.setText(
+            "💵 Toplam Tahsilat: " +
+            String.format(java.util.Locale.US, "%,.2f", genelToplamTutar)
+                .replace(",", "X")
+                .replace(".", ",")
+                .replace("X", ".") +
+            " TL"
+        );
+
+        adetGenel.setText(
+            "📋 Toplam Ödeme Sayısı: " + genelOdemeSayisi
+        );
+
         Cursor c = db.getReadableDatabase().rawQuery(
-            "SELECT o.tutar, o.tarih, o.aciklama, " +
-            "u.ad, u.soyad " +
+            "SELECT o.id, o.tutar, o.tarih, o.aciklama, " +
+            "o.ay_sayisi, o.uye_id, u.ad, u.soyad " +
             "FROM odemeler o " +
             "LEFT JOIN uyeler u ON u.id=o.uye_id " +
             "ORDER BY o.id DESC LIMIT 20",
@@ -1714,11 +1790,14 @@ public class MainActivity extends Activity {{
         );
 
         while (c.moveToNext()) {{
-            String tutar = c.getString(0);
-            String tarih = c.getString(1);
-            String aciklama = c.getString(2);
-            String ad = c.getString(3);
-            String soyad = c.getString(4);
+            int odemeId = c.getInt(0);
+            String tutar = c.getString(1);
+            String tarih = c.getString(2);
+            String aciklama = c.getString(3);
+            int aySayisi = c.getInt(4);
+            int uyeId = c.getInt(5);
+            String ad = c.getString(6);
+            String soyad = c.getString(7);
 
             if (ad == null || ad.trim().isEmpty()) ad = "Bilinmeyen Üye";
             if (soyad == null) soyad = "";
@@ -1732,6 +1811,7 @@ public class MainActivity extends Activity {{
             bilgi.setText(
                 "👤 " + ad + " " + soyad.trim() +
                 "\\n💰 " + (tutar == null ? "" : tutar) + " TL" +
+                "\\n📆 " + aySayisi + " Ay" +
                 "\\n📅 " + (tarih == null ? "" : tarih) +
                 ((aciklama == null || aciklama.trim().isEmpty())
                     ? ""
@@ -1741,6 +1821,15 @@ public class MainActivity extends Activity {{
             bilgi.setTextColor(Color.rgb(35, 35, 35));
 
             kart.addView(bilgi);
+
+            Button duzenle = new Button(this);
+            duzenle.setText("✏️ Düzenle");
+            duzenle.setAllCaps(false);
+            duzenle.setTextSize(12);
+            duzenle.setOnClickListener(
+                v -> odemeDuzenle(odemeId, uyeId)
+            );
+            kart.addView(duzenle);
 
             LinearLayout.LayoutParams lp =
                 new LinearLayout.LayoutParams(
@@ -1764,15 +1853,427 @@ public class MainActivity extends Activity {{
         }}
     }}
 
+    private void smsUyeDuyuru(String ad, String soyad, String telefon) {{
+        if (telefon == null || telefon.trim().isEmpty()) {{
+            Toast.makeText(
+                this,
+                "Bu üyeye ait telefon numarası bulunamadı.",
+                Toast.LENGTH_LONG
+            ).show();
+            return;
+        }}
+
+        final EditText mesaj = new EditText(this);
+        mesaj.setHint("SMS mesajı");
+        mesaj.setGravity(android.view.Gravity.TOP);
+        mesaj.setMinLines(4);
+        mesaj.setSingleLine(false);
+
+        String adSoyad = (ad + " " + (soyad == null ? "" : soyad)).trim();
+
+        new AlertDialog.Builder(this)
+            .setTitle("📩 " + adSoyad + " — SMS")
+            .setView(mesaj)
+            .setPositiveButton("Gönder", (d, w) -> {{
+                String metin = mesaj.getText().toString().trim();
+
+                if (metin.isEmpty()) {{
+                    Toast.makeText(
+                        this,
+                        "SMS mesajı boş olamaz.",
+                        Toast.LENGTH_SHORT
+                    ).show();
+                    return;
+                }}
+
+                bekleyenSmsTelefon = telefon.trim();
+                bekleyenSmsUyeMetni = metin;
+
+                if (android.os.Build.VERSION.SDK_INT >= 23 &&
+                    checkSelfPermission(android.Manifest.permission.SEND_SMS)
+                        != PackageManager.PERMISSION_GRANTED) {{
+
+                    requestPermissions(
+                        new String[]{{android.Manifest.permission.SEND_SMS}},
+                        SMS_UYE_IZIN_KODU
+                    );
+                    return;
+                }}
+
+                smsTekUyeGonder(bekleyenSmsTelefon, bekleyenSmsUyeMetni);
+                bekleyenSmsTelefon = null;
+                bekleyenSmsUyeMetni = null;
+            }})
+            .setNegativeButton("İptal", null)
+            .show();
+    }}
+
+    private void smsTekUyeGonder(String telefon, String metin) {{
+        if (telefon == null || metin == null ||
+            telefon.trim().isEmpty() || metin.trim().isEmpty()) {{
+            return;
+        }}
+
+        String numara = telefon.trim().replaceAll("[^0-9+]", "");
+
+        if (numara.startsWith("+")) {{
+            numara = numara.substring(1);
+        }} else if (numara.startsWith("0") && numara.length() == 11) {{
+            numara = "90" + numara.substring(1);
+        }} else if (numara.length() == 10 && numara.startsWith("5")) {{
+            numara = "90" + numara;
+        }}
+
+        if (numara.length() != 12 || !numara.startsWith("90")) {{
+            Toast.makeText(
+                this,
+                "Geçerli bir telefon numarası bulunamadı.",
+                Toast.LENGTH_LONG
+            ).show();
+            return;
+        }}
+
+        try {{
+            android.telephony.SmsManager smsManager =
+                android.telephony.SmsManager.getDefault();
+
+            java.util.ArrayList<String> parcalar =
+                smsManager.divideMessage(metin);
+
+            smsManager.sendMultipartTextMessage(
+                numara,
+                null,
+                parcalar,
+                null,
+                null
+            );
+
+            Toast.makeText(
+                this,
+                "SMS gönderimi başlatıldı.",
+                Toast.LENGTH_LONG
+            ).show();
+
+        }} catch (SecurityException e) {{
+            Toast.makeText(
+                this,
+                "SMS gönderme izni verilmedi.",
+                Toast.LENGTH_LONG
+            ).show();
+        }} catch (Exception e) {{
+            Toast.makeText(
+                this,
+                "SMS gönderimi başlatılamadı.",
+                Toast.LENGTH_LONG
+            ).show();
+        }}
+    }}
+
+    private void smsDuyuru() {{
+        final EditText mesaj = new EditText(this);
+        mesaj.setHint("Duyuru mesajı");
+        mesaj.setGravity(android.view.Gravity.TOP);
+        mesaj.setMinLines(4);
+        mesaj.setSingleLine(false);
+
+        new AlertDialog.Builder(this)
+            .setTitle("📩 SMS Duyuru")
+            .setView(mesaj)
+            .setPositiveButton("Devam", (d, w) -> {{
+                String metin = mesaj.getText().toString().trim();
+
+                if (metin.isEmpty()) {{
+                    Toast.makeText(
+                        this,
+                        "Duyuru mesajı boş olamaz.",
+                        Toast.LENGTH_SHORT
+                    ).show();
+                    return;
+                }}
+
+                bekleyenSmsMetni = metin;
+                smsDuyuruHazirla();
+            }})
+            .setNegativeButton("İptal", null)
+            .show();
+    }}
+
+    private void smsDuyuruHazirla() {{
+        if (android.os.Build.VERSION.SDK_INT >= 23 &&
+            checkSelfPermission(android.Manifest.permission.SEND_SMS)
+                != PackageManager.PERMISSION_GRANTED) {{
+
+            requestPermissions(
+                new String[]{{android.Manifest.permission.SEND_SMS}},
+                SMS_IZIN_KODU
+            );
+            return;
+        }}
+
+        smsDuyuruOnayla();
+    }}
+
+    private void smsDuyuruOnayla() {{
+        if (bekleyenSmsMetni == null || bekleyenSmsMetni.trim().isEmpty()) {{
+            return;
+        }}
+
+        java.util.LinkedHashSet<String> numaralar =
+            new java.util.LinkedHashSet<>();
+
+        Cursor c = db.getReadableDatabase().query(
+            "uyeler",
+            new String[]{{"telefon"}},
+            "telefon IS NOT NULL AND TRIM(telefon) <> ''",
+            null,
+            null,
+            null,
+            "id ASC"
+        );
+
+        while (c.moveToNext()) {{
+            String telefon = c.getString(0);
+
+            if (telefon == null) {{
+                continue;
+            }}
+
+            String numara = telefon.trim();
+            numara = numara.replaceAll("[^0-9+]", "");
+
+            if (numara.startsWith("+")) {{
+                numara = numara.substring(1);
+            }} else if (numara.startsWith("0") && numara.length() == 11) {{
+                numara = "90" + numara.substring(1);
+            }} else if (numara.length() == 10 && numara.startsWith("5")) {{
+                numara = "90" + numara;
+            }}
+
+            if (numara.length() == 12 && numara.startsWith("90")) {{
+                numaralar.add(numara);
+            }}
+        }}
+
+        c.close();
+
+        if (numaralar.isEmpty()) {{
+            Toast.makeText(
+                this,
+                "SMS gönderilecek geçerli üye telefonu bulunamadı.",
+                Toast.LENGTH_LONG
+            ).show();
+            bekleyenSmsMetni = null;
+            return;
+        }}
+
+        final int adet = numaralar.size();
+
+        new AlertDialog.Builder(this)
+            .setTitle("📩 SMS Gönder")
+            .setMessage(
+                adet + " üyeye SMS gönderilecek.\\n\\n" +
+                "Mesaj:\\n" + bekleyenSmsMetni
+            )
+            .setPositiveButton("Gönder", (d, w) -> {{
+                smsleriGonder(numaralar, bekleyenSmsMetni);
+                bekleyenSmsMetni = null;
+            }})
+            .setNegativeButton("İptal", (d, w) -> {{
+                bekleyenSmsMetni = null;
+            }})
+            .show();
+    }}
+
+    private void smsleriGonder(
+        java.util.LinkedHashSet<String> numaralar,
+        String metin
+    ) {{
+        if (metin == null || metin.trim().isEmpty()) {{
+            return;
+        }}
+
+        try {{
+            android.telephony.SmsManager smsManager =
+                android.telephony.SmsManager.getDefault();
+
+            java.util.ArrayList<String> parcalar =
+                smsManager.divideMessage(metin);
+
+            int basarili = 0;
+
+            for (String numara : numaralar) {{
+                try {{
+                    smsManager.sendMultipartTextMessage(
+                        numara,
+                        null,
+                        parcalar,
+                        null,
+                        null
+                    );
+                    basarili++;
+                }} catch (Exception ignored) {{
+                }}
+            }}
+
+            Toast.makeText(
+                this,
+                basarili + " üyeye SMS gönderimi başlatıldı.",
+                Toast.LENGTH_LONG
+            ).show();
+
+        }} catch (SecurityException e) {{
+            Toast.makeText(
+                this,
+                "SMS gönderme izni verilmedi.",
+                Toast.LENGTH_LONG
+            ).show();
+        }} catch (Exception e) {{
+            Toast.makeText(
+                this,
+                "SMS gönderimi başlatılamadı.",
+                Toast.LENGTH_LONG
+            ).show();
+        }}
+    }}
+
+    @Override
+    public void onRequestPermissionsResult(
+        int requestCode,
+        String[] permissions,
+        int[] grantResults
+    ) {{
+        super.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        );
+
+        if (requestCode == SMS_IZIN_KODU) {{
+            if (grantResults.length > 0 &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) {{
+
+                smsDuyuruOnayla();
+
+            }} else {{
+                bekleyenSmsMetni = null;
+
+                Toast.makeText(
+                    this,
+                    "SMS gönderme izni verilmedi.",
+                    Toast.LENGTH_LONG
+                ).show();
+            }}
+
+            return;
+        }}
+
+        if (requestCode == SMS_UYE_IZIN_KODU) {{
+            if (grantResults.length > 0 &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED) {{
+
+                smsTekUyeGonder(
+                    bekleyenSmsTelefon,
+                    bekleyenSmsUyeMetni
+                );
+
+            }} else {{
+                Toast.makeText(
+                    this,
+                    "SMS gönderme izni verilmedi.",
+                    Toast.LENGTH_LONG
+                ).show();
+            }}
+
+            bekleyenSmsTelefon = null;
+            bekleyenSmsUyeMetni = null;
+        }}
+    }}
+
+    private void whatsappUyeDuyuru(String ad, String soyad, String telefon) {{
+        final EditText mesaj = new EditText(this);
+        mesaj.setHint("Mesajı yazın");
+        mesaj.setGravity(android.view.Gravity.TOP);
+        mesaj.setMinLines(4);
+        mesaj.setSingleLine(false);
+
+        new AlertDialog.Builder(this)
+            .setTitle("💬 " + ad + " " + soyad)
+            .setView(mesaj)
+            .setPositiveButton("WhatsApp'ı Aç", (d, w) -> {{
+                String metin = mesaj.getText().toString().trim();
+
+                if (metin.isEmpty()) {{
+                    Toast.makeText(
+                        this,
+                        "Mesaj boş olamaz.",
+                        Toast.LENGTH_SHORT
+                    ).show();
+                    return;
+                }}
+
+                String numara = telefon == null ? "" : telefon.trim();
+                numara = numara.replaceAll("[^0-9+]", "");
+
+                if (numara.startsWith("+")) {{
+                    numara = numara.substring(1);
+                }} else if (numara.startsWith("0") && numara.length() == 11) {{
+                    numara = "90" + numara.substring(1);
+                }} else if (numara.length() == 10 && numara.startsWith("5")) {{
+                    numara = "90" + numara;
+                }}
+
+                if (numara.length() < 12 || !numara.startsWith("90")) {{
+                    Toast.makeText(
+                        this,
+                        "Üyenin telefon numarası geçersiz.",
+                        Toast.LENGTH_SHORT
+                    ).show();
+                    return;
+                }}
+
+                try {{
+                    String kodluMesaj = java.net.URLEncoder.encode(
+                        metin,
+                        "UTF-8"
+                    );
+
+                    Intent intent = new Intent(
+                        Intent.ACTION_VIEW,
+                        Uri.parse(
+                            "https://wa.me/" + numara +
+                            "?text=" + kodluMesaj
+                        )
+                    );
+                    intent.setPackage("com.whatsapp");
+                    startActivity(intent);
+                }} catch (Exception e) {{
+                    Toast.makeText(
+                        this,
+                        "WhatsApp açılamadı.",
+                        Toast.LENGTH_SHORT
+                    ).show();
+                }}
+            }})
+            .setNegativeButton("İptal", null)
+            .show();
+    }}
+
     private void odemeEkle(int uyeId) {{
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
 
         EditText tutar = alan("Tutar");
+        form.addView(tutar);
+
+        EditText aySayisi = alan("Üyelik Süresi (Ay)");
+        aySayisi.setInputType(
+            android.text.InputType.TYPE_CLASS_NUMBER
+        );
+        form.addView(aySayisi);
+
         EditText tarih = alan("Tarih (YYYY-AA-GG)");
         EditText aciklama = alan("Açıklama");
 
-        form.addView(tutar);
         form.addView(tarih);
         form.addView(aciklama);
 
@@ -1785,8 +2286,180 @@ public class MainActivity extends Activity {{
                 v.put("tutar", tutar.getText().toString().trim());
                 v.put("tarih", tarih.getText().toString().trim());
                 v.put("aciklama", aciklama.getText().toString().trim());
+                String ayMetni = aySayisi.getText().toString().trim();
+                int ay = 1;
+
+                try {{
+                    ay = Integer.parseInt(ayMetni);
+                }} catch (Exception ignored) {{}}
+
+                if (ay < 1) {{
+                    ay = 1;
+                }}
+
+                v.put("ay_sayisi", ay);
+
                 db.getWritableDatabase().insert("odemeler", null, v);
-                Toast.makeText(this, "Ödeme kaydedildi", Toast.LENGTH_SHORT).show();
+
+                // Ödenen toplam süreyi başlangıç tarihinden hesapla.
+                if (ay > 1) {{
+                    Cursor uyeCursor = db.getReadableDatabase().rawQuery(
+                        "SELECT baslangic FROM uyeler WHERE id=?",
+                        new String[]{{String.valueOf(uyeId)}}
+                    );
+
+                    if (uyeCursor.moveToFirst()) {{
+                        String baslangicMetni = uyeCursor.getString(0);
+
+                        try {{
+                            java.text.SimpleDateFormat giris =
+                                new java.text.SimpleDateFormat("yyyy-MM-dd");
+                            giris.setLenient(false);
+
+                            java.util.Date baslangicTarihi =
+                                giris.parse(baslangicMetni.trim());
+
+                            java.util.Calendar yeniBitis =
+                                java.util.Calendar.getInstance();
+                            yeniBitis.setTime(baslangicTarihi);
+                            yeniBitis.add(java.util.Calendar.MONTH, ay);
+
+                            String yeniBitisMetni =
+                                giris.format(yeniBitis.getTime());
+
+                            ContentValues bitisValues =
+                                new ContentValues();
+                            bitisValues.put("bitis", yeniBitisMetni);
+
+                            db.getWritableDatabase().update(
+                                "uyeler",
+                                bitisValues,
+                                "id=?",
+                                new String[]{{String.valueOf(uyeId)}}
+                            );
+                        }} catch (Exception ignored) {{
+                        }}
+                    }}
+
+                    uyeCursor.close();
+                }}
+
+                Toast.makeText(
+                    this,
+                    "Ödeme kaydedildi",
+                    Toast.LENGTH_SHORT
+                ).show();
+            }})
+            .setNegativeButton("İptal", null)
+            .show();
+    }}
+
+    private void odemeDuzenle(int odemeId, int uyeId) {{
+        LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+
+        EditText tutar = alan("Tutar");
+        EditText aySayisi = alan("Üyelik Süresi (Ay)");
+        aySayisi.setInputType(
+            android.text.InputType.TYPE_CLASS_NUMBER
+        );
+        EditText tarih = alan("Tarih (YYYY-AA-GG)");
+        EditText aciklama = alan("Açıklama");
+
+        form.addView(tutar);
+        form.addView(aySayisi);
+        form.addView(tarih);
+        form.addView(aciklama);
+
+        Cursor c = db.getReadableDatabase().rawQuery(
+            "SELECT tutar, tarih, aciklama, ay_sayisi " +
+            "FROM odemeler WHERE id=?",
+            new String[]{{String.valueOf(odemeId)}}
+        );
+
+        if (c.moveToFirst()) {{
+            tutar.setText(c.getString(0));
+            tarih.setText(c.getString(1));
+            aciklama.setText(c.getString(2));
+            aySayisi.setText(String.valueOf(c.getInt(3)));
+        }}
+        c.close();
+
+        new AlertDialog.Builder(this)
+            .setTitle("Ödeme Düzenle")
+            .setView(form)
+            .setPositiveButton("Kaydet", (d, w) -> {{
+                String ayMetni = aySayisi.getText().toString().trim();
+                int ay = 1;
+
+                try {{
+                    ay = Integer.parseInt(ayMetni);
+                }} catch (Exception ignored) {{}}
+
+                if (ay < 1) {{
+                    ay = 1;
+                }}
+
+                ContentValues v = new ContentValues();
+                v.put("tutar", tutar.getText().toString().trim());
+                v.put("tarih", tarih.getText().toString().trim());
+                v.put("aciklama", aciklama.getText().toString().trim());
+                v.put("ay_sayisi", ay);
+
+                db.getWritableDatabase().update(
+                    "odemeler",
+                    v,
+                    "id=?",
+                    new String[]{{String.valueOf(odemeId)}}
+                );
+
+                Cursor uyeCursor = db.getReadableDatabase().rawQuery(
+                    "SELECT baslangic FROM uyeler WHERE id=?",
+                    new String[]{{String.valueOf(uyeId)}}
+                );
+
+                if (uyeCursor.moveToFirst()) {{
+                    String baslangicMetni = uyeCursor.getString(0);
+
+                    try {{
+                        java.text.SimpleDateFormat giris =
+                            new java.text.SimpleDateFormat("yyyy-MM-dd");
+                        giris.setLenient(false);
+
+                        java.util.Date baslangicTarihi =
+                            giris.parse(baslangicMetni.trim());
+
+                        java.util.Calendar yeniBitis =
+                            java.util.Calendar.getInstance();
+                        yeniBitis.setTime(baslangicTarihi);
+                        yeniBitis.add(java.util.Calendar.MONTH, ay);
+
+                        ContentValues bitisValues =
+                            new ContentValues();
+                        bitisValues.put(
+                            "bitis",
+                            giris.format(yeniBitis.getTime())
+                        );
+
+                        db.getWritableDatabase().update(
+                            "uyeler",
+                            bitisValues,
+                            "id=?",
+                            new String[]{{String.valueOf(uyeId)}}
+                        );
+                    }} catch (Exception ignored) {{
+                    }}
+                }}
+
+                uyeCursor.close();
+
+                odemeleriGuncelle();
+
+                Toast.makeText(
+                    this,
+                    "Ödeme güncellendi",
+                    Toast.LENGTH_SHORT
+                ).show();
             }})
             .setNegativeButton("İptal", null)
             .show();
@@ -1825,7 +2498,7 @@ public class MainActivity extends Activity {{
 
     private class Veritabani extends SQLiteOpenHelper {{
         Veritabani() {{
-            super(MainActivity.this, "uye_takip.db", null, 1);
+            super(MainActivity.this, "uye_takip.db", null, 2);
         }}
 
         @Override
@@ -1847,7 +2520,8 @@ public class MainActivity extends Activity {{
                 "uye_id INTEGER NOT NULL," +
                 "tutar TEXT," +
                 "tarih TEXT," +
-                "aciklama TEXT)"
+                "aciklama TEXT," +
+                "ay_sayisi INTEGER DEFAULT 1)"
             );
         }}
 
@@ -1856,7 +2530,13 @@ public class MainActivity extends Activity {{
             SQLiteDatabase sql,
             int oldVersion,
             int newVersion
-        ) {{}}
+        ) {{
+            if (oldVersion < 2) {{
+                sql.execSQL(
+                    "ALTER TABLE odemeler ADD COLUMN ay_sayisi INTEGER DEFAULT 1"
+                );
+            }}
+        }}
     }}
 }}
 """
