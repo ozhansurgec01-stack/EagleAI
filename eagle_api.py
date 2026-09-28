@@ -693,6 +693,7 @@ def bilgi_bankasi_ara(mesaj):
         "api": ["api", "api nedir", "api ne işe yarar", "api ne ise yarar"],
         "http": ["http", "http nedir", "404", "200", "429", "500"],
         "flask": ["flask", "flask nedir", "flask route", "flask api"],
+        "android": ["android", "android uygulama", "android uygulaması", "android apk", "android proje", "android projesi", "apk"],
         "matematik": [
             "matematik", "toplama", "çıkarma", "cikarma", "çarpma", "carpma",
             "bölme", "bolme", "işlem önceliği", "islem onceligi",
@@ -731,10 +732,11 @@ def bilgi_bankasi_ara(mesaj):
 
     if any(konu_terimi_eslesiyor(k) for k in matematik_oncelik):
         konu = "matematik"
-        for ad, kelimeler in konu_eslesmeleri.items():
-            if any(konu_terimi_eslesiyor(k) for k in kelimeler):
-                konu = ad
-                break
+
+    for ad, kelimeler in konu_eslesmeleri.items():
+        if any(konu_terimi_eslesiyor(k) for k in kelimeler):
+            konu = ad
+            break
 
     bilgi = bilgi_bankasi_yukle()
     bulunan = []
@@ -1144,7 +1146,6 @@ def bilgi_bankasi_ara(mesaj):
                 elif isinstance(madde, str):
                     madde_metin = madde.lower()
                     gosterilecek = madde
-                    continue
 
                 if konu:
                     hedefler = konu_eslesmeleri[konu]
@@ -1157,6 +1158,47 @@ def bilgi_bankasi_ara(mesaj):
 
     if (konu != "python" and not python_sorusu) or bulunan:
         tara(bilgi)
+
+    # Konu bulunamadığında kayıt metni üzerinden güvenli ikinci arama yap.
+    if not konu and not bulunan:
+        durak = {
+            "bir", "ve", "veya", "ile", "için", "icin", "nasıl", "nasil",
+            "ne", "nedir", "kaç", "kac", "hangi", "olan", "olarak",
+            "bu", "şu", "da", "de", "mi", "mı", "mu", "mü"
+        }
+
+        sorgu_kelime = {
+            k for k in re.findall(r"[a-z0-9çğıöşü]+", metin)
+            if len(k) >= 3 and k not in durak
+        }
+
+        def kayit_tara(veri):
+            if isinstance(veri, dict):
+                for deger in veri.values():
+                    kayit_tara(deger)
+            elif isinstance(veri, list):
+                for madde in veri:
+                    if isinstance(madde, dict):
+                        soru = str(madde.get("soru", ""))
+                        cevap = str(madde.get("cevap", ""))
+                        kayit_metin = (soru + " " + cevap).lower()
+                        gosterilecek = f"{soru} {cevap}".strip()
+                    elif isinstance(madde, str):
+                        kayit_metin = madde.lower()
+                        gosterilecek = madde
+                    else:
+                        continue
+
+                    kayit_kelime = set(
+                        re.findall(r"[a-z0-9çğıöşü]+", kayit_metin)
+                    )
+                    ortak = sorgu_kelime & kayit_kelime
+
+                    if len(ortak) >= 2:
+                        puan = len(ortak)
+                        bulunan.append((puan, gosterilecek))
+
+        kayit_tara(bilgi)
 
     bulunan.sort(key=lambda x: x[0], reverse=True)
 
