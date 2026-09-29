@@ -1340,15 +1340,15 @@ def bilgi_bankasi_ara(mesaj):
             malzemeler = kayit.get("malzemeler", [])
             if isinstance(malzemeler, list) and malzemeler:
                 parcalar.append(
-                    "🧺 Malzemeler:\\n"
-                    + "\\n".join(f"- {x}" for x in malzemeler)
+                    "🧺 Malzemeler:\n"
+                    + "\n".join(f"- {x}" for x in malzemeler)
                 )
 
             yapilis = kayit.get("yapilis", [])
             if isinstance(yapilis, list) and yapilis:
                 parcalar.append(
-                    "👨‍🍳 Yapılışı:\\n"
-                    + "\\n".join(
+                    "👨‍🍳 Yapılışı:\n"
+                    + "\n".join(
                         f"{i}. {x}"
                         for i, x in enumerate(yapilis, 1)
                     )
