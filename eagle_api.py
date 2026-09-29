@@ -738,6 +738,64 @@ def bilgi_bankasi_ara(mesaj):
     if any(konu_terimi_eslesiyor(k) for k in matematik_oncelik):
         konu = "matematik"
 
+# 🍲 Tarif konusu: JSON'daki tarif adlarını otomatik tanı.
+    # Böylece yeni tarif eklenince Python koduna ayrıca isim eklemek gerekmez.
+    bilgi = bilgi_bankasi_yukle()
+    yemek_katalogu = bilgi.get("yemek", {}) if isinstance(bilgi, dict) else {}
+
+    if isinstance(yemek_katalogu, dict):
+        yemek_terimleri = []
+
+        yemek_ekleri = (
+            "nın", "nin", "nun", "nün",
+            "ın", "in", "un", "ün",
+            "nı", "ni", "nu", "nü",
+            "ı", "i", "u", "ü",
+        )
+
+        for tarif_anahtari, tarif_kaydi in yemek_katalogu.items():
+            if tarif_anahtari == "tarif_format" or not isinstance(tarif_kaydi, dict):
+                continue
+
+            terimler = [
+                str(tarif_anahtari).replace("_", " ")
+            ]
+
+            ad = tarif_kaydi.get("ad")
+            if ad:
+                terimler.append(str(ad))
+
+            anahtarlar = tarif_kaydi.get("anahtarlar", [])
+            if isinstance(anahtarlar, list):
+                terimler.extend(str(x) for x in anahtarlar if x)
+
+            for terim in terimler:
+                yemek_terimleri.append(terim)
+
+                if " " not in terim.strip():
+                    for ek in yemek_ekleri:
+                        yemek_terimleri.append(terim + ek)
+
+                    # Türkçe ünsüz yumuşaması:
+                    # sütlaç -> sütlacın
+                    # yoğurt vb. benzer yapılara alan bırakır.
+                    yumusak_kok = terim
+                    if terim.endswith("ç"):
+                        yumusak_kok = terim[:-1] + "c"
+                    elif terim.endswith("k"):
+                        yumusak_kok = terim[:-1] + "ğ"
+                    elif terim.endswith("p"):
+                        yumusak_kok = terim[:-1] + "b"
+                    elif terim.endswith("t"):
+                        yumusak_kok = terim[:-1] + "d"
+
+                    if yumusak_kok != terim:
+                        for ek in yemek_ekleri:
+                            yemek_terimleri.append(yumusak_kok + ek)
+
+        if any(konu_terimi_eslesiyor(k) for k in yemek_terimleri):
+            konu = "yemek"
+
     for ad, kelimeler in konu_eslesmeleri.items():
         if any(konu_terimi_eslesiyor(k) for k in kelimeler):
             konu = ad
@@ -829,6 +887,467 @@ def bilgi_bankasi_ara(mesaj):
 
                 if parcalar:
                     return parcalar
+
+        tarif_format = yemek.get("tarif_format", {})
+        if isinstance(tarif_format, dict):
+            parcalar = []
+
+            aciklama = tarif_format.get("aciklama")
+            if aciklama:
+                parcalar.append(aciklama)
+
+            alanlar = tarif_format.get("alanlar", [])
+            if isinstance(alanlar, list):
+                parcalar.extend(str(x) for x in alanlar)
+
+            if parcalar:
+                return parcalar[:8]
+
+    # ➗ Matematik bilgi bankası için özel arama
+    if konu == "matematik":
+        matematik = bilgi.get("matematik", {})
+        matematik_eslesmeleri = {
+            "temel_islemler": ["toplama", "çıkarma", "cikarma", "çarpma", "carpma", "bölme", "bolme", "temel işlem"],
+            "islem_onceligi": ["işlem önceliği", "islem onceligi", "öncelik sırası", "oncelik sirasi"],
+            "uslu_sayilar": ["üslü sayı", "uslu sayi", "üslü sayılar", "uslu sayilar", "üs", "us"],
+            "karekok": ["karekök", "karekok", "karekök nedir", "karekok nedir"],
+            "yuzde": ["yüzde", "yuzde", "%"],
+            "ters_yuzde": ["ters yüzde", "ters yuzde", "yüzde ise sayı", "yuzde ise sayi"],
+            "zam": ["zam", "zam gelirse", "zam oranı", "zam orani"],
+            "indirim": ["indirim", "indirim oranı", "indirim orani"],
+            "oran": ["oran", "oran nedir"],
+            "oranti": ["orantı", "oranti", "orantı nedir", "oranti nedir"],
+            "ortalama": ["ortalama", "aritmetik ortalama", "ortalama nedir"],
+            "mutlak_deger": ["mutlak değer", "mutlak deger", "mutlak değer nedir", "mutlak deger nedir"],
+            "pozitif_negatif_sayilar": ["pozitif sayı", "negatif sayı", "pozitif negatif", "pozitif ve negatif"],
+            "kesirler": ["kesir", "kesirler", "kesir nedir", "kesirler nasıl"],
+            "ondalik_sayilar": ["ondalık sayı", "ondalik sayi", "ondalık sayılar", "ondalik sayilar"],
+            "bolunebilme": ["bölünebilme", "bolunebilme", "bölünebilme kuralları", "bolunebilme kurallari"],
+            "asal_sayilar": ["asal sayı", "asal sayi", "asal sayılar", "asal sayilar"],
+            "ebob": ["ebob", "ebob nedir", "en büyük ortak bölen"],
+            "ekok": ["ekok", "ekok nedir", "en küçük ortak kat"],
+            "basit_denklem": ["denklem", "denklem çöz", "denklem coz", "basit denklem"]
+        }
+
+        secilen = None
+
+        def matematik_terimi_eslesiyor(k):
+            # Matematik terimleri alt dize olarak değil, tam kelime/ifade
+            # olarak eşleşsin. Böylece "oran", "oranlarının" içinde
+            # yanlışlıkla eşleşmez; "oran" ve "orantı" da karışmaz.
+            if k == "%":
+                return "%" in metin
+            return bool(re.search(
+                rf"(?<!\w){re.escape(k)}(?!\w)",
+                metin,
+                re.IGNORECASE,
+            ))
+
+        for alt_konu, kelimeler in matematik_eslesmeleri.items():
+            if any(matematik_terimi_eslesiyor(k) for k in kelimeler):
+                secilen = alt_konu
+                break
+
+        if secilen and isinstance(matematik.get(secilen), dict):
+            kayit = matematik[secilen]
+            parcalar = []
+
+            for alan in ("aciklama", "formul", "kural", "kurallar", "sira", "not", "ornek", "ornekler"):
+                deger = kayit.get(alan)
+                if isinstance(deger, str):
+                    parcalar.append(deger)
+                elif isinstance(deger, list):
+                    parcalar.extend(str(x) for x in deger)
+
+            if parcalar:
+                return parcalar[:3]
+
+    # 🎯 Yeni Python konularında tam soru önceliği.
+    # İlgili başka kayıtlar yerine doğrudan sorulan kavramın kaydını seçer.
+    ozgun_python_sorular = {
+        "datetime.now()": ["datetime.now() ne işe yarar?"],
+        "timedelta": ["timedelta nedir?"],
+        "math.sqrt()": ["math.sqrt() ne işe yarar?"],
+        "super()": ["super() ne işe yarar?"],
+        "venv": ["Python venv nedir?"],
+        "pip install": ["pip install ne işe yarar?"],
+        "Python paketi": ["Python paketi nedir?"],
+        "iterator": ["Iterator nedir?"],
+        "generator": ["Generator nedir?"],
+        "yield": ["yield ne işe yarar?"],
+        "decorator": ["Python decorator nedir?"],
+        "async await": ["async/await nedir?"],
+    }
+
+    mesaj_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", metin.lower())
+    mesaj_norm = re.sub(r"\s+", " ", mesaj_norm).strip()
+
+    # 🎯 super() için doğrudan kavram eşleşmesi.
+    # Genel "değişken" vb. kayıtların super() sorusunu gölgelemesini önler.
+    if "super" in mesaj_norm and "ne işe yarar" in mesaj_norm:
+        for maddeler in bilgi.get("python", {}).values():
+            if not isinstance(maddeler, list):
+                continue
+            for madde in maddeler:
+                if not isinstance(madde, dict):
+                    continue
+                soru = str(madde.get("soru", "")).strip().lower()
+                cevap = str(madde.get("cevap", "")).strip()
+                if soru == "super() ne işe yarar?" and cevap:
+                    return [cevap]
+
+    for terim, sorular in ozgun_python_sorular.items():
+        terim_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", terim.lower())
+        terim_norm = re.sub(r"\s+", " ", terim_norm).strip()
+        if terim_norm not in mesaj_norm:
+            continue
+
+        for kategori, maddeler in bilgi.get("python", {}).items():
+            if not isinstance(maddeler, list):
+                continue
+            for madde in maddeler:
+                if not isinstance(madde, dict):
+                    continue
+                soru = str(madde.get("soru", "")).strip()
+                cevap = str(madde.get("cevap", "")).strip()
+                if not soru or not cevap:
+                    continue
+
+                soru_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", soru.lower())
+                soru_norm = re.sub(r"\s+", " ", soru_norm).strip()
+
+                for hedef_soru in sorular:
+                    hedef_norm = re.sub(r"[^a-z0-9çğıöşü\s]", " ", hedef_soru.lower())
+                    hedef_norm = re.sub(r"\s+", " ", hedef_norm).strip()
+                    # Özel kayıt yalnızca hedef soru ifadesi gerçekten
+                    # mesajın içinde geçiyorsa doğrudan seçilir.
+                    # Terim başka bir sorunun bağlamında geçiyorsa
+                    # aşağıdaki çoklu kavram motoruna bırakılır.
+                    if hedef_norm in mesaj_norm:
+                        return [cevap]
+
+    # 🎯 isinstance() eski tip düz KB kayıtlarında tutulduğu için
+    # özel doğrudan eşleşmeyle seç.
+    if re.search(r"\bisinstance\s*\(?", metin, re.IGNORECASE):
+        python_kayitlari = bilgi.get("python", {})
+        for maddeler in python_kayitlari.values():
+            if not isinstance(maddeler, list):
+                continue
+            for madde in maddeler:
+                if isinstance(madde, str) and "isinstance()" in madde.lower():
+                    return [madde]
+                if isinstance(madde, dict):
+                    soru = str(madde.get("soru", "")).lower()
+                    cevap = str(madde.get("cevap", "")).strip()
+                    if "isinstance" in soru and cevap:
+                        return [cevap]
+
+    # 🎯 Özel Python terimleri için akıllı eşleştirme
+    # Bir soruda geçen yardımcı bir terimin ana konuyu gölgelemesini önler.
+    # Çoklu kavramlar, olumsuz ifadeler ve soru içindeki güçlü bağlam
+    # birlikte değerlendirilir.
+
+    ozel_terimler = (
+        "super().__init__()", "super().__init__",
+        "datetime.now()", "math.sqrt()",
+        "os.getcwd()", "os.listdir()", "os.mkdir()", "os.makedirs()",
+        "os.remove()", "os.path.exists()", "path.exists()", "path.mkdir()",
+        "path.name", "path.suffix", "f-string",
+        "find()", "count()", "isdigit()", "isalpha()", "isalnum()",
+        "capitalize()", "title()",
+        "append()", "extend()", "insert()", "remove()", "pop()", "clear()",
+        "copy()", "copy", "reverse()", "keys()", "values()", "items()",
+        "get()", "update()", "isinstance()", "isinstance",
+        "break", "continue", "super()", "__init__",
+        "timedelta", "venv", "pip install", "pip",
+        "paket", "iterator", "iter()", "next()", "generator",
+        "yield", "decorator", "async", "await",
+        "comprehension", "list comprehension", "dictionary comprehension",
+        "set comprehension", "filter()", "filter", "map()", "map",
+        "lambda"
+    )
+
+    mesaj_alt = metin.lower().replace(" ", "")
+    ozel_terimler = tuple(sorted(ozel_terimler, key=len, reverse=True))
+
+    eslesen_terimler = [
+        terim for terim in ozel_terimler
+        if terim.lower().replace(" ", "") in mesaj_alt
+    ]
+
+    if eslesen_terimler:
+        adaylar = []
+
+        # Olumsuz/kaçınma ifadeleri.
+        # Örn. "filter() kullanmadan" sorusunda filter kaydı ana cevap olmamalı.
+        filter_yasak = bool(re.search(
+            r"filter\(\)?[^.!?]{0,30}\b(kullanmadan|kullanma|olmadan|yerine)\b"
+            r"|\b(kullanmadan|kullanma|olmadan|yerine)\b[^.!?]{0,30}filter\(\)?",
+            metin
+        ))
+
+        # Çoklu kavramlar için güçlü bağlam çiftleri.
+        coklu_kavramlar = [
+            ("super()", "__init__"),
+            ("super().__init__", "__init__"),
+            ("comprehension", "liste"),
+            ("list comprehension", "liste"),
+            ("copy()", "append()"),
+            ("copy", "append()"),
+            ("isinstance", "liste"),
+            ("fonksiyon", "append()"),
+        ]
+
+        for kategori, maddeler in bilgi.get("python", {}).items():
+            if not isinstance(maddeler, list):
+                continue
+
+            for madde in maddeler:
+                if isinstance(madde, dict):
+                    soru_metin = str(madde.get("soru", ""))
+                    cevap_metin = str(madde.get("cevap", ""))
+                    gosterilecek = cevap_metin.strip()
+                elif isinstance(madde, str):
+                    soru_metin = madde
+                    cevap_metin = ""
+                    gosterilecek = madde.strip()
+                    continue
+
+                if not gosterilecek:
+                    continue
+
+                soru_alt = soru_metin.lower().replace(" ", "")
+                cevap_alt = cevap_metin.lower().replace(" ", "")
+                madde_alt = (soru_metin + " " + cevap_metin).lower()
+
+                # datetime sorgusunda datetime.now() kaydını yanlışlıkla
+                # genel datetime sorusuna seçtirme.
+                if (
+                    "datetime" in eslesen_terimler
+                    and "datetime.now()" in madde_alt
+                    and "datetime.now()" not in mesaj_alt
+                ):
+                    continue
+
+                soru_eslesen = sum(
+                    1 for terim in eslesen_terimler
+                    if terim.lower().replace(" ", "") in soru_alt
+                )
+
+                cevap_eslesen = sum(
+                    1 for terim in eslesen_terimler
+                    if terim.lower().replace(" ", "") in cevap_alt
+                )
+
+                # Bazı yardımcı terimler soru içinde özellikle
+                # kullanılmamak üzere geçebilir. Örneğin:
+                # "filter() kullanmadan yeni listeye seçmek"
+                # sorusu doğrudan list comprehension konusunu anlatır.
+                anlam_eslesmesi = (
+                    filter_yasak
+                    and "comprehension" in madde_alt
+                    and (
+                        "yeni liste" in metin
+                        or "listeye" in metin
+                        or "seçerim" in metin
+                        or "seçmek" in metin
+                    )
+                )
+
+                if not soru_eslesen and not cevap_eslesen and not anlam_eslesmesi:
+                    continue
+
+                # Soru başlığındaki terim, cevaptaki terimden çok daha değerlidir.
+                puan = (soru_eslesen * 320) + (cevap_eslesen * 12)
+
+                # Sorunun gerçek metnindeki anlamlı kelimeleri de dikkate al.
+                soru_kelimeleri = set(
+                    re.findall(r"[a-z0-9çğıöşü]+", metin)
+                )
+                kayit_kelimeleri = set(
+                    re.findall(r"[a-z0-9çğıöşü]+", soru_metin.lower())
+                )
+
+                ortak = soru_kelimeleri & kayit_kelimeleri
+                puan += min(len(ortak), 8) * 35
+
+                # Birleşik kavramlar tek terimden daha güçlüdür.
+                for a, b in coklu_kavramlar:
+                    a_norm = a.lower().replace(" ", "")
+                    b_norm = b.lower().replace(" ", "")
+
+                    if a_norm in mesaj_alt and b_norm in mesaj_alt:
+                        kayit_a = a_norm in soru_alt
+                        kayit_b = b_norm in soru_alt
+
+                        if kayit_a and kayit_b:
+                            puan += 900
+                        elif kayit_a or kayit_b:
+                            puan += 100
+
+                # "filter kullanmadan" gibi açık yasaklarda filter kaydını düşür.
+                if filter_yasak and "filter" in soru_alt:
+                    puan -= 1500
+
+                # filter() özellikle kullanılmayacaksa,
+                # filter öneren kayıtları güçlü şekilde geri plana at.
+                if filter_yasak:
+                    if "filter()" in cevap_alt or "filter(" in cevap_alt:
+                        puan -= 2500
+
+                # "filter kullanmadan yeni listeye seçme" ifadesi,
+                # list comprehension kaydına güçlü bir anlam işaretidir.
+                if filter_yasak and "comprehension" in madde_alt:
+                    puan += 1800
+
+                    if (
+                        "yeni liste" in metin
+                        or "listeye" in metin
+                        or "seçerim" in metin
+                        or "seçmek" in metin
+                    ):
+                        puan += 1200
+
+                # super() + __init__ birlikte soruluyorsa __init__ bağlamını güçlendir.
+                if "__init__" in mesaj_alt and "super()" in mesaj_alt:
+                    if "__init__" in soru_alt:
+                        puan += 900
+                    if "super()" in soru_alt:
+                        puan += 250
+
+                # append() sorunun yardımcı detayıysa cevaptaki append
+                # copy() gibi ana konuyu gölgelememeli.
+                if "copy" in soru_alt and "append()" in cevap_alt:
+                    puan += 500
+
+                adaylar.append((puan, gosterilecek, soru_metin))
+
+        if adaylar:
+            adaylar.sort(key=lambda x: x[0], reverse=True)
+
+            sonuc = []
+            gorulen = set()
+
+            for _, madde, _ in adaylar:
+                anahtar = madde.lower().strip()
+                if anahtar in gorulen:
+                    continue
+
+                gorulen.add(anahtar)
+                sonuc.append(madde)
+
+                if len(sonuc) >= 3:
+                    break
+
+            if sonuc:
+                return sonuc
+
+    # 🍲 Yemek / tarif bilgi bankası için genel arama
+    if konu == "yemek":
+        yemek = bilgi.get("yemek", {})
+
+        def tarif_metin_normalize(metin):
+            metin = str(metin or "").lower().replace("İ", "i")
+            metin = re.sub(r"[^a-z0-9çğıöşü\s]", " ", metin)
+            return re.sub(r"\s+", " ", metin).strip()
+
+        hedef = tarif_metin_normalize(metin)
+
+        def tarif_eslesiyor(terim, hedef_metin):
+            terim = tarif_metin_normalize(terim)
+            if not terim:
+                return False
+
+            if terim in hedef_metin:
+                return True
+
+            hedef_kelimeler = hedef_metin.split()
+            terim_kelimeler = terim.split()
+
+            if len(terim_kelimeler) != len(hedef_kelimeler):
+                return False
+
+            ekler = (
+                "nın", "nin", "nun", "nün",
+                "ın", "in", "un", "ün",
+                "nı", "ni", "nu", "nü",
+                "ı", "i", "u", "ü",
+            )
+
+            for kaynak, hedef_kelime in zip(terim_kelimeler, hedef_kelimeler):
+                if hedef_kelime == kaynak:
+                    continue
+
+                if any(hedef_kelime == kaynak + ek for ek in ekler):
+                    continue
+
+                return False
+
+            return True
+
+        for anahtar, kayit in yemek.items():
+            if anahtar == "tarif_format" or not isinstance(kayit, dict):
+                continue
+
+            ad = str(kayit.get("ad", ""))
+            anahtar_norm = tarif_metin_normalize(anahtar.replace("_", " "))
+            ad_norm = tarif_metin_normalize(ad)
+
+            anahtarlar = kayit.get("anahtarlar", [])
+            if not isinstance(anahtarlar, list):
+                anahtarlar = []
+
+            eslesme = (
+                tarif_eslesiyor(anahtar_norm, hedef)
+                or tarif_eslesiyor(ad_norm, hedef)
+                or any(
+                    parca and tarif_eslesiyor(parca, hedef)
+                    for parca in anahtarlar
+                )
+            )
+            if not eslesme:
+                continue
+
+            parcalar = []
+
+            if ad:
+                parcalar.append(f"🍲 {ad}")
+
+            for alan, etiket in (
+                ("kisi", "👥"),
+                ("hazirlik", "⏱️ Hazırlık:"),
+                ("pisirme", "🔥 Pişirme:"),
+            ):
+                deger = kayit.get(alan)
+                if deger:
+                    if alan == "kisi":
+                        parcalar.append(f"{etiket} {deger}")
+                    else:
+                        parcalar.append(f"{etiket} {deger}")
+
+            malzemeler = kayit.get("malzemeler", [])
+            if isinstance(malzemeler, list) and malzemeler:
+                parcalar.append(
+                    "🧺 Malzemeler:\\n"
+                    + "\\n".join(f"- {x}" for x in malzemeler)
+                )
+
+            yapilis = kayit.get("yapilis", [])
+            if isinstance(yapilis, list) and yapilis:
+                parcalar.append(
+                    "👨‍🍳 Yapılışı:\\n"
+                    + "\\n".join(
+                        f"{i}. {x}"
+                        for i, x in enumerate(yapilis, 1)
+                    )
+                )
+
+            puf = kayit.get("puf_noktasi")
+            if puf:
+                parcalar.append(f"💡 Püf noktası: {puf}")
+
+            if parcalar:
+                return parcalar
 
         tarif_format = yemek.get("tarif_format", {})
         if isinstance(tarif_format, dict):
@@ -2037,29 +2556,58 @@ def eagle_karar_motoru(mesaj, gecmis=None):
 
     # 🍲 YEMEK / TARİF BİLGİ SORUSU ÖNCELİĞİ
     # Tarif soruları web araştırmasına düşmeden yerel bilgi bankasında aranmalı.
-    yemek_bilgi_onceligi = (
-        any(x in k for x in (
-            "tarif",
-            "yemek tarifi",
-            "mercimek",
-            "mercimek çorbası",
-            "mercimek corbasi",
-            "çorba",
-            "corba",
-            "malzeme",
-            "malzemeler",
-        ))
-        and any(x in k for x in (
-            "nasıl",
-            "nasil",
-            "yapılır",
-            "yapilir",
-            "yapımı",
-            "yapimi",
-            "tarifi",
-            "malzemeleri",
-        ))
-    )
+    # Tarif adları JSON kataloğundan dinamik olarak alınır.
+    yemek_bilgi_onceligi = False
+
+    if any(x in k for x in (
+        "tarif",
+        "yemek tarifi",
+        "malzeme",
+        "malzemeler",
+        "nasıl yapılır",
+        "nasil yapilir",
+        "yapımı",
+        "yapimi",
+    )):
+        yemek_bilgi_onceligi = True
+    else:
+        bilgi = bilgi_bankasi_yukle()
+        yemek_katalogu = (
+            bilgi.get("yemek", {})
+            if isinstance(bilgi, dict)
+            else {}
+        )
+
+        yemek_terimleri = []
+
+        if isinstance(yemek_katalogu, dict):
+            for tarif_anahtari, tarif_kaydi in yemek_katalogu.items():
+                if (
+                    tarif_anahtari == "tarif_format"
+                    or not isinstance(tarif_kaydi, dict)
+                ):
+                    continue
+
+                yemek_terimleri.append(
+                    str(tarif_anahtari).replace("_", " ").lower()
+                )
+
+                ad = tarif_kaydi.get("ad")
+                if ad:
+                    yemek_terimleri.append(str(ad).lower())
+
+                anahtarlar = tarif_kaydi.get("anahtarlar", [])
+                if isinstance(anahtarlar, list):
+                    yemek_terimleri.extend(
+                        str(x).lower()
+                        for x in anahtarlar
+                        if x
+                    )
+
+            yemek_bilgi_onceligi = any(
+                terim and terim in k
+                for terim in yemek_terimleri
+            )
 
     if yemek_bilgi_onceligi:
         karar.update({
