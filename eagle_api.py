@@ -888,21 +888,6 @@ def bilgi_bankasi_ara(mesaj):
                 if parcalar:
                     return parcalar
 
-        tarif_format = yemek.get("tarif_format", {})
-        if isinstance(tarif_format, dict):
-            parcalar = []
-
-            aciklama = tarif_format.get("aciklama")
-            if aciklama:
-                parcalar.append(aciklama)
-
-            alanlar = tarif_format.get("alanlar", [])
-            if isinstance(alanlar, list):
-                parcalar.extend(str(x) for x in alanlar)
-
-            if parcalar:
-                return parcalar[:8]
-
     # ➗ Matematik bilgi bankası için özel arama
     if konu == "matematik":
         matematik = bilgi.get("matematik", {})
