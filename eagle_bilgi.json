@@ -722,5 +722,47 @@
     "Android uygulamalarında üye ve ödeme ekranları ayrı sekmeler halinde düzenlenebilir ve aktif sekme görsel olarak ayırt edilebilir.",
     "Android üye kartları üyelik durumuna göre farklı arka plan renkleri ve durum göstergeleri kullanabilir.",
     "Android ödeme kayıtlarının düzenlenmesi için ödeme kartı üzerinde doğrudan Düzenle işlemi bulunabilir."
-  ]
+  ],
+  "yemek": {
+    "tarif_format": {
+      "aciklama": "Yemek tarifleri mümkün olduğunca kişi sayısı, hazırlık süresi, pişirme süresi, ölçülü malzemeler, numaralı yapılış adımları ve isteğe bağlı püf noktası ile verilmelidir.",
+      "alanlar": [
+        "Tarif adı",
+        "Kişi sayısı",
+        "Hazırlık süresi",
+        "Pişirme süresi",
+        "Malzemeler ve ölçüleri",
+        "Numaralı yapılış adımları",
+        "Püf noktası veya alternatif"
+      ]
+    },
+    "mercimek_corbasi": {
+      "ad": "Mercimek Çorbası",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "30 dakika",
+      "malzemeler": [
+        "1 su bardağı kırmızı mercimek",
+        "1 adet orta boy soğan",
+        "1 adet orta boy havuç",
+        "1 yemek kaşığı salça",
+        "1 yemek kaşığı sıvı yağ veya tereyağı",
+        "5 su bardağı su veya et/tavuk suyu",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Mercimeği ayıklayıp bol suyla yıkayın.",
+        "Soğanı küçük doğrayıp yağı tencereye alın ve birkaç dakika kavurun.",
+        "Doğranmış havucu ve salçayı ekleyip kısa süre kavurun.",
+        "Mercimeği ve 5 su bardağı suyu ekleyin.",
+        "Kaynadıktan sonra orta-kısık ateşte mercimek ve havuç tamamen yumuşayana kadar yaklaşık 25 dakika pişirin.",
+        "Çorbayı blenderdan geçirerek pürüzsüz kıvama getirin.",
+        "Tuz ve karabiberi ekleyip birkaç dakika daha kaynatın.",
+        "Sıcak servis edin. İsteğe bağlı olarak üzerine tereyağında kızdırılmış pul biber gezdirebilirsiniz."
+      ],
+      "puf_noktasi": "Çorba koyu olursa sıcak su ekleyerek kıvamını ayarlayabilirsiniz. Un kullanmak şart değildir."
+    }
+  }
+
 }

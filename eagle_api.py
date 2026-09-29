@@ -694,6 +694,11 @@ def bilgi_bankasi_ara(mesaj):
         "http": ["http", "http nedir", "404", "200", "429", "500"],
         "flask": ["flask", "flask nedir", "flask route", "flask api"],
         "android": ["android", "android uygulama", "android uygulaması", "android apk", "android proje", "android projesi", "apk"],
+        "yemek": [
+            "tarif", "yemek tarifi", "malzeme", "malzemeler",
+            "mercimek", "mercimek çorbası", "mercimek corbasi",
+            "çorba", "corba", "pişirme", "pisirme"
+        ],
         "matematik": [
             "matematik", "toplama", "çıkarma", "cikarma", "çarpma", "carpma",
             "bölme", "bolme", "işlem önceliği", "islem onceligi",
@@ -774,6 +779,71 @@ def bilgi_bankasi_ara(mesaj):
 
             if soru_norm == metin_norm:
                 return [cevap]
+
+    # 🍲 Yemek / tarif bilgi bankası için özel arama
+    if konu == "yemek":
+        yemek = bilgi.get("yemek", {})
+
+        if any(k in metin for k in (
+            "mercimek", "mercimek çorbası", "mercimek corbasi"
+        )):
+            kayit = yemek.get("mercimek_corbasi", {})
+
+            if isinstance(kayit, dict):
+                parcalar = []
+
+                ad = kayit.get("ad")
+                kisi = kayit.get("kisi")
+                hazirlik = kayit.get("hazirlik")
+                pisirme = kayit.get("pisirme")
+
+                if ad:
+                    parcalar.append(f"🍲 {ad}")
+                if kisi:
+                    parcalar.append(f"👥 {kisi}")
+                if hazirlik:
+                    parcalar.append(f"⏱️ Hazırlık: {hazirlik}")
+                if pisirme:
+                    parcalar.append(f"🔥 Pişirme: {pisirme}")
+
+                malzemeler = kayit.get("malzemeler", [])
+                if isinstance(malzemeler, list) and malzemeler:
+                    parcalar.append(
+                        "🧺 Malzemeler:\n"
+                        + "\n".join(f"- {x}" for x in malzemeler)
+                    )
+
+                yapilis = kayit.get("yapilis", [])
+                if isinstance(yapilis, list) and yapilis:
+                    parcalar.append(
+                        "👨‍🍳 Yapılışı:\n"
+                        + "\n".join(
+                            f"{i}. {x}"
+                            for i, x in enumerate(yapilis, 1)
+                        )
+                    )
+
+                puf = kayit.get("puf_noktasi")
+                if puf:
+                    parcalar.append(f"💡 Püf noktası: {puf}")
+
+                if parcalar:
+                    return parcalar
+
+        tarif_format = yemek.get("tarif_format", {})
+        if isinstance(tarif_format, dict):
+            parcalar = []
+
+            aciklama = tarif_format.get("aciklama")
+            if aciklama:
+                parcalar.append(aciklama)
+
+            alanlar = tarif_format.get("alanlar", [])
+            if isinstance(alanlar, list):
+                parcalar.extend(str(x) for x in alanlar)
+
+            if parcalar:
+                return parcalar[:8]
 
     # ➗ Matematik bilgi bankası için özel arama
     if konu == "matematik":
@@ -1962,6 +2032,43 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             "islem": "veri_getir",
             "dogrulama": True,
             "fatura": True
+        })
+        return karar
+
+    # 🍲 YEMEK / TARİF BİLGİ SORUSU ÖNCELİĞİ
+    # Tarif soruları web araştırmasına düşmeden yerel bilgi bankasında aranmalı.
+    yemek_bilgi_onceligi = (
+        any(x in k for x in (
+            "tarif",
+            "yemek tarifi",
+            "mercimek",
+            "mercimek çorbası",
+            "mercimek corbasi",
+            "çorba",
+            "corba",
+            "malzeme",
+            "malzemeler",
+        ))
+        and any(x in k for x in (
+            "nasıl",
+            "nasil",
+            "yapılır",
+            "yapilir",
+            "yapımı",
+            "yapimi",
+            "tarifi",
+            "malzemeleri",
+        ))
+    )
+
+    if yemek_bilgi_onceligi:
+        karar.update({
+            "intent": "bilgi",
+            "guven": "yüksek",
+            "neden": "Yemek/tarif bilgi sorusu algılandı; bilgi bankasına yönlendirilecek.",
+            "arac": "bilgi_bankasi",
+            "islem": "bilgi_getir",
+            "dogrulama": False,
         })
         return karar
 
