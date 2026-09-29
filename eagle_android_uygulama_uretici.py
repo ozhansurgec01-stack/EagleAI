@@ -29,6 +29,7 @@ class EagleAndroidUygulamaUretici:
                 or "kalici_veri" in islemler
                 or "odeme_gecmisi" in islemler
                 or "uyelik_durumu" in islemler
+                or "takip" in islemler
             )
         )
 
@@ -1084,18 +1085,53 @@ public class MainActivity extends Activity {{
 
         LinearLayout ozet = new LinearLayout(this);
         ozet.setOrientation(LinearLayout.VERTICAL);
+        ozet.setPadding(0, 2, 0, 8);
 
-        toplam = kutu("Toplam Üye: 0");
-        aktif = kutu("Aktif Üye: 0");
-        yaklasan = kutu("Süresi Yaklaşan: 0");
-        dolan = kutu("Süresi Dolan: 0");
-        bugun = kutu("🟡 Bugün Bitiyor: 0");
+        LinearLayout satir1 = new LinearLayout(this);
+        satir1.setOrientation(LinearLayout.HORIZONTAL);
 
-        ozet.addView(toplam);
-        ozet.addView(aktif);
-        ozet.addView(yaklasan);
-        ozet.addView(dolan);
-        ozet.addView(bugun);
+        LinearLayout satir2 = new LinearLayout(this);
+        satir2.setOrientation(LinearLayout.HORIZONTAL);
+
+        toplam = kutu("TOPLAM ÜYE\\n0");
+        aktif = kutu("AKTİF ÜYE\\n0");
+        yaklasan = kutu("YAKLAŞIYOR\\n0");
+        dolan = kutu("SÜRESİ DOLDU\\n0");
+        bugun = kutu("🟡 BUGÜN BİTİYOR\\n0");
+
+        LinearLayout.LayoutParams kart1 =
+            new LinearLayout.LayoutParams(0, 72, 1f);
+        kart1.setMargins(3, 3, 3, 3);
+
+        LinearLayout.LayoutParams kart2 =
+            new LinearLayout.LayoutParams(0, 72, 1f);
+        kart2.setMargins(3, 3, 3, 3);
+
+        satir1.addView(toplam, kart1);
+        satir1.addView(aktif, kart2);
+
+        LinearLayout.LayoutParams kart3 =
+            new LinearLayout.LayoutParams(0, 72, 1f);
+        kart3.setMargins(3, 3, 3, 3);
+
+        LinearLayout.LayoutParams kart4 =
+            new LinearLayout.LayoutParams(0, 72, 1f);
+        kart4.setMargins(3, 3, 3, 3);
+
+        satir2.addView(yaklasan, kart3);
+        satir2.addView(dolan, kart4);
+
+        LinearLayout.LayoutParams bugunParams =
+            new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                52
+            );
+        bugunParams.setMargins(3, 3, 3, 3);
+
+        ozet.addView(satir1);
+        ozet.addView(satir2);
+        ozet.addView(bugun, bugunParams);
+
         uyelerEkrani.addView(ozet);
 
         arama = new EditText(this);
@@ -1270,10 +1306,18 @@ public class MainActivity extends Activity {{
     private TextView kutu(String metin) {{
         TextView t = new TextView(this);
         t.setText(metin);
-        t.setTextSize(16);
+        t.setTextSize(13);
         t.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         t.setTextColor(Color.rgb(35, 35, 35));
-        t.setPadding(14, 12, 14, 12);
+        t.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        t.setPadding(14, 10, 14, 10);
+
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(Color.WHITE);
+        g.setCornerRadius(18);
+        g.setStroke(1, Color.rgb(230, 233, 238));
+        t.setBackground(g);
+
         return t;
     }}
 
@@ -1653,7 +1697,7 @@ public class MainActivity extends Activity {{
             )
         );
 
-        ekran.setTag(new Object[]{{toplam, adet, liste}});
+        ekran.setTag(new Object[]{{toplam, adet, toplamGenel, adetGenel, liste}});
         return ekran;
     }}
 
