@@ -888,21 +888,6 @@ def bilgi_bankasi_ara(mesaj):
                 if parcalar:
                     return parcalar
 
-        tarif_format = yemek.get("tarif_format", {})
-        if isinstance(tarif_format, dict):
-            parcalar = []
-
-            aciklama = tarif_format.get("aciklama")
-            if aciklama:
-                parcalar.append(aciklama)
-
-            alanlar = tarif_format.get("alanlar", [])
-            if isinstance(alanlar, list):
-                parcalar.extend(str(x) for x in alanlar)
-
-            if parcalar:
-                return parcalar[:8]
-
     # ➗ Matematik bilgi bankası için özel arama
     if konu == "matematik":
         matematik = bilgi.get("matematik", {})
@@ -1264,9 +1249,6 @@ def bilgi_bankasi_ara(mesaj):
             hedef_kelimeler = hedef_metin.split()
             terim_kelimeler = terim.split()
 
-            if len(terim_kelimeler) != len(hedef_kelimeler):
-                return False
-
             ekler = (
                 "nın", "nin", "nun", "nün",
                 "ın", "in", "un", "ün",
@@ -1274,16 +1256,46 @@ def bilgi_bankasi_ara(mesaj):
                 "ı", "i", "u", "ü",
             )
 
-            for kaynak, hedef_kelime in zip(terim_kelimeler, hedef_kelimeler):
+            def kelime_eslesiyor(kaynak, hedef_kelime):
                 if hedef_kelime == kaynak:
-                    continue
+                    return True
 
-                if any(hedef_kelime == kaynak + ek for ek in ekler):
-                    continue
+                varyantlar = {kaynak}
 
+                if kaynak.endswith("ç"):
+                    varyantlar.add(kaynak[:-1] + "c")
+                elif kaynak.endswith("k"):
+                    varyantlar.add(kaynak[:-1] + "ğ")
+                elif kaynak.endswith("p"):
+                    varyantlar.add(kaynak[:-1] + "b")
+                elif kaynak.endswith("t"):
+                    varyantlar.add(kaynak[:-1] + "d")
+
+                return any(
+                    hedef_kelime == varyant + ek
+                    for varyant in varyantlar
+                    for ek in ekler
+                )
+
+            pencere = len(terim_kelimeler)
+
+            if pencere > len(hedef_kelimeler):
                 return False
 
-            return True
+            for baslangic in range(len(hedef_kelimeler) - pencere + 1):
+                parca = hedef_kelimeler[
+                    baslangic:baslangic + pencere
+                ]
+
+                if all(
+                    kelime_eslesiyor(kaynak, hedef_kelime)
+                    for kaynak, hedef_kelime in zip(
+                        terim_kelimeler, parca
+                    )
+                ):
+                    return True
+
+            return False
 
         for anahtar, kayit in yemek.items():
             if anahtar == "tarif_format" or not isinstance(kayit, dict):
