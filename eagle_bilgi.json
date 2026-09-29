@@ -1524,6 +1524,139 @@
         "sucuklu menemen",
         "menemen sucuklu"
       ]
+    },
+    "kabak_yemegi": {
+      "ad": "Kabak Yemeği",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "30 dakika",
+      "malzemeler": [
+        "4 adet kabak",
+        "1 adet soğan",
+        "2 adet domates",
+        "2 adet yeşil biber",
+        "2 diş sarımsak",
+        "2 yemek kaşığı zeytinyağı",
+        "1 yemek kaşığı salça",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber",
+        "1 su bardağı sıcak su"
+      ],
+      "yapilis": [
+        "Kabakları yıkayıp doğrayın.",
+        "Soğanı ve biberleri doğrayıp zeytinyağında birkaç dakika kavurun.",
+        "Sarımsağı ve salçayı ekleyip kısa süre kavurun.",
+        "Doğranmış domatesleri ekleyip birkaç dakika pişirin.",
+        "Kabakları, tuzu ve karabiberi ekleyin.",
+        "Sıcak suyu ekleyip tencerenin kapağını kapatın.",
+        "Kabaklar yumuşayana kadar yaklaşık 25-30 dakika pişirin."
+      ],
+      "puf_noktasi": "Kabakları fazla karıştırmadan, kısık ateşte pişirirseniz dağılmadan daha güzel kıvam alır.",
+      "anahtarlar": [
+        "kabak yemeği",
+        "kabak yemegi",
+        "kabak"
+      ]
+    },
+    "bamya_yemegi": {
+      "ad": "Zeytinyağlı Bamya",
+      "kisi": "4 kişilik",
+      "hazirlik": "15 dakika",
+      "pisirme": "35 dakika",
+      "malzemeler": [
+        "500 gram bamya",
+        "1 adet soğan",
+        "2 adet domates",
+        "1 adet limon",
+        "4 yemek kaşığı zeytinyağı",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber",
+        "1 su bardağı sıcak su"
+      ],
+      "yapilis": [
+        "Bamyaları yıkayıp uçlarını dikkatlice temizleyin.",
+        "Soğanı doğrayıp zeytinyağında birkaç dakika kavurun.",
+        "Doğranmış domatesleri ekleyip birkaç dakika pişirin.",
+        "Bamyaları tencereye ekleyin ve nazikçe karıştırın.",
+        "Limon suyunu, tuzu ve karabiberi ekleyin.",
+        "Sıcak suyu ilave edip tencerenin kapağını kapatın.",
+        "Kısık ateşte bamyalar yumuşayana kadar yaklaşık 30-35 dakika pişirin."
+      ],
+      "puf_noktasi": "Bamyaların salyalanmasını azaltmak için limon suyunu ekleyip pişirme sırasında fazla karıştırmayın.",
+      "anahtarlar": [
+        "bamya yemeği",
+        "bamya yemegi",
+        "zeytinyağlı bamya",
+        "zeytinyagli bamya",
+        "bamya"
+      ]
+    },
+    "uzumlu_kek": {
+      "ad": "Üzümlü Kek",
+      "kisi": "8 kişilik",
+      "hazirlik": "15 dakika",
+      "pisirme": "40 dakika",
+      "malzemeler": [
+        "3 adet yumurta",
+        "1 su bardağı toz şeker",
+        "1 su bardağı süt",
+        "Yarım su bardağı sıvı yağ",
+        "2,5 su bardağı un",
+        "1 paket kabartma tozu",
+        "1 paket vanilin",
+        "1 su bardağı kuru üzüm"
+      ],
+      "yapilis": [
+        "Yumurtaları ve şekeri köpük köpük olana kadar çırpın.",
+        "Sütü ve sıvı yağı ekleyip karıştırın.",
+        "Un, kabartma tozu ve vanilini eleyerek karışıma ekleyin.",
+        "Kuru üzümleri biraz unlayıp hamura ekleyin.",
+        "Karışımı yağlanmış kek kalıbına dökün.",
+        "Önceden ısıtılmış 175 derece fırında yaklaşık 40 dakika pişirin.",
+        "Kekin içinin pişip pişmediğini kürdanla kontrol edip fırından çıkarın."
+      ],
+      "puf_noktasi": "Üzümleri una bulamak, pişerken kekin dibine çökmelerini azaltır.",
+      "anahtarlar": [
+        "üzümlü kek",
+        "uzumlu kek",
+        "üzümlü kek tarifi",
+        "uzumlu kek tarifi"
+      ]
+    },
+    "damla_cikolatali_kurabiye": {
+      "ad": "Damla Çikolatalı Kurabiye",
+      "kisi": "12 adet",
+      "hazirlik": "15 dakika",
+      "pisirme": "12 dakika",
+      "malzemeler": [
+        "125 gram tereyağı",
+        "1 adet yumurta",
+        "Yarım su bardağı toz şeker",
+        "Yarım su bardağı esmer şeker",
+        "1 paket vanilin",
+        "1 çay kaşığı kabartma tozu",
+        "2 su bardağı un",
+        "1 su bardağı damla çikolata",
+        "Bir tutam tuz"
+      ],
+      "yapilis": [
+        "Oda sıcaklığındaki tereyağını ve şekerleri karıştırın.",
+        "Yumurtayı ve vanilini ekleyip karıştırın.",
+        "Un, kabartma tozu ve tuzu ekleyip yumuşak bir hamur hazırlayın.",
+        "Damla çikolataları hamura ekleyip karıştırın.",
+        "Hamurdan parçalar alıp yuvarlayarak yağlı kağıt serili tepsiye aralıklı dizin.",
+        "Önceden ısıtılmış 180 derece fırında yaklaşık 10-12 dakika pişirin.",
+        "Kurabiyeleri fırından çıkarıp tepside birkaç dakika dinlendirin."
+      ],
+      "puf_noktasi": "Kurabiyeleri fırından çıktığında tamamen sertleşmesini beklemeyin; soğudukça kıvamı oturur.",
+      "anahtarlar": [
+        "damla çikolatalı kurabiye",
+        "damla cikolatali kurabiye",
+        "çikolatalı kurabiye",
+        "cikolatali kurabiye",
+        "damla çikolatalı kurabiye tarifi",
+        "damla cikolatali kurabiye tarifi"
+      ]
     }
   }
 }
