@@ -762,7 +762,768 @@
         "Sıcak servis edin. İsteğe bağlı olarak üzerine tereyağında kızdırılmış pul biber gezdirebilirsiniz."
       ],
       "puf_noktasi": "Çorba koyu olursa sıcak su ekleyerek kıvamını ayarlayabilirsiniz. Un kullanmak şart değildir."
+    },
+    "ezogelin_corbasi": {
+      "ad": "Ezogelin Çorbası",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "35 dakika",
+      "malzemeler": [
+        "1 su bardağı kırmızı mercimek",
+        "2 yemek kaşığı pirinç",
+        "1 yemek kaşığı bulgur",
+        "1 adet soğan",
+        "1 yemek kaşığı salça",
+        "1 yemek kaşığı tereyağı",
+        "6 su bardağı su",
+        "1 çay kaşığı tuz",
+        "1 çay kaşığı kuru nane",
+        "Yarım çay kaşığı pul biber"
+      ],
+      "yapilis": [
+        "Mercimek, pirinç ve bulguru yıkayın.",
+        "Soğanı doğrayıp tereyağında kavurun.",
+        "Salçayı ekleyip kısa süre kavurun.",
+        "Mercimek, pirinç, bulgur ve suyu ekleyin.",
+        "Bakliyatlar yumuşayana kadar yaklaşık 30 dakika pişirin.",
+        "Tuz, nane ve pul biberi ekleyin.",
+        "İsteğe göre blenderdan geçirip sıcak servis edin."
+      ],
+      "puf_noktasi": "Kıvam koyulaşırsa sıcak su ekleyebilirsiniz.",
+      "anahtarlar": [
+        "ezogelin çorbası",
+        "ezogelin corbasi"
+      ]
+    },
+    "yayla_corbasi": {
+      "ad": "Yayla Çorbası",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "25 dakika",
+      "malzemeler": [
+        "1 çay bardağı pirinç",
+        "6 su bardağı su",
+        "1 su bardağı yoğurt",
+        "1 yemek kaşığı un",
+        "1 adet yumurta sarısı",
+        "1 yemek kaşığı tereyağı",
+        "1 tatlı kaşığı kuru nane",
+        "1 çay kaşığı tuz"
+      ],
+      "yapilis": [
+        "Pirinci yıkayıp suyla yumuşayana kadar haşlayın.",
+        "Yoğurt, un ve yumurta sarısını ayrı bir kapta çırpın.",
+        "Sıcak çorbadan azar azar yoğurtlu karışıma ekleyerek ılıştırın.",
+        "Karışımı tencereye yavaşça ekleyip sürekli karıştırın.",
+        "Kısık ateşte birkaç dakika kaynatın.",
+        "Tereyağında naneyi kızdırıp çorbaya ekleyin.",
+        "Tuzunu ayarlayıp servis edin."
+      ],
+      "puf_noktasi": "Yoğurdun kesilmemesi için terbiyeyi sıcak çorbaya yavaşça alıştırın.",
+      "anahtarlar": [
+        "yayla çorbası",
+        "yayla corbasi"
+      ]
+    },
+    "tarhana_corbasi": {
+      "ad": "Tarhana Çorbası",
+      "kisi": "4 kişilik",
+      "hazirlik": "5 dakika",
+      "pisirme": "20 dakika",
+      "malzemeler": [
+        "4 yemek kaşığı tarhana",
+        "6 su bardağı su",
+        "1 yemek kaşığı salça",
+        "1 yemek kaşığı tereyağı",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı pul biber"
+      ],
+      "yapilis": [
+        "Tarhanayı bir miktar suyla ayrı kapta açın.",
+        "Tereyağında salçayı kavurun.",
+        "Suyu ekleyip kaynatın.",
+        "Açılmış tarhanayı yavaşça ekleyin ve karıştırın.",
+        "Kısık ateşte yaklaşık 15 dakika pişirin.",
+        "Tuz ve pul biber ekleyerek servis edin."
+      ],
+      "puf_noktasi": "Tarhanayı eklerken sürekli karıştırmak topaklanmayı önler.",
+      "anahtarlar": [
+        "tarhana çorbası",
+        "tarhana corbasi"
+      ]
+    },
+    "domates_corbası": {
+      "ad": "Domates Çorbası",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "25 dakika",
+      "malzemeler": [
+        "5 adet olgun domates",
+        "1 yemek kaşığı tereyağı",
+        "1 yemek kaşığı un",
+        "4 su bardağı su",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Domatesleri rendeleyin.",
+        "Tereyağında unu hafifçe kavurun.",
+        "Domatesleri ekleyip birkaç dakika pişirin.",
+        "Suyu ekleyip kaynatın.",
+        "Yaklaşık 20 dakika pişirin.",
+        "Blenderdan geçirip tuz ve karabiber ekleyin.",
+        "Sıcak servis edin."
+      ],
+      "puf_noktasi": "Daha pürüzsüz kıvam için çorbayı blenderdan geçirebilirsiniz.",
+      "anahtarlar": [
+        "domates çorbası",
+        "domates corbası"
+      ]
+    },
+    "kisir": {
+      "ad": "Kısır",
+      "kisi": "4 kişilik",
+      "hazirlik": "20 dakika",
+      "pisirme": "Pişirme gerektirmez",
+      "malzemeler": [
+        "2 su bardağı ince bulgur",
+        "1,5 su bardağı sıcak su",
+        "1 yemek kaşığı domates salçası",
+        "1 yemek kaşığı biber salçası",
+        "1 adet soğan",
+        "Yarım çay bardağı zeytinyağı",
+        "Yarım demet maydanoz",
+        "2 adet yeşil soğan",
+        "1 limonun suyu",
+        "1 yemek kaşığı nar ekşisi",
+        "1 çay kaşığı tuz",
+        "1 çay kaşığı pul biber"
+      ],
+      "yapilis": [
+        "Bulguru sıcak suyla ıslatıp üzerini kapatın.",
+        "Yaklaşık 10 dakika şişmesini bekleyin.",
+        "Salçaları ve zeytinyağını ekleyip yoğurun.",
+        "Doğranmış soğan, maydanoz ve yeşil soğanı ekleyin.",
+        "Limon suyu ve nar ekşisini ilave edin.",
+        "Baharatları ekleyip iyice karıştırın.",
+        "Dinlendirip servis edin."
+      ],
+      "puf_noktasi": "Bulgurun tamamen yumuşaması için sıcak su miktarını kontrollü kullanın.",
+      "anahtarlar": [
+        "kısır",
+        "kisir"
+      ]
+    },
+    "mercimek_kofte": {
+      "ad": "Mercimek Köftesi",
+      "kisi": "6 kişilik",
+      "hazirlik": "30 dakika",
+      "pisirme": "25 dakika",
+      "malzemeler": [
+        "1 su bardağı kırmızı mercimek",
+        "2 su bardağı ince bulgur",
+        "1 adet soğan",
+        "1 yemek kaşığı domates salçası",
+        "1 yemek kaşığı biber salçası",
+        "Yarım çay bardağı zeytinyağı",
+        "Yarım demet maydanoz",
+        "4 adet yeşil soğan",
+        "1 limonun suyu",
+        "1 çay kaşığı kimyon",
+        "1 çay kaşığı pul biber",
+        "1 çay kaşığı tuz"
+      ],
+      "yapilis": [
+        "Mercimeği yıkayıp suyla tamamen yumuşayana kadar pişirin.",
+        "Bulguru ekleyip karıştırın ve tencerenin kapağını kapatın.",
+        "Soğanı zeytinyağında kavurup salçaları ekleyin.",
+        "Salçalı karışımı mercimekli bulgura ekleyin.",
+        "Karışım ılınınca limon suyu ve baharatları ekleyin.",
+        "Doğranmış yeşillikleri ilave edip yoğurun.",
+        "Elinizle şekil verip servis edin."
+      ],
+      "puf_noktasi": "Şekil vermeden önce karışımı yeterince yoğurmak kıvamı toparlar.",
+      "anahtarlar": [
+        "mercimek köftesi",
+        "mercimek kofte"
+      ]
+    },
+    "menemen": {
+      "ad": "Menemen",
+      "kisi": "2 kişilik",
+      "hazirlik": "5 dakika",
+      "pisirme": "15 dakika",
+      "malzemeler": [
+        "3 adet yumurta",
+        "2 adet domates",
+        "2 adet yeşil biber",
+        "1 yemek kaşığı tereyağı veya sıvı yağ",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Biberleri doğrayıp yağda birkaç dakika kavurun.",
+        "Doğranmış domatesleri ekleyin.",
+        "Domatesler suyunu biraz çekene kadar pişirin.",
+        "Yumurtaları kırıp karıştırın.",
+        "Tuz ve karabiber ekleyin.",
+        "Yumurtalar istediğiniz kıvama gelince ocaktan alın."
+      ],
+      "puf_noktasi": "Yumurtayı fazla pişirmemek daha yumuşak bir menemen sağlar.",
+      "anahtarlar": [
+        "menemen",
+        "menemen"
+      ]
+    },
+    "mercimek_yemegi": {
+      "ad": "Yeşil Mercimek Yemeği",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "40 dakika",
+      "malzemeler": [
+        "2 su bardağı yeşil mercimek",
+        "1 adet soğan",
+        "1 adet havuç",
+        "1 yemek kaşığı salça",
+        "2 yemek kaşığı sıvı yağ",
+        "5 su bardağı su",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Mercimeği yıkayıp kısa süre haşlayın.",
+        "Soğanı yağda kavurun.",
+        "Doğranmış havuç ve salçayı ekleyin.",
+        "Mercimeği ve suyu ekleyin.",
+        "Mercimek yumuşayana kadar pişirin.",
+        "Tuz ve karabiber ekleyip servis edin."
+      ],
+      "puf_noktasi": "Mercimeği önceden hafif haşlamak pişirme süresini kısaltır.",
+      "anahtarlar": [
+        "yeşil mercimek yemeği",
+        "mercimek yemegi"
+      ]
+    },
+    "nohut_yemegi": {
+      "ad": "Nohut Yemeği",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "45 dakika",
+      "malzemeler": [
+        "2 su bardağı haşlanmış nohut",
+        "1 adet soğan",
+        "1 yemek kaşığı domates salçası",
+        "2 yemek kaşığı sıvı yağ",
+        "4 su bardağı sıcak su",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Soğanı doğrayıp yağda kavurun.",
+        "Salçayı ekleyip kısa süre kavurun.",
+        "Nohutları ekleyin.",
+        "Sıcak suyu ilave edin.",
+        "Kısık ateşte yaklaşık 30 dakika pişirin.",
+        "Tuz ve karabiber ekleyip servis edin."
+      ],
+      "puf_noktasi": "Bir gece önceden ıslatılmış nohut daha kısa sürede pişer.",
+      "anahtarlar": [
+        "nohut yemeği",
+        "nohut yemegi"
+      ]
+    },
+    "kuru_fasulye": {
+      "ad": "Kuru Fasulye",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "60 dakika",
+      "malzemeler": [
+        "2 su bardağı kuru fasulye",
+        "1 adet soğan",
+        "1 yemek kaşığı domates salçası",
+        "2 yemek kaşığı sıvı yağ",
+        "5 su bardağı sıcak su",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Fasulyeyi bir gece önceden suda bekletin.",
+        "Soğanı yağda kavurun.",
+        "Salçayı ekleyin.",
+        "Fasulyeyi ve sıcak suyu ekleyin.",
+        "Fasulyeler yumuşayana kadar pişirin.",
+        "Tuz ve karabiber ekleyip servis edin."
+      ],
+      "puf_noktasi": "Fasulyeyi pişirmeden önce ıslatmak daha dengeli pişmesini sağlar.",
+      "anahtarlar": [
+        "kuru fasulye",
+        "kuru fasulye"
+      ]
+    },
+    "imam_bayildi": {
+      "ad": "İmam Bayıldı",
+      "kisi": "4 kişilik",
+      "hazirlik": "20 dakika",
+      "pisirme": "40 dakika",
+      "malzemeler": [
+        "4 adet patlıcan",
+        "3 adet soğan",
+        "3 adet domates",
+        "4 diş sarımsak",
+        "Yarım çay bardağı zeytinyağı",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Patlıcanları alacalı soyup ortalarını hafifçe açın.",
+        "Soğanları zeytinyağında yumuşatın.",
+        "Domates ve sarımsağı ekleyip harcı hazırlayın.",
+        "Patlıcanları tepsiye yerleştirin.",
+        "İçlerini soğanlı harçla doldurun.",
+        "Bir miktar su ekleyip fırında yumuşayana kadar pişirin.",
+        "Ilık veya soğuk servis edin."
+      ],
+      "puf_noktasi": "Patlıcanları pişirmeden önce tuzlu suda bekletmek acılığını azaltabilir.",
+      "anahtarlar": [
+        "i̇mam bayıldı",
+        "imam bayildi"
+      ]
+    },
+    "zeytinyagli_biber_dolmasi": {
+      "ad": "Zeytinyağlı Biber Dolması",
+      "kisi": "4 kişilik",
+      "hazirlik": "25 dakika",
+      "pisirme": "45 dakika",
+      "malzemeler": [
+        "8 adet dolmalık biber",
+        "1,5 su bardağı pirinç",
+        "2 adet soğan",
+        "2 adet domates",
+        "Yarım çay bardağı zeytinyağı",
+        "1 tatlı kaşığı kuru nane",
+        "1 çay kaşığı karabiber",
+        "1 çay kaşığı tuz",
+        "1 su bardağı sıcak su"
+      ],
+      "yapilis": [
+        "Soğanları zeytinyağında kavurun.",
+        "Yıkanmış pirinci ekleyip birkaç dakika çevirin.",
+        "Domates ve baharatları ekleyin.",
+        "Sıcak suyu ekleyip pirinci hafifçe pişirin.",
+        "Biberlerin içini hazırlanan harçla doldurun.",
+        "Tencereye dizip üzerine su ekleyin.",
+        "Kısık ateşte pirinçler yumuşayana kadar pişirin."
+      ],
+      "puf_noktasi": "Biberleri tamamen doldurmayın; pirinç pişerken hacmi artar.",
+      "anahtarlar": [
+        "zeytinyağlı biber dolması",
+        "zeytinyagli biber dolmasi"
+      ]
+    },
+    "patates_koftesi": {
+      "ad": "Patates Köftesi",
+      "kisi": "4 kişilik",
+      "hazirlik": "25 dakika",
+      "pisirme": "15 dakika",
+      "malzemeler": [
+        "5 adet patates",
+        "1 adet yumurta",
+        "1 su bardağı galeta unu",
+        "Yarım demet maydanoz",
+        "1 çay kaşığı tuz",
+        "1 çay kaşığı pul biber",
+        "Yarım çay kaşığı karabiber",
+        "Kızartmak için sıvı yağ"
+      ],
+      "yapilis": [
+        "Patatesleri haşlayıp ezin.",
+        "Yumurta, galeta unu ve doğranmış maydanozu ekleyin.",
+        "Baharatları ilave edip yoğurun.",
+        "Köfte şekli verin.",
+        "Kızgın yağda iki tarafını kızartın.",
+        "Fazla yağını süzdürüp servis edin."
+      ],
+      "puf_noktasi": "Karışım çok yumuşaksa biraz daha galeta unu eklenebilir.",
+      "anahtarlar": [
+        "patates köftesi",
+        "patates koftesi"
+      ]
+    },
+    "sigara_boregi": {
+      "ad": "Sigara Böreği",
+      "kisi": "4 kişilik",
+      "hazirlik": "20 dakika",
+      "pisirme": "15 dakika",
+      "malzemeler": [
+        "3 adet yufka",
+        "200 gram beyaz peynir",
+        "Yarım demet maydanoz",
+        "Kızartmak için sıvı yağ"
+      ],
+      "yapilis": [
+        "Yufkaları üçgen parçalara bölün.",
+        "Peynir ve maydanozu karıştırın.",
+        "İç harçtan yufkaların geniş kısmına koyun.",
+        "Kenarlarını içe katlayıp sıkıca sarın.",
+        "Uç kısmını suyla kapatın.",
+        "Kızgın yağda altın rengini alana kadar kızartın."
+      ],
+      "puf_noktasi": "Yufkayı çok gevşek sarmamak kızartma sırasında açılmasını önler.",
+      "anahtarlar": [
+        "sigara böreği",
+        "sigara boregi"
+      ]
+    },
+    "manti": {
+      "ad": "Mantı",
+      "kisi": "4 kişilik",
+      "hazirlik": "60 dakika",
+      "pisirme": "15 dakika",
+      "malzemeler": [
+        "3 su bardağı un",
+        "1 adet yumurta",
+        "1 su bardağına yakın su",
+        "250 gram kıyma",
+        "1 adet soğan",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber",
+        "1,5 su bardağı yoğurt",
+        "2 diş sarımsak",
+        "1 yemek kaşığı tereyağı",
+        "1 çay kaşığı pul biber"
+      ],
+      "yapilis": [
+        "Un, yumurta ve suyla sert bir hamur yoğurun.",
+        "Hamuru dinlendirip ince açın ve küçük kareler kesin.",
+        "Kıyma, rendelenmiş soğan, tuz ve karabiberi karıştırın.",
+        "Harçtan karelere koyup mantıları kapatın.",
+        "Kaynar tuzlu suda mantıları pişirin.",
+        "Sarımsaklı yoğurt hazırlayın.",
+        "Tereyağında pul biberi kızdırın.",
+        "Mantıları yoğurt ve sosla servis edin."
+      ],
+      "puf_noktasi": "Hamuru ince açmak mantının daha dengeli pişmesini sağlar.",
+      "anahtarlar": [
+        "mantı",
+        "manti"
+      ]
+    },
+    "karnıyarık": {
+      "ad": "Karnıyarık",
+      "kisi": "4 kişilik",
+      "hazirlik": "25 dakika",
+      "pisirme": "45 dakika",
+      "malzemeler": [
+        "4 adet patlıcan",
+        "250 gram kıyma",
+        "1 adet soğan",
+        "2 adet domates",
+        "2 adet yeşil biber",
+        "2 diş sarımsak",
+        "1 yemek kaşığı salça",
+        "2 yemek kaşığı sıvı yağ",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Patlıcanları alacalı soyup ortalarını açın.",
+        "Soğan, kıyma, biber, sarımsak ve salçayla iç harcı hazırlayın.",
+        "Patlıcanları yumuşayana kadar fırında veya tavada pişirin.",
+        "Patlıcanların ortalarını açıp kıymalı harçla doldurun.",
+        "Üzerine domates koyun.",
+        "Tepsiye biraz su ekleyin.",
+        "Fırında yaklaşık 25 dakika pişirin."
+      ],
+      "puf_noktasi": "Patlıcanları çok fazla kızartmadan da fırında yumuşatarak hazırlayabilirsiniz.",
+      "anahtarlar": [
+        "karnıyarık",
+        "karnıyarık"
+      ]
+    },
+    "tavuk_sote": {
+      "ad": "Tavuk Sote",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "25 dakika",
+      "malzemeler": [
+        "500 gram tavuk göğsü",
+        "1 adet soğan",
+        "2 adet yeşil biber",
+        "2 adet domates",
+        "2 yemek kaşığı sıvı yağ",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber",
+        "Yarım çay kaşığı pul biber"
+      ],
+      "yapilis": [
+        "Tavuğu kuşbaşı doğrayın.",
+        "Yağda tavukları yüksek ateşte soteleyin.",
+        "Soğan ve biberleri ekleyin.",
+        "Domatesleri ilave edin.",
+        "Baharatları ekleyip tavuk tamamen pişene kadar pişirin.",
+        "Sıcak servis edin."
+      ],
+      "puf_noktasi": "Tavuğu yüksek ateşte kısa süre sotelemek suyunu korumasına yardımcı olur.",
+      "anahtarlar": [
+        "tavuk sote",
+        "tavuk sote"
+      ]
+    },
+    "kofte": {
+      "ad": "Ev Köftesi",
+      "kisi": "4 kişilik",
+      "hazirlik": "20 dakika",
+      "pisirme": "15 dakika",
+      "malzemeler": [
+        "500 gram kıyma",
+        "1 adet soğan",
+        "1 adet yumurta",
+        "3 yemek kaşığı galeta unu",
+        "Yarım demet maydanoz",
+        "1 çay kaşığı tuz",
+        "1 çay kaşığı kimyon",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Soğanı rendeleyin.",
+        "Kıyma, soğan, yumurta, galeta unu ve baharatları karıştırın.",
+        "Maydanozu doğrayıp ekleyin.",
+        "Karışımı birkaç dakika yoğurun.",
+        "Köfte şekli verip dinlendirin.",
+        "Tavada veya ızgarada tamamen pişirin."
+      ],
+      "puf_noktasi": "Köfte harcını dinlendirmek lezzetlerin birbirine geçmesine yardımcı olur.",
+      "anahtarlar": [
+        "ev köftesi",
+        "kofte"
+      ]
+    },
+    "sulu_patates_yemegi": {
+      "ad": "Sulu Patates Yemeği",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "35 dakika",
+      "malzemeler": [
+        "5 adet patates",
+        "1 adet soğan",
+        "1 yemek kaşığı salça",
+        "2 yemek kaşığı sıvı yağ",
+        "4 su bardağı sıcak su",
+        "1 çay kaşığı tuz",
+        "Yarım çay kaşığı karabiber"
+      ],
+      "yapilis": [
+        "Soğanı yağda kavurun.",
+        "Salçayı ekleyip kısa süre kavurun.",
+        "Küp doğranmış patatesleri ekleyin.",
+        "Sıcak suyu ilave edin.",
+        "Patatesler yumuşayana kadar pişirin.",
+        "Tuz ve karabiber ekleyip servis edin."
+      ],
+      "puf_noktasi": "Patatesleri aynı büyüklükte doğramak eşit pişmelerini sağlar.",
+      "anahtarlar": [
+        "sulu patates yemeği",
+        "sulu patates yemegi"
+      ]
+    },
+    "pilav": {
+      "ad": "Pirinç Pilavı",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "20 dakika",
+      "malzemeler": [
+        "2 su bardağı pirinç",
+        "2,5 su bardağı sıcak su",
+        "2 yemek kaşığı tereyağı",
+        "1 yemek kaşığı sıvı yağ",
+        "1 çay kaşığı tuz"
+      ],
+      "yapilis": [
+        "Pirinci yıkayıp süzün.",
+        "Tereyağı ve sıvı yağı tencerede ısıtın.",
+        "Pirinci ekleyip birkaç dakika kavurun.",
+        "Sıcak su ve tuzu ekleyin.",
+        "Kaynadıktan sonra kısık ateşte suyunu çekene kadar pişirin.",
+        "Ocağı kapatıp 10 dakika dinlendirin.",
+        "Karıştırıp servis edin."
+      ],
+      "puf_noktasi": "Pilavı dinlendirmek tanelerin daha iyi ayrılmasını sağlar.",
+      "anahtarlar": [
+        "pirinç pilavı",
+        "pilav"
+      ]
+    },
+    "bulgur_pilavi": {
+      "ad": "Bulgur Pilavı",
+      "kisi": "4 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "25 dakika",
+      "malzemeler": [
+        "2 su bardağı pilavlık bulgur",
+        "1 adet soğan",
+        "1 adet domates",
+        "1 yemek kaşığı salça",
+        "2 yemek kaşığı sıvı yağ",
+        "4 su bardağı sıcak su",
+        "1 çay kaşığı tuz"
+      ],
+      "yapilis": [
+        "Soğanı yağda kavurun.",
+        "Salçayı ve doğranmış domatesi ekleyin.",
+        "Bulguru ilave edip birkaç dakika kavurun.",
+        "Sıcak suyu ve tuzu ekleyin.",
+        "Kısık ateşte suyunu çekene kadar pişirin.",
+        "Dinlendirip servis edin."
+      ],
+      "puf_noktasi": "Bulguru kavurmak pilava daha belirgin bir aroma verir.",
+      "anahtarlar": [
+        "bulgur pilavı",
+        "bulgur pilavi"
+      ]
+    },
+    "sutlac": {
+      "ad": "Sütlaç",
+      "kisi": "6 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "35 dakika",
+      "malzemeler": [
+        "1 litre süt",
+        "1 çay bardağı pirinç",
+        "1 su bardağı şeker",
+        "1 yemek kaşığı nişasta",
+        "1 paket vanilin",
+        "2 su bardağı su"
+      ],
+      "yapilis": [
+        "Pirinci yıkayıp suyla yumuşayana kadar haşlayın.",
+        "Sütü ekleyip kaynatın.",
+        "Şekeri ilave edin.",
+        "Nişastayı az miktarda soğuk suyla açıp tencereye ekleyin.",
+        "Karıştırarak birkaç dakika pişirin.",
+        "Vanilini ekleyip kaselere paylaştırın.",
+        "Soğutup servis edin."
+      ],
+      "puf_noktasi": "Nişastayı doğrudan sıcak karışıma eklemek yerine önce soğuk suyla açın.",
+      "anahtarlar": [
+        "sütlaç",
+        "sutlac"
+      ]
+    },
+    "irmik_helvasi": {
+      "ad": "İrmik Helvası",
+      "kisi": "6 kişilik",
+      "hazirlik": "10 dakika",
+      "pisirme": "25 dakika",
+      "malzemeler": [
+        "2 su bardağı irmik",
+        "125 gram tereyağı",
+        "1,5 su bardağı şeker",
+        "2 su bardağı süt",
+        "1 su bardağı su"
+      ],
+      "yapilis": [
+        "Tereyağını eritin.",
+        "İrmiği ekleyip kısık ateşte kavurun.",
+        "Süt, su ve şekeri ayrı kapta ısıtın.",
+        "Sıvı karışımı dikkatlice irmiğe ekleyin.",
+        "Kısık ateşte suyunu çekene kadar karıştırarak pişirin.",
+        "Kapağını kapatıp dinlendirin.",
+        "Karıştırıp servis edin."
+      ],
+      "puf_noktasi": "İrmiği sabırla kavurmak helvanın rengini ve aromasını belirler.",
+      "anahtarlar": [
+        "i̇rmik helvası",
+        "irmik helvasi"
+      ]
+    },
+    "revani": {
+      "ad": "Revani",
+      "kisi": "8 kişilik",
+      "hazirlik": "20 dakika",
+      "pisirme": "35 dakika",
+      "malzemeler": [
+        "3 adet yumurta",
+        "1 su bardağı şeker",
+        "1 su bardağı yoğurt",
+        "1 su bardağı irmik",
+        "1 su bardağı un",
+        "1 paket kabartma tozu",
+        "1 paket vanilin",
+        "3 su bardağı şeker",
+        "3,5 su bardağı su",
+        "Yarım limonun suyu"
+      ],
+      "yapilis": [
+        "Yumurta ve şekeri çırpın.",
+        "Yoğurt, irmik ve unu ekleyin.",
+        "Kabartma tozu ve vanilini ilave edin.",
+        "Karışımı yağlanmış tepsiye dökün.",
+        "Önceden ısıtılmış fırında pişirin.",
+        "Şeker, su ve limon suyuyla şerbet hazırlayın.",
+        "Ilık tatlıya soğumuş şerbeti dökün.",
+        "Dinlendirip servis edin."
+      ],
+      "puf_noktasi": "Şerbetin ve tatlının sıcaklıklarını dengeli tutmak iyi sonuç verir.",
+      "anahtarlar": [
+        "revani",
+        "revani"
+      ]
+    },
+    "elmalı_turta": {
+      "ad": "Elmalı Turta",
+      "kisi": "8 kişilik",
+      "hazirlik": "25 dakika",
+      "pisirme": "35 dakika",
+      "malzemeler": [
+        "3 adet elma",
+        "2,5 su bardağı un",
+        "125 gram tereyağı",
+        "1 adet yumurta",
+        "1 çay bardağı şeker",
+        "1 paket kabartma tozu",
+        "1 çay kaşığı tarçın",
+        "Yarım su bardağı şeker"
+      ],
+      "yapilis": [
+        "Un, tereyağı, yumurta, şeker ve kabartma tozuyla hamur hazırlayın.",
+        "Elmaların kabuklarını soyup rendeleyin.",
+        "Elmaları şeker ve tarçınla tavada birkaç dakika pişirin.",
+        "Hamurun bir kısmını kalıba yayın.",
+        "Elmalı harcı üzerine dağıtın.",
+        "Kalan hamuru üzerine serpiştirin.",
+        "Fırında üzeri kızarana kadar pişirin."
+      ],
+      "puf_noktasi": "Elmalı harcın fazla suyunu çektirmek tabanın yumuşamasını önler.",
+      "anahtarlar": [
+        "elmalı turta",
+        "elmalı turta"
+      ]
+    },
+    "menemen_sucuklu": {
+      "ad": "Sucuklu Menemen",
+      "kisi": "2 kişilik",
+      "hazirlik": "5 dakika",
+      "pisirme": "15 dakika",
+      "malzemeler": [
+        "3 adet yumurta",
+        "100 gram sucuk",
+        "2 adet domates",
+        "2 adet yeşil biber",
+        "1 tatlı kaşığı tereyağı",
+        "1 çay kaşığı tuz"
+      ],
+      "yapilis": [
+        "Sucukları doğrayıp tavada kısa süre çevirin.",
+        "Biberleri ekleyip kavurun.",
+        "Doğranmış domatesleri ilave edin.",
+        "Domatesler yumuşayınca yumurtaları kırın.",
+        "Tuz ekleyip istediğiniz kıvama gelene kadar pişirin."
+      ],
+      "puf_noktasi": "Sucuk zaten yağlıysa ekstra yağ miktarını azaltabilirsiniz.",
+      "anahtarlar": [
+        "sucuklu menemen",
+        "menemen sucuklu"
+      ]
     }
   }
-
 }
