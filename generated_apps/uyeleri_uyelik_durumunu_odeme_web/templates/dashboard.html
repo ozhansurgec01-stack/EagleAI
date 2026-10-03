@@ -243,18 +243,40 @@
             <strong>{{ uyeler | selectattr("telefon") | list | length }}</strong>
         </p>
 
+        <div class="modal-actions">
+            <button type="button" onclick="smsDuyuruTumunuSec(true)">
+                ☑️ Tümünü Seç
+            </button>
+            <button type="button" onclick="smsDuyuruTumunuSec(false)">
+                ☐ Seçimi Kaldır
+            </button>
+        </div>
+
         <div class="history">
             {% for uye in uyeler %}
                 {% if uye.telefon %}
-                <div class="history-item">
-                    <strong>{{ uye.ad }} {{ uye.soyad or "" }}</strong>
-                    <span>{{ uye.telefon }}</span>
-                </div>
+                <label class="history-item" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+                    <input
+                        type="checkbox"
+                        class="sms-duyuru-secim"
+                        value="{{ uye.id }}"
+                        data-telefon="{{ uye.telefon }}"
+                        onchange="smsDuyuruSecimGuncelle()">
+                    <span style="flex:1;">
+                        <strong>{{ uye.ad }} {{ uye.soyad or "" }}</strong><br>
+                        <span>{{ uye.telefon }}</span>
+                    </span>
+                </label>
                 {% endif %}
             {% else %}
                 <p>Telefon numarası kayıtlı üye bulunmuyor.</p>
             {% endfor %}
         </div>
+
+        <p>
+            Seçilen alıcı:
+            <strong id="smsDuyuruSeciliSayi">0</strong>
+        </p>
 
         <textarea id="smsDuyuruMesaj"
                   placeholder="Duyuru mesajınızı yazın..."
@@ -262,8 +284,7 @@
 
         <div class="modal-actions">
             <button type="button" onclick="this.closest('dialog').close()">İptal</button>
-            <button class="dark" type="button"
-                    onclick="alert('Toplu otomatik SMS gönderimi için SMS servis bağlantısı gerekiyor. Mesaj kaybolmadı; bu aşamada gerçek gönderim yapılmadı.')">
+            <button class="dark" type="button" onclick="smsDuyuruGonder()">
                 📩 Gönder
             </button>
         </div>
@@ -472,7 +493,53 @@ function smsUyeGonder() {
 
 function smsDuyuruAc() {
     document.getElementById("smsDuyuruMesaj").value = "";
+
+    document.querySelectorAll(".sms-duyuru-secim").forEach(function (checkbox) {
+        checkbox.checked = false;
+    });
+
+    smsDuyuruSecimGuncelle();
     document.getElementById("smsDuyuruModal").showModal();
+}
+
+function smsDuyuruTumunuSec(sec) {
+    document.querySelectorAll(".sms-duyuru-secim").forEach(function (checkbox) {
+        checkbox.checked = sec;
+    });
+
+    smsDuyuruSecimGuncelle();
+}
+
+function smsDuyuruSecimGuncelle() {
+    const secilenler = document.querySelectorAll(
+        ".sms-duyuru-secim:checked"
+    );
+
+    document.getElementById("smsDuyuruSeciliSayi").textContent =
+        secilenler.length;
+}
+
+function smsDuyuruGonder() {
+    const secilenler = Array.from(
+        document.querySelectorAll(".sms-duyuru-secim:checked")
+    );
+
+    const mesaj = document.getElementById("smsDuyuruMesaj").value.trim();
+
+    if (!secilenler.length) {
+        alert("Lütfen en az bir üye seçin.");
+        return;
+    }
+
+    if (!mesaj) {
+        alert("Lütfen duyuru mesajınızı yazın.");
+        return;
+    }
+
+    alert(
+        secilenler.length +
+        " alıcı seçildi. SMS servisi henüz bağlı olmadığı için gerçek gönderim yapılmadı."
+    );
 }
 </script>
 
