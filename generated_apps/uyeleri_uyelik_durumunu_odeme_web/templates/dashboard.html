@@ -50,7 +50,7 @@
             ➕ Yeni Üye
         </button>
 
-        <button class="dark" onclick="duyuruBilgisi()">
+        <button class="dark" onclick="smsDuyuruAc()">
             📩 SMS Duyuru
         </button>
     </section>
@@ -106,10 +106,10 @@
                 </button>
 
                 {% if uye.telefon %}
-                <a class="dark action-link"
-                   href="sms:{{ uye.telefon }}">
+                <button class="dark"
+                        onclick='smsUyeAc({{ uye.id }}, {{ (uye.ad ~ " " ~ (uye.soyad or ""))|tojson }}, {{ uye.telefon|tojson }})'>
                     📩 SMS
-                </a>
+                </button>
                 {% else %}
                 <button class="dark" onclick="alert('Bu üyenin telefon numarası yok.')">
                     📩 SMS
@@ -176,12 +176,21 @@
     <form method="post" id="yenileForm" class="modal">
         <h2>Üyelik Yenile</h2>
 
-        <label>Yeni bitiş tarihi</label>
-        <input id="yenileBitis" name="bitis" type="date" required>
+        <p id="yenileSonOdeme">Son ödeme bilgisi yükleniyor...</p>
+
+        <label>Kaç ay yenilensin?</label>
+        <input id="yenileAy" name="ay_sayisi" type="number"
+               min="1" value="1" required oninput="yenileHesapla()">
+
+        <p>Aylık ücret: <strong id="yenileAylik">-</strong> TL</p>
+        <p>Toplam ödeme: <strong id="yenileToplam">-</strong> TL</p>
+        <p>Yeni bitiş: <strong id="yenileYeniBitis">-</strong></p>
 
         <div class="modal-actions">
             <button type="button" onclick="this.closest('dialog').close()">İptal</button>
-            <button class="green-btn" type="submit">🔄 Yenile</button>
+            <button class="green-btn" type="submit">
+                🔄 Yenile ve Ödemeyi Kaydet
+            </button>
         </div>
     </form>
 </dialog>
@@ -203,6 +212,63 @@
     </form>
 </dialog>
 
+
+<dialog id="smsUyeModal">
+    <div class="modal">
+        <h2>📩 Üyeye SMS</h2>
+
+        <p><strong>Alıcı</strong></p>
+        <p id="smsUyeAd">-</p>
+        <p id="smsUyeTelefon">-</p>
+
+        <textarea id="smsUyeMesaj"
+                  placeholder="Mesajınızı yazın..."
+                  rows="5"></textarea>
+
+        <input id="smsUyeTelefonInput" type="hidden">
+
+        <div class="modal-actions">
+            <button type="button" onclick="this.closest('dialog').close()">İptal</button>
+            <button class="dark" type="button" onclick="smsUyeGonder()">📩 SMS'i Aç</button>
+        </div>
+    </div>
+</dialog>
+
+<dialog id="smsDuyuruModal">
+    <div class="modal">
+        <h2>📩 SMS Duyuru</h2>
+
+        <p>
+            Telefon numarası kayıtlı üyeler:
+            <strong>{{ uyeler | selectattr("telefon") | list | length }}</strong>
+        </p>
+
+        <div class="history">
+            {% for uye in uyeler %}
+                {% if uye.telefon %}
+                <div class="history-item">
+                    <strong>{{ uye.ad }} {{ uye.soyad or "" }}</strong>
+                    <span>{{ uye.telefon }}</span>
+                </div>
+                {% endif %}
+            {% else %}
+                <p>Telefon numarası kayıtlı üye bulunmuyor.</p>
+            {% endfor %}
+        </div>
+
+        <textarea id="smsDuyuruMesaj"
+                  placeholder="Duyuru mesajınızı yazın..."
+                  rows="5"></textarea>
+
+        <div class="modal-actions">
+            <button type="button" onclick="this.closest('dialog').close()">İptal</button>
+            <button class="dark" type="button"
+                    onclick="alert('Toplu otomatik SMS gönderimi için SMS servis bağlantısı gerekiyor. Mesaj kaybolmadı; bu aşamada gerçek gönderim yapılmadı.')">
+                📩 Gönder
+            </button>
+        </div>
+    </div>
+</dialog>
 
 <dialog id="gecmisModal">
     <div class="modal">
@@ -230,10 +296,96 @@ function duzenleAc(id, ad, soyad, telefon, notlar, baslangic, bitis) {
     document.getElementById("duzenleModal").showModal();
 }
 
-function yenileAc(id, bitis) {
+let yenileVerisi = null;
+
+async function yenileAc(id, bitis) {
+    const dialog = document.getElementById("yenileModal");
+    const ayInput = document.getElementById("yenileAy");
+
     document.getElementById("yenileForm").action = `/uye/${id}/yenile`;
-    document.getElementById("yenileBitis").value = bitis;
-    document.getElementById("yenileModal").showModal();
+    document.getElementById("yenileSonOdeme").textContent =
+        "Son ödeme bilgisi yükleniyor...";
+    document.getElementById("yenileAylik").textContent = "-";
+    document.getElementById("yenileToplam").textContent = "-";
+    document.getElementById("yenileYeniBitis").textContent = "-";
+
+    ayInput.value = "1";
+    yenileVerisi = { bitis: bitis || "" };
+    dialog.showModal();
+
+    try {
+        const response = await fetch(`/api/uye/${id}/yenile-bilgisi`);
+
+        if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+        }
+
+        const data = await response.json();
+
+        if (!data.ok) {
+            throw new Error(data.mesaj || "Yenileme bilgisi alınamadı.");
+        }
+
+        yenileVerisi = data;
+
+        document.getElementById("yenileSonOdeme").textContent =
+            `Son ödeme: ${data.son_tutar} TL / ${data.son_ay} ay`;
+
+        yenileHesapla();
+    } catch (error) {
+        yenileVerisi = null;
+        document.getElementById("yenileSonOdeme").textContent =
+            "Son ödeme bilgisi bulunamadı. Önce bir ödeme kaydı oluşturun.";
+    }
+}
+
+function yenileHesapla() {
+    if (!yenileVerisi || !yenileVerisi.aylik) {
+        return;
+    }
+
+    const ay = parseInt(
+        document.getElementById("yenileAy").value,
+        10
+    );
+
+    if (!ay || ay < 1) {
+        document.getElementById("yenileToplam").textContent = "-";
+        document.getElementById("yenileYeniBitis").textContent = "-";
+        return;
+    }
+
+    const aylik = Number(yenileVerisi.aylik);
+    const toplam = aylik * ay;
+
+    document.getElementById("yenileAylik").textContent =
+        aylik.toLocaleString("tr-TR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+
+    document.getElementById("yenileToplam").textContent =
+        toplam.toLocaleString("tr-TR", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+
+    const bitis = new Date(yenileVerisi.bitis + "T00:00:00");
+    const gun = bitis.getDate();
+
+    bitis.setDate(1);
+    bitis.setMonth(bitis.getMonth() + ay);
+
+    const sonGun = new Date(
+        bitis.getFullYear(),
+        bitis.getMonth() + 1,
+        0
+    ).getDate();
+
+    bitis.setDate(Math.min(gun, sonGun));
+
+    document.getElementById("yenileYeniBitis").textContent =
+        bitis.toLocaleDateString("tr-TR");
 }
 
 function odemeAc(id) {
@@ -291,8 +443,36 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
-function duyuruBilgisi() {
-    alert("SMS Duyuru için toplu mesaj akışı bir sonraki adımda eklenecek.");
+function smsUyeAc(id, adSoyad, telefon) {
+    const dialog = document.getElementById("smsUyeModal");
+    document.getElementById("smsUyeAd").textContent = adSoyad;
+    document.getElementById("smsUyeTelefon").textContent = telefon;
+    document.getElementById("smsUyeTelefonInput").value = telefon;
+    document.getElementById("smsUyeMesaj").value = "";
+    dialog.showModal();
+}
+
+function smsUyeGonder() {
+    const telefon = document.getElementById("smsUyeTelefonInput").value.trim();
+    const mesaj = document.getElementById("smsUyeMesaj").value.trim();
+
+    if (!telefon) {
+        alert("Üyenin telefon numarası bulunamadı.");
+        return;
+    }
+
+    if (!mesaj) {
+        alert("Lütfen mesajınızı yazın.");
+        return;
+    }
+
+    const hedef = "sms:" + telefon + "?body=" + encodeURIComponent(mesaj);
+    window.location.href = hedef;
+}
+
+function smsDuyuruAc() {
+    document.getElementById("smsDuyuruMesaj").value = "";
+    document.getElementById("smsDuyuruModal").showModal();
 }
 </script>
 
