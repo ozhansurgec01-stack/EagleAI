@@ -135,14 +135,71 @@ def uye_duzenle(uye_id):
 
 @app.route("/uye/<int:uye_id>/yenile", methods=["POST"])
 def uye_yenile(uye_id):
-    yeni_bitis = request.form.get("bitis", "").strip()
+    try:
+        ay = int(request.form.get("ay_sayisi", "0"))
+    except ValueError:
+        ay = 0
+
+    if ay < 1:
+        return redirect(url_for("dashboard"))
 
     db = get_db()
+
+    uye = db.execute("""
+        SELECT bitis
+        FROM uyeler
+        WHERE id = ?
+    """, (uye_id,)).fetchone()
+
+    son_odeme = db.execute("""
+        SELECT tutar, ay_sayisi
+        FROM odemeler
+        WHERE uye_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (uye_id,)).fetchone()
+
+    if not uye or not son_odeme:
+        db.close()
+        return redirect(url_for("dashboard"))
+
+    try:
+        son_ay = int(son_odeme["ay_sayisi"])
+        son_tutar = float(son_odeme["tutar"])
+        if son_ay < 1 or son_tutar <= 0:
+            raise ValueError
+        aylik = son_tutar / son_ay
+    except (TypeError, ValueError, ZeroDivisionError):
+        db.close()
+        return redirect(url_for("dashboard"))
+
+    temel_tarih = uye["bitis"] or date.today().isoformat()
+
+    try:
+        yeni_bitis = ay_ekle(temel_tarih, ay)
+    except ValueError:
+        db.close()
+        return redirect(url_for("dashboard"))
+
+    toplam_tutar = aylik * ay
+
     db.execute("""
         UPDATE uyeler
         SET bitis = ?
         WHERE id = ?
     """, (yeni_bitis, uye_id))
+
+    db.execute("""
+        INSERT INTO odemeler
+        (uye_id, tutar, tarih, aciklama, ay_sayisi)
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        uye_id,
+        f"{toplam_tutar:.2f}",
+        date.today().isoformat(),
+        "Üyelik yenileme",
+        ay
+    ))
 
     db.commit()
     db.close()
@@ -206,6 +263,50 @@ def odeme_ekle(uye_id):
     db.close()
 
     return redirect(url_for("dashboard"))
+
+
+@app.route("/api/uye/<int:uye_id>/yenile-bilgisi")
+def uye_yenile_bilgisi(uye_id):
+    db = get_db()
+
+    uye = db.execute("""
+        SELECT bitis
+        FROM uyeler
+        WHERE id = ?
+    """, (uye_id,)).fetchone()
+
+    odeme = db.execute("""
+        SELECT tutar, ay_sayisi
+        FROM odemeler
+        WHERE uye_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (uye_id,)).fetchone()
+
+    db.close()
+
+    if not uye:
+        return jsonify({"ok": False, "mesaj": "Üye bulunamadı."}), 404
+
+    if not odeme:
+        return jsonify({"ok": False, "mesaj": "Ödeme kaydı bulunamadı."})
+
+    try:
+        son_tutar = float(odeme["tutar"])
+        son_ay = int(odeme["ay_sayisi"])
+        if son_ay < 1 or son_tutar <= 0:
+            raise ValueError
+        aylik = son_tutar / son_ay
+    except (TypeError, ValueError, ZeroDivisionError):
+        return jsonify({"ok": False, "mesaj": "Son ödeme bilgisi geçersiz."})
+
+    return jsonify({
+        "ok": True,
+        "son_tutar": son_tutar,
+        "son_ay": son_ay,
+        "aylik": aylik,
+        "bitis": uye["bitis"] or date.today().isoformat()
+    })
 
 
 @app.route("/api/uye/<int:uye_id>/odemeler")
