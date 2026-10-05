@@ -5826,6 +5826,13 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "kaç kaç", "kac kac"
     ])
 
+    genel_fikstur_mu = any(k in mesaj_norm for k in [
+        "maç var", "mac var",
+        "hangi maç", "hangi mac",
+        "maçlar var", "maclar var",
+        "bugün maç", "bugun mac"
+    ])
+
     zaman_sorusu = "ne zaman" in mesaj_norm
 
     if (
@@ -6199,7 +6206,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         # Geçmiş saatleri yalnızca bugünkü fikstür sorgusunda ele.
         # Maç sonucu sorularında oynanmış maçlar korunmalıdır.
-        if bugun_mu and not sonuc_mu and saat:
+        if bugun_mu and not sonuc_mu and saat and not genel_fikstur_mu:
             try:
                 saat_dt = datetime.strptime(saat, "%H:%M")
                 simdi_dt = datetime.now()
@@ -6286,7 +6293,14 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             if takim.casefold() not in aday_takim:
                 continue
 
-        parcalar = [f"⚽ {ev} - {deplasman}"]
+        spor_ikonu = {
+            "basketbol": "🏀",
+            "voleybol": "🏐",
+            "tenis": "🎾",
+            "futbol": "⚽",
+        }.get(str(sonuc.get("spor", "")).strip().casefold(), "⚽")
+
+        parcalar = [f"{spor_ikonu} {ev} - {deplasman}"]
 
         if lig:
             parcalar.append(f"[{lig}]")
@@ -6314,7 +6328,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         for satir in yapilandirilmis:
             mac = re.search(
-                r"⚽\s*(.*?)\s+-\s+(.*?)\s+—\s+(.+)$",
+                r"(?:⚽|🏀|🏐|🎾)\s*(.*?)\s+-\s+(.*?)\s+—\s+(.+)$",
                 satir
             )
             if not mac:
@@ -6368,7 +6382,24 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             anahtarlar.add(anahtar)
             tekil.append(satir)
 
-        kategoriler["futbol"].extend(tekil)
+        yapilandirilmis_kategori = "futbol"
+        if any(
+            str(sonuc.get("spor", "")).strip().casefold() == "basketbol"
+            for sonuc in web_verisi
+        ):
+            yapilandirilmis_kategori = "basketbol"
+        elif any(
+            str(sonuc.get("spor", "")).strip().casefold() == "voleybol"
+            for sonuc in web_verisi
+        ):
+            yapilandirilmis_kategori = "voleybol"
+        elif any(
+            str(sonuc.get("spor", "")).strip().casefold() == "tenis"
+            for sonuc in web_verisi
+        ):
+            yapilandirilmis_kategori = "tenis"
+
+        kategoriler[yapilandirilmis_kategori].extend(tekil)
         # Yapılandırılmış veri varsa eski regex ayrıştırmasını çalıştırma.
 
     # Yapılandırılmış maçlar bulunduysa eski sayfa/regex yolunu
@@ -6490,7 +6521,14 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             bulunan.add(anahtar)
 
             # Kaynakta lig adı varsa koru.
-            parcalar = [f"⚽ {ev} - {deplasman}"]
+            spor_ikonu = {
+                "basketbol": "🏀",
+                "voleybol": "🏐",
+                "tenis": "🎾",
+                "futbol": "⚽",
+            }.get(str(sonuc.get("spor", "")).strip().casefold(), "⚽")
+
+            parcalar = [f"{spor_ikonu} {ev} - {deplasman}"]
 
             if lig:
                 parcalar.append(f"[{lig}]")
@@ -6534,7 +6572,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         for satir in mac_listesi:
             eslesme = re.search(
-                r"⚽\s*(.*?)\s+-\s+(.*?)\s+—\s+(.+)$",
+                r"(?:⚽|🏀|🏐|🎾)\s*(.*?)\s+-\s+(.*?)\s+—\s+(.+)$",
                 satir
             )
 
@@ -8391,6 +8429,24 @@ def sohbet():
                 "hangi maç", "hangi mac",
                 "maçlar var", "maclar var"
             ])
+
+            # 🏟️ Genel maç sorgusunda ESPN günlük fikstürünü doğrudan kullan.
+            # Belirli lig/takım akışlarına dokunmadan yalnızca genel sorguları hedefler.
+            if genel_mac_sorgusu and not web_verisi:
+                genel_fikstur_verisi = genel_spor_fiksturu_getir(mesaj)
+                if genel_fikstur_verisi:
+                    genel_cevap = spor_fikstur_direkt_cevapla(
+                        mesaj,
+                        web_verisi=genel_fikstur_verisi
+                    )
+                    if genel_cevap:
+                        return jsonify({
+                            "ok": True,
+                            "answer": genel_cevap,
+                            "eagle_direct": True,
+                            "web_search": False,
+                            "memory_count": len(hafiza_yukle())
+                        })
 
             # 🇬🇧 İngiltere / Premier League için resmi canlı API
 
