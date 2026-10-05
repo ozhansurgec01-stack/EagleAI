@@ -2075,6 +2075,44 @@ def doviz_arama_sorgusu(mesaj):
     return mesaj
 
 
+def genelle_spor_fikstur_istegi_mu(mesaj):
+    """Doğal dilde genel güncel maç/fikstür isteğini algılar."""
+    mesaj_kucuk = str(mesaj or "").casefold().replace("\u0307", "")
+
+    zaman_var = any(k in mesaj_kucuk for k in [
+        "bugün", "bugun", "bugünkü", "bugunku",
+        "yarın", "yarin", "yarınki", "yarinki",
+        "bu hafta", "bu haftanın", "bu haftaki",
+        "gelecek hafta", "gelecek haftanın", "gelecek haftaki"
+    ])
+
+    fikstur_var = any(k in mesaj_kucuk for k in [
+        "maç", "mac",
+        "karşılaşma", "karsilasma",
+        "müsabaka", "musabaka",
+        "fikstür", "fikstur",
+        "maç programı", "mac programi"
+    ])
+
+    sonuc_istegi = any(k in mesaj_kucuk for k in [
+        "sonuç", "sonuc", "skor",
+        "kaç kaç", "kac kac",
+        "son maç", "son mac",
+        "maç sonucu", "mac sonucu"
+    ])
+
+    ozel_spor = any(k in mesaj_kucuk for k in [
+        "futbol", "football", "basketbol", "voleybol",
+        "tenis", "hentbol", "nba", "euroleague",
+        "şampiyonlar ligi", "sampiyonlar ligi",
+        "premier lig", "premier league",
+        "la liga", "bundesliga", "serie a", "ligue 1",
+        "süper lig", "super lig"
+    ])
+
+    return zaman_var and fikstur_var and not sonuc_istegi and not ozel_spor
+
+
 def spor_sorgusu_mu(mesaj):
     """Güncel spor ve maç programı sorularını algılar."""
     kelimeler = [
@@ -2082,12 +2120,20 @@ def spor_sorgusu_mu(mesaj):
         "voleybol", "futbol", "basketbol",
         "tenis", "hentbol", "spor",
         "karşılaşma", "karsilasma",
+        "müsabaka", "musabaka",
+        "fikstür", "fikstur",
+        "maç programı", "mac programi",
         "milli takım", "milli takim",
         "şampiyonlar ligi", "süper lig", "super lig",
         "premier lig", "la liga", "serie a", "bundesliga",
         "maçımız", "macimiz",
         "oynanıyor", "oynanacak",
-        "hangi maç", "hangi mac"
+        "hangi maç", "hangi mac",
+        "kaç kaç", "kac kac",
+        "kaç kaç bitti", "kac kac bitti",
+        "maç sonucu", "mac sonucu",
+        "sonuç", "sonuc",
+        "skor", "skorları", "skorlari"
     ]
 
     mesaj_kucuk = mesaj.lower().replace("\u0307", "")
@@ -2185,6 +2231,46 @@ def spor_arama_sorgusu(mesaj):
         "kaç kaç", "kac kac",
         "kaç kaç bitti", "kac kac bitti"
     ])
+
+    # 🧠 Genel sonuç niyeti ülke/lig bağlamından önce değerlendirilir.
+    # Böylece "Türkiye Belçika maç sonucu" gibi iki varlıklı sorgular
+    # "Türkiye" ülke dalına düşmeden özgün sorgusunu korur.
+    genel_sonuc_sorusu = any(k in mesaj_kucuk for k in [
+        "kaç kaç", "kac kac",
+        "kaç kaç bitti", "kac kac bitti",
+        "maç sonucu", "mac sonucu",
+        "son maç", "son mac",
+        "son maçı", "son maci",
+        "sonuç", "sonuc",
+        "skor", "skorları", "skorlari"
+    ])
+
+    if genel_sonuc_sorusu:
+        # Sonuç sorularında doğal dildeki soru kalıplarını temizle.
+        # Böylece "Belçika Türkiye kaç kaç bitti" -> "Belçika Türkiye maç sonucu"
+        # gibi arama motorunun daha iyi eşleştireceği bir sorgu üretilir.
+        sonuc_sorgusu = mesaj.strip()
+        sonuc_temizlenecekler = [
+            "kaç kaç bitti", "kac kac bitti",
+            "kaç kaç", "kac kac",
+            "maç sonucu", "mac sonucu",
+            "son maç", "son mac",
+            "son maçı", "son maci",
+            "sonuçları", "sonuclari",
+            "sonuç", "sonuc",
+            "skorları", "skorlari",
+            "skor"
+        ]
+
+        for ifade in sonuc_temizlenecekler:
+            sonuc_sorgusu = sonuc_sorgusu.replace(ifade, " ")
+
+        sonuc_sorgusu = " ".join(sonuc_sorgusu.split()).strip()
+
+        if sonuc_sorgusu:
+            return f"{sonuc_sorgusu} maç sonucu"
+
+        return f"{mesaj.strip()} maç sonucu"
 
     # 🏐 İki takım arasındaki voleybol maçını doğrudan ara
     milli_takimlar = [
@@ -4949,6 +5035,21 @@ def sofascore_takim_bul(sorgu):
     if not sorgu:
         return None
 
+    # SofaScore arama endpoint'i bazı ortamlarda 403 verdiği için
+    # milli takımları doğrudan doğrulanmış takım ID'leriyle çöz.
+    milli_takimlar = {
+        "belçika": {"id": 4717, "name": "Belgium"},
+        "belcika": {"id": 4717, "name": "Belgium"},
+        "belgium": {"id": 4717, "name": "Belgium"},
+        "türkiye": {"id": 4700, "name": "Türkiye"},
+        "turkiye": {"id": 4700, "name": "Türkiye"},
+        "turkey": {"id": 4700, "name": "Türkiye"},
+    }
+
+    norm = _sofascore_takim_adi_norm(sorgu)
+    if norm in milli_takimlar:
+        return milli_takimlar[norm]
+
     try:
         headers = {
             "User-Agent": "Mozilla/5.0",
@@ -5282,7 +5383,149 @@ def sofascore_son_mac_getir(mesaj):
         return None
 
 
+
+def fotmob_iki_takim_skoru_getir(mesaj, takimlar):
+    """İki takım arasındaki yakın tarihli bitmiş futbol maçını FotMob'dan bulur."""
+    import datetime
+    import requests
+
+    if not mesaj:
+        return ""
+
+    def norm(x):
+        return (
+            str(x or "").casefold()
+            .replace("\u0307", "")
+            .replace("ı", "i").replace("ğ", "g")
+            .replace("ü", "u").replace("ş", "s")
+            .replace("ö", "o").replace("ç", "c")
+        )
+
+    mesaj_norm = norm(mesaj)
+
+    bulunan = []
+    for takim in takimlar:
+        takim_norm = norm(takim)
+        if takim_norm and takim_norm in mesaj_norm:
+            bulunan.append(takim)
+
+    # Aynı takımın iki kez eşleşmesini önle.
+    benzersiz = []
+    for takim in bulunan:
+        if norm(takim) not in [norm(x) for x in benzersiz]:
+            benzersiz.append(takim)
+
+    if len(benzersiz) < 2:
+        return ""
+
+    takim1 = norm(benzersiz[0])
+    takim2 = norm(benzersiz[1])
+
+    # Kullanıcı dilindeki ülke adlarını FotMob'un kullandığı takım adlarına eşleştir.
+    fotmob_aliaslari = {
+        "belcika": "belgium",
+        "turkiye": "turkiye",
+    }
+    takim1 = fotmob_aliaslari.get(takim1, takim1)
+    takim2 = fotmob_aliaslari.get(takim2, takim2)
+
+    bugun = datetime.date.today()
+
+    for gun_geri in range(14):
+        tarih = bugun - datetime.timedelta(days=gun_geri)
+        tarih_param = tarih.strftime("%Y%m%d")
+
+        try:
+            r = requests.get(
+                "https://www.fotmob.com/api/data/matches",
+                params={"date": tarih_param},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=8,
+            )
+
+            if r.status_code != 200:
+                continue
+
+            veri = r.json()
+
+            for lig in veri.get("leagues", []):
+                for mac in lig.get("matches", []):
+                    ev = mac.get("home") or {}
+                    dep = mac.get("away") or {}
+                    ev_adi = norm(ev.get("name"))
+                    dep_adi = norm(dep.get("name"))
+
+                    ayni_mac = (
+                        (takim1 in ev_adi and takim2 in dep_adi) or
+                        (takim2 in ev_adi and takim1 in dep_adi)
+                    )
+
+                    durum = mac.get("status") or {}
+
+                    if not ayni_mac or not durum.get("finished"):
+                        continue
+
+                    ev_skor = ev.get("score")
+                    dep_skor = dep.get("score")
+
+                    if ev_skor is None or dep_skor is None:
+                        continue
+
+                    return (
+                        f"{ev.get('name', benzersiz[0])} "
+                        f"{ev_skor} - {dep_skor} "
+                        f"{dep.get('name', benzersiz[1])}"
+                    )
+
+        except Exception:
+            continue
+
+    return ""
+
+
 def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
+    # İki takım arasındaki doğal sonuç sorgusu → doğrudan SofaScore.
+    # Genel web aramasının ülke/haber sayfalarına kaymasını engeller.
+    sonuc_istegi = any(k in mesaj.casefold() for k in (
+        "kaç kaç", "kac kac",
+        "maç sonucu", "mac sonucu",
+        "skor", "sonuç", "sonuc",
+    ))
+
+    if sonuc_istegi:
+        takim_adlari = [
+            "Türkiye", "Belçika", "İtalya", "Fransa",
+            "Almanya", "İspanya", "İngiltere", "Portekiz",
+            "Hollanda", "Polonya", "Sırbistan", "Brezilya",
+            "Arjantin", "Japonya"
+        ]
+
+        mesaj_norm = mesaj.casefold().replace("ı", "i").replace("ğ", "g").replace("ü", "u").replace("ş", "s").replace("ö", "o").replace("ç", "c")
+        bulunan = []
+
+        for takim in takim_adlari:
+            takim_norm = takim.casefold().replace("ı", "i").replace("ğ", "g").replace("ü", "u").replace("ş", "s").replace("ö", "o").replace("ç", "c")
+            if takim_norm in mesaj_norm:
+                bulunan.append(takim)
+
+        if len(bulunan) >= 2:
+            # Yapılandırılmış FotMob verisini SofaScore'dan önce dene.
+            fotmob_cevap = fotmob_iki_takim_skoru_getir(mesaj, takim_adlari)
+            if fotmob_cevap:
+                return fotmob_cevap
+
+            takim1 = sofascore_takim_bul(bulunan[0])
+            takim2 = sofascore_takim_bul(bulunan[1])
+
+            if takim1 and takim2:
+                mac = sofascore_takimlar_arasi_mac_getir(takim1, takim2)
+
+                if mac and mac.get("durum") == "finished":
+                    return (
+                        f"{mac['ev']} {mac['ev_skor']} - "
+                        f"{mac['deplasman_skor']} {mac['deplasman']}"
+                    )
+
     # Genel "son maç" sorguları için tüm organizasyonlardan
     # en güncel tamamlanmış maçı SofaScore'dan al.
     mesaj_kf = mesaj.casefold()
@@ -5347,7 +5590,8 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
         "Gaziantep FK", "Kayserispor", "Konyaspor", "Samsunspor",
         "Çaykur Rizespor", "Rizespor", "Göztepe", "Eyüpspor",
         "Gençlerbirliği", "Bodrum FK", "Çorum FK", "Eintracht Frankfurt",
-        "Sporting Lizbon", "Sporting CP", "Türkiye", "İtalya"
+        "Sporting Lizbon", "Sporting CP",
+        "Türkiye", "Belçika", "İtalya"
     ]
 
     def norm(x):
@@ -5360,6 +5604,19 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
         )
 
     mesaj_norm = norm(mesaj)
+
+    # İki takım arasındaki sonuç sorgularında, web kaynaklarının
+    # her iki takımı da içermesini şart koş.
+    ikinci_takim_norm = ""
+    if mesaj_norm:
+        sonuc_takimlari = []
+        for takim_adi in takimlar:
+            takim_adi_norm = norm(takim_adi)
+            if takim_adi_norm and takim_adi_norm in mesaj_norm:
+                sonuc_takimlari.append(takim_adi_norm)
+
+        if len(sonuc_takimlari) >= 2:
+            ikinci_takim_norm = sonuc_takimlari[1]
 
     # Önce takım adını kullanıcı mesajından dinamik olarak çıkar.
     # Örn: "Beşiktaş futbol takımının son maçı..."
@@ -5398,6 +5655,7 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
     if not takim_norm:
         return ""
 
+
     # Web kaynaklarını gerçekten kullan.
     kaynaklar = []
 
@@ -5432,6 +5690,9 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
         kaynak_norm = norm(kaynak)
 
         if takim_norm not in kaynak_norm:
+            continue
+
+        if ikinci_takim_norm and ikinci_takim_norm not in kaynak_norm:
             continue
 
         for m in re.finditer(r"(\d{1,2})\s*[-–—:]\s*(\d{1,2})", kaynak):
@@ -5833,15 +6094,6 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
     ]):
         zaman_kapsami = "yarin"
 
-    bugun_mu = zaman_kapsami == "bugun" and any(k in mesaj_norm for k in [
-        "bugün", "bugun",
-        "bugünkü", "bugunku",
-        "bugün maç", "bugun mac",
-        "maç var", "mac var",
-        "hangi maç", "hangi mac",
-        "maçlar var", "maclar var"
-    ])
-
     sonuc_mu = any(k in mesaj_norm for k in [
         "sonuç", "sonuc",
         "sonuçları", "sonuclari",
@@ -5853,6 +6105,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "kaç kaç", "kac kac"
     ])
 
+    bugun_mu = zaman_kapsami == "bugun" and not sonuc_mu
     genel_fikstur_mu = any(k in mesaj_norm for k in [
         "maç var", "mac var",
         "hangi maç", "hangi mac",
@@ -8229,6 +8482,23 @@ def sohbet():
         mac_ifadesi = "maç" in mesaj_kf or "mac" in mesaj_kf
 
         if skor_istegi:
+            # Önce yapılandırılmış direkt spor kaynağını dene.
+            # FotMob gerçek sonucu bulursa SofaScore'a geçmeden döndür.
+            direkt_skor = spor_skoru_direkt_cevapla(mesaj)
+            if direkt_skor:
+                print(
+                    f"⚽ FOTMOB DOĞRUDAN API CEVAP: {direkt_skor}",
+                    flush=True
+                )
+                return jsonify({
+                    "ok": True,
+                    "answer": direkt_skor,
+                    "web_search": True,
+                    "eagle_direct": True,
+                    "merkez_motor": False,
+                    "memory_count": len(hafiza_yukle())
+                })
+
             temiz_mesaj = re.sub(
                 r"\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|bitti|sonucu)\b",
                 " ",
@@ -8450,12 +8720,7 @@ def sohbet():
 
             # 🏟️ Genel maç sorgusu: kullanıcı açıkça bir lig belirtmediyse
             # UEFA'ya zorla yönlendirme yapma. Takım/oyuncu bağlamı korunur.
-            genel_mac_sorgusu = any(k in mesaj_spor for k in [
-                "maç var", "mac var",
-                "bugün maç", "bugun mac",
-                "hangi maç", "hangi mac",
-                "maçlar var", "maclar var"
-            ])
+            genel_mac_sorgusu = genelle_spor_fikstur_istegi_mu(mesaj)
 
             # 🏟️ Genel maç sorgusunda ESPN günlük fikstürünü doğrudan kullan.
             # Belirli lig/takım akışlarına dokunmadan yalnızca genel sorguları hedefler.
