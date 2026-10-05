@@ -3083,6 +3083,32 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
+    # 🧠 SEMANTİK SPOR FALLBACK
+    # Açık "maç/fikstür" kelimesi kullanılmadan yapılan doğal
+    # A Milli/Türkiye maç sorularını mevcut spor motoruna yönlendirir.
+    # Mevcut keyword routing korunur; bu yalnızca eşleşme yoksa devreye girer.
+    spor_varlik = (
+        re.search(r"\b(a\s*mill\w*|milli\s+takım\w*|millî\s+takım\w*)\b", k)
+        or re.search(r"\btürkiye\b", k)
+    )
+    spor_anlam_isareti = (
+        re.search(r"\b(kiminle|rakibi|rakip|karşısında|karsisinda)\b", k)
+        or re.search(r"\b(oynuyor|oynayacak|oynadı|oynadi|sahaya)\b", k)
+        or re.search(r"\b(ne zaman|hangi gün|hangi gun)\b", k)
+        or re.search(r"\b(bugün|bugun|yarın|yarin|bu akşam|bu aksam)\b", k)
+    )
+
+    if spor_varlik and spor_anlam_isareti:
+        karar.update({
+            "intent": "spor",
+            "guven": "yüksek",
+            "neden": "Doğal dilde spor/A Milli maç niyeti algılandı.",
+            "arac": "spor_kaynaklari",
+            "islem": "veri_getir",
+            "dogrulama": True
+        })
+        return karar
+
     # 🏟️ SPOR
     spor_kelimeleri = [
         "maç", "mac", "maçlar", "maclar",
@@ -5697,12 +5723,28 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
     # 🇹🇷 A Milli Futbol Takımı sorgusu:
     # U21, Ümit Milli ve diğer milli takım sayfalarının maçlarını
     # genel Türkiye fikstürüyle karıştırma.
-    a_milli_mi = any(k in mesaj_norm for k in (
-        "a milli",
-        "a millî",
-        "a-milli",
-        "a-millî",
-    ))
+    a_milli_mi = (
+        any(k in mesaj_norm for k in (
+            "a milli",
+            "a millî",
+            "a-milli",
+            "a-millî",
+        ))
+        or (
+            re.search(r"\b(a\s*mill\w*|milli\s+takım\w*|millî\s+takım\w*)\b", mesaj_norm)
+            and re.search(
+                r"\b(kiminle|rakibi|rakip|karşısında|karsisinda|oynuyor|oynayacak|oynadı|oynadi|sahaya|ne zaman|hangi gün|hangi gun|bugün|bugun|yarın|yarin|bu akşam|bu aksam)\b",
+                mesaj_norm,
+            )
+        )
+        or (
+            re.search(r"\btürkiye\b", mesaj_norm)
+            and re.search(
+                r"\b(kiminle|rakibi|rakip|karşısında|karsisinda|oynuyor|oynayacak|oynadı|oynadi|sahaya|ne zaman|hangi gün|hangi gun|bugün|bugun|yarın|yarin|bu akşam|bu aksam)\b",
+                mesaj_norm,
+            )
+        )
+    )
 
     # "Türkiye'nin maçı var mı?" gibi doğal ifadelerde,
     # açıkça başka bir branş belirtilmiyorsa mevcut A Milli
