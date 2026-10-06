@@ -4112,10 +4112,13 @@ def genel_spor_fiksturu_getir(mesaj=""):
         return []
 
 
-def tvf_voleybol_getir(hedef_tarih=None):
-    """TVF resmi fikstüründen Türkiye'nin güncel ve yaklaşan maçlarını çeker."""
+def tvf_voleybol_getir(hedef_tarih=None, hafta=False):
+    """TVF resmi fikstüründen güncel/yaklaşan voleybol maçlarını çeker."""
     try:
-        from datetime import datetime
+        from datetime import datetime, timedelta
+        import re
+        import requests
+        from bs4 import BeautifulSoup
 
         url = "https://fikstur.tvf.org.tr/Takvim"
 
@@ -4139,52 +4142,68 @@ def tvf_voleybol_getir(hedef_tarih=None):
             return []
 
         soup = BeautifulSoup(cevap.text, "html.parser")
-        metin = soup.get_text(" ", strip=True)
+        maclar = soup.select("span.tvf-upcoming-match-link")
 
-        bugun = datetime.now().strftime("%d.%m.%Y")
+        bulunan = []
 
-        sonuclar = []
+        for mac in maclar:
+            metin = mac.get_text(" ", strip=True)
 
-        # Türkiye maçlarını tarih + saat + rakip ile yakala.
-        desen = re.compile(
-            r'([A-ZÇĞİÖŞÜ]+)\s+Vs\s+Türkiye\s*/\s*'
-            r'(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{1,2}:\d{2})\s*/\s*'
-            r'(.*?)(?=\s+[A-ZÇĞİÖŞÜ]+\s+Vs\s+|$)',
-            re.IGNORECASE
-        )
+            parcalar = [x.strip() for x in metin.split("/")]
 
-        desen2 = re.compile(
-            r'Türkiye\s+Vs\s+([A-ZÇĞİÖŞÜ]+)\s*/\s*'
-            r'(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{1,2}:\d{2})\s*/\s*'
-            r'(.*?)(?=\s+[A-ZÇĞİÖŞÜ]+\s+Vs\s+|$)',
-            re.IGNORECASE
-        )
+            if len(parcalar) < 3:
+                continue
 
-        maclar = []
+            takimlar = parcalar[0]
+            tarih_saat = parcalar[1]
+            yer = " / ".join(parcalar[2:]).strip()
 
-        for m in desen.finditer(metin):
-            maclar.append({
-                "rakip": m.group(1).strip(),
-                "tarih": m.group(2),
-                "saat": m.group(3),
-                "yer": m.group(4).strip()
+            takim_parcalari = re.split(
+                r"\s+Vs\s+",
+                takimlar,
+                maxsplit=1,
+                flags=re.IGNORECASE
+            )
+
+            if len(takim_parcalari) != 2:
+                continue
+
+            tarih_match = re.search(
+                r"(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{1,2}:\d{2})",
+                tarih_saat
+            )
+
+            if not tarih_match:
+                continue
+
+            ev_sahibi = takim_parcalari[0].strip()
+            deplasman = takim_parcalari[1].strip()
+            tarih = tarih_match.group(1)
+            saat = tarih_match.group(2)
+
+            bulunan.append({
+                "ev_sahibi": ev_sahibi,
+                "deplasman": deplasman,
+                "tarih": tarih,
+                "saat": saat,
+                "yer": yer
             })
 
-        for m in desen2.finditer(metin):
-            maclar.append({
-                "rakip": m.group(1).strip(),
-                "tarih": m.group(2),
-                "saat": m.group(3),
-                "yer": m.group(4).strip()
-            })
+        print(
+            f"🏐 TVF: HTML'den {len(bulunan)} voleybol maçı ayrıştırıldı",
+            flush=True
+        )
 
-        # Aynı maçı iki regex yakalarsa tekrar etmesin.
+        if not bulunan:
+            return []
+
         benzersiz = []
         gorulen = set()
 
-        for mac in maclar:
+        for mac in bulunan:
             anahtar = (
-                mac["rakip"],
+                mac["ev_sahibi"],
+                mac["deplasman"],
                 mac["tarih"],
                 mac["saat"]
             )
@@ -4193,77 +4212,50 @@ def tvf_voleybol_getir(hedef_tarih=None):
                 gorulen.add(anahtar)
                 benzersiz.append(mac)
 
-        # 🎯 Hedef tarih verilmişse SADECE o tarihin maçlarını döndür.
+        bugun = datetime.now().date()
+
+        def tarih_cevir(tarih):
+            return datetime.strptime(tarih, "%d.%m.%Y").date()
+
         if hedef_tarih:
-            hedef_maclari = [
+            hedef = datetime.strptime(
+                hedef_tarih, "%d.%m.%Y"
+            ).date()
+
+            secilen = [
                 m for m in benzersiz
-                if m["tarih"] == hedef_tarih
+                if tarih_cevir(m["tarih"]) == hedef
             ]
 
-            for m in hedef_maclari:
-                sonuclar.append({
-                    "title": f"{m['rakip']} - Türkiye",
-                    "url": url,
-                    "snippet": (
-                        f"{m['tarih']} - {m['saat']} — "
-                        f"Yer: {m['yer']} — TVF resmi fikstürü."
-                    )
-                })
+        elif hafta:
+            haftanin_basi = bugun - timedelta(days=bugun.weekday())
+            haftanin_sonu = haftanin_basi + timedelta(days=6)
 
-            print(
-                f"🏐 TVF: {hedef_tarih} için {len(sonuclar)} Türkiye maçı bulundu",
-                flush=True
+            secilen = [
+                m for m in benzersiz
+                if haftanin_basi <= tarih_cevir(m["tarih"]) <= haftanin_sonu
+            ]
+
+        else:
+            secilen = [
+                m for m in benzersiz
+                if tarih_cevir(m["tarih"]) >= bugun
+            ]
+
+            secilen.sort(
+                key=lambda m: (
+                    tarih_cevir(m["tarih"]),
+                    m["saat"]
+                )
             )
-            return sonuclar[:8]
 
-        # Önce BUGÜN oynanan Türkiye maçları.
-        bugun_maclari = [
-            m for m in benzersiz
-            if m["tarih"] == bugun
-        ]
+        sonuclar = []
 
-        if bugun_maclari:
-            for m in bugun_maclari:
-                rakip = m["rakip"].upper()
-
-                if rakip == "ALMANYA" and m["saat"] == "19:00":
-                    kategori = "A Millî Kadın Voleybol Takımı (Filenin Sultanları)"
-                elif rakip == "SIRBİSTAN" and m["saat"] == "17:00":
-                    kategori = "Gençler / alt yaş kategorisi"
-                    kategori = "Kategori belirtilmedi"
-
-                sonuclar.append({
-                    "title": f"{m['rakip']} - Türkiye",
-                    "url": url,
-                    "snippet": (
-                        f"BUGÜN {m['tarih']} - {m['saat']} — "
-                        f"Kategori: {kategori} — "
-                        f"Yer: {m['yer']} — TVF resmi fikstürü."
-                    )
-                })
-
-            print(
-                f"🏐 TVF: BUGÜN {len(sonuclar)} Türkiye maçı bulundu",
-                flush=True
-            )
-            return sonuclar[:8]
-
-        # Bugün maç yoksa en yakın gelecek Türkiye maçlarını ver.
-        gelecek = [
-            m for m in benzersiz
-            if m["tarih"] > bugun
-        ]
-
-        gelecek.sort(
-            key=lambda x: (
-                datetime.strptime(x["tarih"], "%d.%m.%Y"),
-                x["saat"]
-            )
-        )
-
-        for m in gelecek[:8]:
+        for m in secilen[:8]:
             sonuclar.append({
-                "title": f"{m['rakip']} - Türkiye",
+                "title": (
+                    f"{m['ev_sahibi']} - {m['deplasman']}"
+                ),
                 "url": url,
                 "snippet": (
                     f"{m['tarih']} - {m['saat']} — "
@@ -4271,18 +4263,28 @@ def tvf_voleybol_getir(hedef_tarih=None):
                 )
             })
 
-        print(
-            f"🏐 TVF: Bugün maç yok, {len(sonuclar)} yaklaşan maç bulundu",
-            flush=True
-        )
+        if hedef_tarih:
+            print(
+                f"🏐 TVF: {hedef_tarih} için "
+                f"{len(sonuclar)} maç bulundu",
+                flush=True
+            )
+        elif hafta:
+            print(
+                f"🏐 TVF: Bu hafta {len(sonuclar)} maç bulundu",
+                flush=True
+            )
+        else:
+            print(
+                f"🏐 TVF: Bugün/yaklaşan {len(sonuclar)} maç bulundu",
+                flush=True
+            )
 
         return sonuclar
 
     except Exception as e:
         print(f"⚠️ TVF arama hatası: {e}", flush=True)
         return []
-
-
 
 def web_arastir(sorgu, limit=6):
     """Güncel web araması: DuckDuckGo -> Google -> Bing."""
@@ -5425,6 +5427,7 @@ def fotmob_iki_takim_skoru_getir(mesaj, takimlar):
     fotmob_aliaslari = {
         "belcika": "belgium",
         "turkiye": "turkiye",
+        "italya": "italy",
     }
     takim1 = fotmob_aliaslari.get(takim1, takim1)
     takim2 = fotmob_aliaslari.get(takim2, takim2)
@@ -5500,11 +5503,11 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
             "Arjantin", "Japonya"
         ]
 
-        mesaj_norm = mesaj.casefold().replace("ı", "i").replace("ğ", "g").replace("ü", "u").replace("ş", "s").replace("ö", "o").replace("ç", "c")
+        mesaj_norm = mesaj.casefold().replace("\u0307", "").replace("ı", "i").replace("ğ", "g").replace("ü", "u").replace("ş", "s").replace("ö", "o").replace("ç", "c")
         bulunan = []
 
         for takim in takim_adlari:
-            takim_norm = takim.casefold().replace("ı", "i").replace("ğ", "g").replace("ü", "u").replace("ş", "s").replace("ö", "o").replace("ç", "c")
+            takim_norm = takim.casefold().replace("\u0307", "").replace("ı", "i").replace("ğ", "g").replace("ü", "u").replace("ş", "s").replace("ö", "o").replace("ç", "c")
             if takim_norm in mesaj_norm:
                 bulunan.append(takim)
 
@@ -8634,71 +8637,96 @@ def sohbet():
             if voleybol_mu and not gecmis_mac:
                 from datetime import datetime, timedelta
 
-                mesaj_kucuk = mesaj.lower()
+                mesaj_kucuk = mesaj.lower().replace("\u0307", "")
+
                 bugun_istegi = any(k in mesaj_kucuk for k in [
                     "bugün", "bugun"
                 ])
+
                 yarin_istegi = any(k in mesaj_kucuk for k in [
                     "yarın", "yarin"
                 ])
 
+                hafta_istegi = any(k in mesaj_kucuk for k in [
+                    "bu hafta",
+                    "bu haftaki",
+                    "bu haftada",
+                    "bu haftanın",
+                    "bu haftanin"
+                ])
+
                 if bugun_istegi:
                     hedef_tarih = datetime.now().strftime("%d.%m.%Y")
-                    web_verisi = tvf_voleybol_getir(hedef_tarih=hedef_tarih)
+                    web_verisi = tvf_voleybol_getir(
+                        hedef_tarih=hedef_tarih
+                    )
+                    gun_adi = "bugün"
 
                 elif yarin_istegi:
                     hedef_tarih = (
                         datetime.now() + timedelta(days=1)
                     ).strftime("%d.%m.%Y")
-                    web_verisi = tvf_voleybol_getir(hedef_tarih=hedef_tarih)
+                    web_verisi = tvf_voleybol_getir(
+                        hedef_tarih=hedef_tarih
+                    )
+                    gun_adi = "yarın"
 
+                elif hafta_istegi:
+                    web_verisi = tvf_voleybol_getir(hafta=True)
+                    gun_adi = "bu hafta"
+
+                else:
+                    # Tarih belirtilmemiş genel voleybol sorusu:
+                    # bugünden sonraki resmi TVF fikstürünü getir.
                     web_verisi = tvf_voleybol_getir()
+                    gun_adi = "yaklaşan"
 
-                # 🏐 BUGÜN/YARIN VOLEYBOL: TVF SONUCU DOĞRUDAN CEVAPLA.
-                # Genel web araması ve sayfa okuma.
-                if bugun_istegi or yarin_istegi:
-                    gun_adi = "bugün" if bugun_istegi else "yarın"
-
-                    if not web_verisi:
-                        return jsonify({
-                            "ok": True,
-                            "answer": f"🏐 {gun_adi.capitalize()} Türkiye'nin resmi voleybol fikstüründe maç görünmüyor.",
-                            "eagle_direct": True,
-                            "web_search": False,
-                            "memory_count": len(hafiza_yukle())
-                        })
-
-                    satirlar = [
-                        "🏐 GÜNCEL VOLEYBOL BİLGİSİ"
-                    ]
-
-                    for sonuc in web_verisi[:8]:
-                        baslik = str(sonuc.get("title", "")).strip()
-                        ozet = str(sonuc.get("snippet", "")).strip()
-
-                        if baslik:
-                            satirlar.append(baslik)
-                        if ozet:
-                            satirlar.append(ozet)
+                # 🏐 VOLEYBOL: TVF SONUCUNU DOĞRUDAN CEVAPLA.
+                if not web_verisi:
+                    if hafta_istegi:
+                        cevap_metni = (
+                            "🏐 Bu hafta TVF resmi voleybol "
+                            "fikstüründe maç görünmüyor."
+                        )
+                    elif bugun_istegi or yarin_istegi:
+                        cevap_metni = (
+                            f"🏐 {gun_adi.capitalize()} TVF resmi "
+                            "voleybol fikstüründe maç görünmüyor."
+                        )
+                    else:
+                        cevap_metni = (
+                            "🏐 TVF resmi voleybol fikstüründe "
+                            "yaklaşan maç görünmüyor."
+                        )
 
                     return jsonify({
                         "ok": True,
-                        "answer": "\n".join(satirlar),
+                        "answer": cevap_metni,
                         "eagle_direct": True,
                         "web_search": False,
                         "memory_count": len(hafiza_yukle())
                     })
 
-                # 🏐 Bugün/yarın sorgusunda TVF boşsa genel spor aramasına düşme.
-                if (bugun_istegi or yarin_istegi) and not web_verisi:
-                    gun_adi = "bugün" if bugun_istegi else "yarın"
-                    return jsonify({
-                        "ok": True,
-                        "answer": f"🏐 {gun_adi.capitalize()} Türkiye'nin resmi voleybol fikstüründe maç görünmüyor.",
-                        "eagle_direct": True,
-                        "web_search": False,
-                        "memory_count": len(hafiza_yukle())
-                    })
+                satirlar = [
+                    "🏐 GÜNCEL VOLEYBOL FİKSTÜRÜ"
+                ]
+
+                for sonuc in web_verisi[:8]:
+                    baslik = str(sonuc.get("title", "")).strip()
+                    ozet = str(sonuc.get("snippet", "")).strip()
+
+                    if baslik:
+                        satirlar.append(baslik)
+                    if ozet:
+                        satirlar.append(ozet)
+
+                return jsonify({
+                    "ok": True,
+                    "answer": "\n".join(satirlar),
+                    "eagle_direct": True,
+                    "web_search": False,
+                    "memory_count": len(hafiza_yukle())
+                })
 
             mesaj_spor = mesaj.lower().replace("\u0307", "")
 
