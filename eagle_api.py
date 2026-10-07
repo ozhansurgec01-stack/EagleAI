@@ -1838,6 +1838,11 @@ def hava_kodu_metin(kod):
 def hava_sorusu_mu(mesaj):
     metin = mesaj.lower()
 
+    # "yağmur ormanı/ormanları" hava durumu değildir.
+    if re.search(r"\byağmur\s+orman\w*\b", metin) or re.search(r"\byagmur\s+orman\w*\b", metin):
+        return False
+
+
     anahtarlar = [
         "hava durumu",
         "hava nasıl",
@@ -3158,7 +3163,16 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
-    if any(x in k for x in hava_kelimeleri) and not acik_sohbet:
+    yagmur_ormani_mi = bool(
+        re.search(r"\byağmur\s+orman\w*\b", k)
+        or re.search(r"\byagmur\s+orman\w*\b", k)
+    )
+
+    if (
+        any(x in k for x in hava_kelimeleri)
+        and not acik_sohbet
+        and not yagmur_ormani_mi
+    ):
         karar.update({
             "intent": "hava",
             "guven": "yüksek",
@@ -4335,6 +4349,37 @@ def web_arastir(sorgu, limit=6):
                 if len(sonuclar) >= limit:
                     break
 
+        elif kaynak == "yahoo":
+            # Yahoo sonuçları r.search.yahoo.com redirect URL'leri kullanır.
+            # RU= içindeki hedef URL tek kez decode edilir.
+            for link in soup.select('a[href*="/RU="]'):
+                href = link.get("href", "").strip()
+                baslik_metni = link.get_text(" ", strip=True)
+
+                if not href or not baslik_metni:
+                    continue
+
+                eslesme = re.search(
+                    r"/RU=(.*?)(?:/RK=|/RS=|$)",
+                    href
+                )
+                if not eslesme:
+                    continue
+
+                hedef_url = unquote(eslesme.group(1)).strip()
+
+                if not hedef_url.startswith(("http://", "https://")):
+                    continue
+
+                sonuclar.append({
+                    "title": baslik_metni,
+                    "url": hedef_url,
+                    "snippet": ""
+                })
+
+                if len(sonuclar) >= limit:
+                    break
+
         elif kaynak == "bing":
             for baslik in soup.select("li.b_algo h2"):
                 link = baslik.find("a")
@@ -4546,7 +4591,145 @@ def web_arastir(sorgu, limit=6):
             )
 
         # ========================================================
-        # 3) BING FALLBACK
+        # 3) WIKIPEDIA API
+        # ========================================================
+        try:
+            print(
+                "🔄 Wikipedia API web araması deneniyor...",
+                flush=True
+            )
+
+            wikipedia_url = "https://tr.wikipedia.org/w/api.php"
+
+            wikipedia_params = {
+                "action": "query",
+                "list": "search",
+                "srsearch": arama_sorgusu,
+                "format": "json",
+                "utf8": 1,
+                "srlimit": limit,
+            }
+
+            wikipedia_headers = {
+                "User-Agent": "EagleAI/1.0 (web research)",
+                "Accept": "application/json",
+            }
+
+            cevap = requests.get(
+                wikipedia_url,
+                params=wikipedia_params,
+                headers=wikipedia_headers,
+                timeout=15
+            )
+
+            print(
+                f"🌐 Wikipedia API HTTP {cevap.status_code}",
+                flush=True
+            )
+
+            if cevap.status_code == 200:
+                veri = cevap.json()
+
+                arama_sonuclari = veri.get(
+                    "query", {}
+                ).get("search", [])
+
+                sonuclar = []
+
+                for item in arama_sonuclari:
+                    baslik = str(
+                        item.get("title", "")
+                    ).strip()
+
+                    if not baslik:
+                        continue
+
+                    sayfa_url = (
+                        "https://tr.wikipedia.org/wiki/"
+                        + quote(baslik.replace(" ", "_"))
+                    )
+
+                    snippet = BeautifulSoup(
+                        str(item.get("snippet", "")),
+                        "html.parser"
+                    ).get_text(" ", strip=True)
+
+                    sonuclar.append({
+                        "title": baslik,
+                        "url": sayfa_url,
+                        "snippet": snippet,
+                    })
+
+                    if len(sonuclar) >= limit:
+                        break
+
+                print(
+                    f"🌐 Wikipedia API: {len(sonuclar)} sonuç",
+                    flush=True
+                )
+
+                if sonuclar:
+                    tum_sonuclar.extend(sonuclar)
+
+        except Exception as e:
+            print(
+                f"⚠️ Wikipedia API web arama hatası: {e}",
+                flush=True
+            )
+
+        # ========================================================
+        # 4) YAHOO
+        # ========================================================
+        try:
+            print(
+                "🔄 Yahoo web araması deneniyor...",
+                flush=True
+            )
+
+            yahoo_url = (
+                "https://search.yahoo.com/search?p="
+                + quote(arama_sorgusu)
+                + "&guccounter=1"
+            )
+
+            cevap = requests.get(
+                yahoo_url,
+                headers=headers,
+                timeout=15
+            )
+
+            print(
+                f"🌐 Yahoo HTTP {cevap.status_code}",
+                flush=True
+            )
+
+            if cevap.status_code == 200:
+                soup = BeautifulSoup(
+                    cevap.text,
+                    "html.parser"
+                )
+
+                sonuclar = sonuclari_ayikla(
+                    soup,
+                    "yahoo"
+                )
+
+                print(
+                    f"🌐 Yahoo: {len(sonuclar)} sonuç",
+                    flush=True
+                )
+
+                if sonuclar:
+                    tum_sonuclar.extend(sonuclar)
+
+        except Exception as e:
+            print(
+                f"⚠️ Yahoo web arama hatası: {e}",
+                flush=True
+            )
+
+        # ========================================================
+        # 4) BING FALLBACK
         # ========================================================
 
         try:
@@ -4558,7 +4741,8 @@ def web_arastir(sorgu, limit=6):
             bing_url = (
                 "https://www.bing.com/search?q="
                 + quote(arama_sorgusu)
-                + "&setlang=tr-TR"
+                + "&mkt=tr-TR"
+                + "&setLang=tr"
                 + "&count=20"
                 + "&first=0"
             )
@@ -4643,12 +4827,60 @@ def web_arastir(sorgu, limit=6):
                     ):
                         continue
 
+                # Tek bir sorgu kelimesinin geçmesi sonucu ilgili
+                # kabul etmek için yeterli değildir.
+                # Önce anlam taşıyan sorgu kelimelerini ayır.
+                soru_kelimeleri = {
+                    "nerede", "nereye", "nereden",
+                    "nasıl", "nasil", "neden", "niçin",
+                    "ne", "nedir", "kim", "hangi",
+                    "kaç", "kac", "ne zaman", "zaman"
+                }
+
+                anlam_kelimeleri = {
+                    kelime for kelime in sorgu_kelime
+                    if kelime not in soru_kelimeleri
+                }
+
+                if not anlam_kelimeleri:
+                    anlam_kelimeleri = sorgu_kelime
+
+                def kelime_eslesiyor_mu(kelime, metin):
+                    if kelime in metin:
+                        return True
+
+                    for metin_kelime in re.findall(
+                        r"[a-z0-9çğıöşü]+",
+                        metin
+                    ):
+                        ortak = 0
+                        for a, b in zip(kelime, metin_kelime):
+                            if a != b:
+                                break
+                            ortak += 1
+
+                        if ortak >= 5:
+                            return True
+
+                    return False
+
                 eslesen = sum(
-                    1 for kelime in sorgu_kelime
-                    if kelime in metin
+                    1
+                    for kelime in anlam_kelimeleri
+                    if kelime_eslesiyor_mu(kelime, metin)
                 )
 
-                if eslesen >= 1:
+                # Tek ortak kelime nedeniyle alakasız sonuçları kabul etme.
+                # İki veya daha fazla anlam kelimesi varsa hepsinin
+                # sonuçta bulunmasını bekle; tek anlam kelimesi varsa
+                # mevcut davranışı koru.
+                gerekli_eslesme = (
+                    len(anlam_kelimeleri)
+                    if len(anlam_kelimeleri) >= 2
+                    else 1
+                )
+
+                if eslesen >= gerekli_eslesme:
                     ilgili_sonuclar.append(sonuc)
 
             # Hiçbir sonuç sorguyla eşleşmiyorsa alakasız sonuçları
