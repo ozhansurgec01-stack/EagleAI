@@ -8973,15 +8973,22 @@ def sohbet():
                     else:
                         zaman = "yaklaşan"
 
-                    mac_adlari = []
+                    mac_satirlari = []
                     for sonuc in web_verisi:
                         baslik = str(sonuc.get("title", "")).strip()
+                        ozet = str(sonuc.get("snippet", "")).strip()
+                        saat_eslesme = re.search(
+                            r"\d{2}\.\d{2}\.\d{4}\s*-\s*(\d{1,2}:\d{2})",
+                            ozet
+                        )
+                        saat = saat_eslesme.group(1) if saat_eslesme else ""
                         if baslik:
-                            mac_adlari.append(baslik)
+                            satir = f"🕓 {saat} — {baslik}" if saat else f"🏐 {baslik}"
+                            mac_satirlari.append(satir)
 
                     cevap_metni = (
                         f"🏐 Evet, {zaman} {mac_sayisi} voleybol maçı var:"
-                        + "".join(f"\\n• {ad}" for ad in mac_adlari[:mac_sayisi])
+                        + "".join(f"\n{satir}" for satir in mac_satirlari[:mac_sayisi])
                     )
 
                     return jsonify({
