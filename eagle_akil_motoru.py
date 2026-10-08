@@ -48,6 +48,7 @@ class EagleAkilKarari:
     baglam_kullanildi: bool = False
     denklem_coz: bool = False
     denklem_aciklama: bool = False
+    matematik_ifadesi: str = ""
 
 
 class EagleAkilMotoru:
@@ -217,6 +218,10 @@ class EagleAkilMotoru:
                                 "denklem_aciklama",
                                 False
                             )
+                        ),
+                        matematik_ifadesi=ham_karar.get(
+                            "matematik_ifadesi",
+                            ""
                         )
                     )
 
