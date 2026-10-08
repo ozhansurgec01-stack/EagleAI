@@ -32,7 +32,7 @@ class EagleProgramUretmeMotoru:
         # Proje / modül / şablon istekleri mevcut basit şablonlardan
         # önce ayrıştırılır.
         kapsamli_sonuc = self._yerel_kapsamli_uret(mesaj)
-        if kapsamli_sonuc is not None:
+        if kapsamli_sonuc is not None and kapsamli_sonuc.get("ok"):
             return kapsamli_sonuc
 
         # 🦅 EAGLE YEREL PROGRAM ÜRETİMİ
@@ -643,7 +643,7 @@ class EagleProgramUretmeMotoru:
         Gemini veya internet gerektirmez.
         Tanınmayan isteklerde None döndürür.
         """
-        k = mesaj.lower().strip()
+        k = mesaj.lower().replace("\u0307", "").strip()
 
         if "haber" in k and any(x in k for x in (
             "program", "oluştur", "olustur", "yaz", "yap",
@@ -768,7 +768,8 @@ if __name__ == "__main__":
             "ekrana",
             "yazdır",
             "yazdir",
-            "print"
+            "print",
+            "program"
         )):
             kod = 'print("Merhaba Dünya")'
 
@@ -799,7 +800,7 @@ if __name__ == "__main__":
             return sonuc
 
         if (
-            "iki sayı" in k
+            ("iki sayı" in k or "iki sayının" in k)
             and any(x in k for x in (
                 "toplam", "fark", "çarp", "carp", "böl", "bol"
             ))
@@ -1048,7 +1049,193 @@ print("Küpü:", sayi ** 3)
                 "Girilen sayının karesini ve küpünü hesaplayan programı hazırladım."
             )
 
-        return None
+        return EagleProgramUretmeMotoru._genel_python_uret(mesaj)
+
+    @staticmethod
+    def _genel_python_uret(mesaj):
+        """Genel Python istekleri için güvenli yerel üretim."""
+        metin = str(mesaj or "").strip()
+        k = metin.lower().replace("\u0307", "")
+
+        # Genel Python üretim isteğini doğal dildeki teknik ipuçlarından anla.
+        ast_analiz = any(x in k for x in (
+            "ast ile", "ast kullan", "abstract syntax tree",
+            "python dosyalarını analiz", "py dosyalarını analiz",
+            "dosyaları recursive", "recursive olarak tara",
+            "klasörü recursive", "klasoru recursive",
+        ))
+        json_cikti = "json" in k
+        cli_path = "--path" in k or "komut satırından" in k
+        complexity = "cyclomatic" in k or "complexity" in k
+        fonksiyon_sinif = (
+            "fonksiyon" in k or "sınıf" in k or "sinif" in k
+            or "import" in k
+        )
+
+        if not (ast_analiz and (json_cikti or cli_path or complexity or fonksiyon_sinif)):
+            return None
+
+        kod = r"""#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import os
+from pathlib import Path
+
+
+def cyclomatic_complexity(node: ast.AST) -> int:
+    complexity = 1
+    for child in ast.walk(node):
+        if isinstance(child, (ast.If, ast.For, ast.AsyncFor, ast.While,
+                              ast.IfExp, ast.comprehension)):
+            complexity += 1
+        elif isinstance(child, ast.BoolOp):
+            complexity += max(0, len(child.values) - 1)
+        elif isinstance(child, ast.ExceptHandler):
+            complexity += 1
+        elif isinstance(child, (ast.Assert,)):
+            complexity += 1
+    return complexity
+
+
+def analyze_function(node: ast.AST) -> dict:
+    name = getattr(node, "name", "<anonymous>")
+    complexity = cyclomatic_complexity(node)
+    lines = getattr(node, "end_lineno", getattr(node, "lineno", 1)) - getattr(
+        node, "lineno", 1
+    ) + 1
+    return {
+        "name": name,
+        "line": getattr(node, "lineno", None),
+        "lines": lines,
+        "cyclomatic_complexity": complexity,
+    }
+
+
+def analyze_file(path: Path) -> dict:
+    result = {
+        "file": str(path),
+        "functions": 0,
+        "classes": 0,
+        "imports": 0,
+        "longest_function": None,
+        "cyclomatic_complexity": 1,
+        "error": None,
+    }
+
+    try:
+        source = path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=str(path))
+
+        functions = [
+            node for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        classes = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.ClassDef)
+        ]
+        imports = [
+            node for node in ast.walk(tree)
+            if isinstance(node, (ast.Import, ast.ImportFrom))
+        ]
+
+        result["functions"] = len(functions)
+        result["classes"] = len(classes)
+        result["imports"] = len(imports)
+
+        function_info = [analyze_function(node) for node in functions]
+        if function_info:
+            result["longest_function"] = max(
+                function_info, key=lambda item: item["lines"]
+            )
+
+        result["cyclomatic_complexity"] = sum(
+            item["cyclomatic_complexity"] for item in function_info
+        ) or 1
+
+    except (OSError, UnicodeError, SyntaxError) as exc:
+        result["error"] = f"{type(exc).__name__}: {exc}"
+
+    return result
+
+
+def scan_directory(root: Path) -> list[dict]:
+    results = []
+    for path in sorted(root.rglob("*.py")):
+        if path.is_file():
+            results.append(analyze_file(path))
+    return results
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Recursive Python AST analysis tool"
+    )
+    parser.add_argument(
+        "--path",
+        required=True,
+        type=Path,
+        help="Python dosyalarının bulunduğu klasör",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("ast_analysis.json"),
+        help="JSON çıktı dosyası",
+    )
+    args = parser.parse_args()
+
+    root = args.path.expanduser().resolve()
+
+    if not root.exists():
+        raise SystemExit(f"Klasör bulunamadı: {root}")
+    if not root.is_dir():
+        raise SystemExit(f"Klasör değil: {root}")
+
+    results = scan_directory(root)
+
+    output = {
+        "path": str(root),
+        "file_count": len(results),
+        "files": results,
+    }
+
+    args.output.write_text(
+        json.dumps(output, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    print(json.dumps(output, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()
+"""
+
+        try:
+            ast.parse(kod)
+        except SyntaxError as exc:
+            return {
+                "ok": False,
+                "error": f"Üretilen Python kodunda sözdizimi hatası: {exc}",
+            }
+
+        return {
+            "ok": True,
+            "dil": "python",
+            "kod": kod,
+            "ana_dosya": "python_ast_analyzer.py",
+            "cikti_turu": "python_kodu",
+            "aciklama": (
+                "Klasörü recursive tarayan, Python dosyalarını AST ile analiz eden, "
+                "fonksiyon/sınıf/import sayılarını, en uzun fonksiyonu ve "
+                "cyclomatic complexity tahminini JSON olarak çıkaran araç."
+            ),
+        }
+
 
     @staticmethod
     def _python_kontrol(kod):
