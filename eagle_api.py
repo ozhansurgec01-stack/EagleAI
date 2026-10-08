@@ -3779,7 +3779,17 @@ def super_lig_getir(mesaj=""):
         ]):
             zaman_kapsami = "dun"
 
-        if not sonuc_istegi and "ne zaman" not in mesaj_kucuk:
+        if "ne zaman" in mesaj_kucuk:
+            # "Ne zaman?" sorusunda yalnızca yaklaşan maçları
+            # tarih + saat sırasıyla göster.
+            maclar = [
+                mac for mac in maclar
+                if mac["_tarih"] >= simdi
+            ]
+            maclar.sort(key=lambda x: x["_tarih"])
+            maclar = maclar[:9]
+
+        elif not sonuc_istegi:
             if zaman_kapsami == "bu_hafta":
                 baslangic = simdi.replace(
                     hour=0, minute=0, second=0, microsecond=0
@@ -6339,8 +6349,9 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "skor", "skorları", "skorlari",
         "kaç kaç", "kac kac"
     ])
+    zaman_sorusu = "ne zaman" in mesaj_norm
 
-    bugun_mu = zaman_kapsami == "bugun" and not sonuc_mu
+    bugun_mu = zaman_kapsami == "bugun" and not sonuc_mu and not zaman_sorusu
     genel_fikstur_mu = any(k in mesaj_norm for k in [
         "maç var", "mac var",
         "hangi maç", "hangi mac",
@@ -6348,7 +6359,6 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "bugün maç", "bugun mac"
     ])
 
-    zaman_sorusu = "ne zaman" in mesaj_norm
 
     if (
         not bugun_mu
@@ -6777,13 +6787,25 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             "maç", "mac", "bilgi", "detay", "ilgini çekebilir",
             "ilgini cekebilir", "tarih", "saat", "chevron",
             "ilk yarı", "ilk yari", "canlı", "canli",
-            "lig", "division", "championship",
+            "division", "championship",
             "league", "kupasi", "kupası",
             "cev erkekler", "cev kadınlar", "cev kadinlar",
             "trendyo", "primera division"
         )
 
-        if any(ifade in takim_metin for ifade in sahte_mac_ifadeleri):
+        # TFF Süper Lig kayıtları yapılandırılmış ve doğrulanmış takım
+        # eşleşmeleridir; genel web "sahte maç" filtresine sokma.
+        tff_super_lig_kaydi = (
+            not sonuc.get("spor")
+            and not sonuc.get("lig")
+            and sonuc.get("tarih")
+            and sonuc.get("saat")
+        )
+
+        if (
+            not tff_super_lig_kaydi
+            and any(ifade in takim_metin for ifade in sahte_mac_ifadeleri)
+        ):
             continue
 
         # Bir takım adı yerine uzun bir sayfa başlığı/snippet gelmişse ele.
@@ -6831,7 +6853,11 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             if ev_skor is not None and deplasman_skor is not None:
                 parcalar.append(f"| {ev_skor}-{deplasman_skor}")
         elif saat:
-            parcalar.append(f"— {saat}")
+            tarih = str(sonuc.get("tarih", "")).strip()
+            if tarih:
+                parcalar.append(f"— {tarih} {saat}")
+            else:
+                parcalar.append(f"— {saat}")
 
         yapilandirilmis.append(" ".join(parcalar))
 
