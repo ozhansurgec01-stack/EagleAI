@@ -8939,6 +8939,52 @@ def sohbet():
                         "memory_count": len(hafiza_yukle())
                     })
 
+                # 🏐 Kullanıcı sadece "var mı?" diye soruyorsa
+                # gereksiz fikstür ayrıntılarını gösterme.
+                mac_listesi_istegi = (
+                    any(k in mesaj_kucuk for k in [
+                        "hangi maç",
+                        "hangi maçlar",
+                        "hangileri",
+                        "kimler oynuyor",
+                        "maçlar neler",
+                        "maçları göster",
+                        "maçlari göster",
+                        "fikstür",
+                        "fikstur",
+                        "listele",
+                        "liste"
+                    ])
+                    or bool(re.search(
+                        r"\bhangi\b.*\bmaç\w*\b",
+                        mesaj_kucuk
+                    ))
+                )
+
+                if not mac_listesi_istegi:
+                    mac_sayisi = len(web_verisi)
+
+                    if bugun_istegi:
+                        zaman = "bugün"
+                    elif yarin_istegi:
+                        zaman = "yarın"
+                    elif hafta_istegi:
+                        zaman = "bu hafta"
+                    else:
+                        zaman = "yaklaşan"
+
+                    cevap_metni = (
+                        f"🏐 Evet, {zaman} {mac_sayisi} voleybol maçı var."
+                    )
+
+                    return jsonify({
+                        "ok": True,
+                        "answer": cevap_metni,
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
                 satirlar = [
                     "🏐 GÜNCEL VOLEYBOL FİKSTÜRÜ"
                 ]
