@@ -6837,29 +6837,61 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             "futbol": "⚽",
         }.get(str(sonuc.get("spor", "")).strip().casefold(), "⚽")
 
-        parcalar = [f"{spor_ikonu} {ev} - {deplasman}"]
+        renk_ikonlari = ["🔴", "🔵", "🟠", "🔴", "🟡", "🟢", "🟥", "⚫", "🟢"]
+        renk_ikonu = renk_ikonlari[len(yapilandirilmis) % len(renk_ikonlari)]
 
-        if lig:
-            parcalar.append(f"[{lig}]")
+        tarih = str(sonuc.get("tarih", "")).strip()
+        gun_metni = ""
+
+        if tarih:
+            try:
+                tarih_dt = datetime.strptime(tarih, "%d.%m.%Y")
+                gun_adlari = {
+                    0: "Pazartesi",
+                    1: "Salı",
+                    2: "Çarşamba",
+                    3: "Perşembe",
+                    4: "Cuma",
+                    5: "Cumartesi",
+                    6: "Pazar",
+                }
+                gun_metni = gun_adlari[tarih_dt.weekday()]
+            except ValueError:
+                pass
 
         if sonuc_mu and sonuc.get("oynandi"):
-            tarih = str(sonuc.get("tarih", "")).strip()
+            parcalar = [f"{renk_ikonu} {ev} - {deplasman}"]
+
+            if tarih:
+                parcalar.append(
+                    f"📅 {gun_metni} — {tarih}" if gun_metni else f"📅 {tarih}"
+                )
+
             ev_skor = sonuc.get("ev_skor")
             deplasman_skor = sonuc.get("deplasman_skor")
 
-            if tarih:
-                parcalar.append(f"— {tarih}")
-
             if ev_skor is not None and deplasman_skor is not None:
-                parcalar.append(f"| {ev_skor}-{deplasman_skor}")
-        elif saat:
-            tarih = str(sonuc.get("tarih", "")).strip()
-            if tarih:
-                parcalar.append(f"— {tarih} {saat}")
-            else:
-                parcalar.append(f"— {saat}")
+                parcalar.append(f"⚽ {ev_skor}-{deplasman_skor}")
 
-        yapilandirilmis.append(" ".join(parcalar))
+        elif saat:
+            parcalar = [f"{renk_ikonu} {ev} - {deplasman}"]
+
+            if tarih:
+                parcalar.append(
+                    f"📅 {gun_metni} — {tarih}" if gun_metni else f"📅 {tarih}"
+                )
+
+            parcalar.append(f"🕐 {saat}")
+
+        else:
+            parcalar = [f"{renk_ikonu} {ev} - {deplasman}"]
+
+            if tarih:
+                parcalar.append(
+                    f"📅 {gun_metni} — {tarih}" if gun_metni else f"📅 {tarih}"
+                )
+
+        yapilandirilmis.append("\n".join(parcalar))
 
     if yapilandirilmis:
         # Aynı maçın farklı kaynaklardaki takım adı varyasyonlarını tekilleştir.
@@ -6869,15 +6901,18 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         for satir in yapilandirilmis:
             mac = re.search(
-                r"(?:⚽|🏀|🏐|🎾)\s*(.*?)\s+-\s+(.*?)\s+—\s+(.+)$",
-                satir
+                r"(?:🔴|🔵|🟠|🟡|🟢|🟥|⚫|⚽|🏀|🏐|🎾)\s*(.*?)\s+-\s+(.*?)\n"
+                r"(?:📅\s+.*?—\s+)?(\d{2}\.\d{2}\.\d{4})\n"
+                r"(?:🕐\s+)?(\d{2}:\d{2})",
+                satir,
+                flags=re.DOTALL
             )
             if not mac:
                 continue
 
             ev = temiz(mac.group(1))
             deplasman = temiz(mac.group(2))
-            saat = mac.group(3)
+            saat = mac.group(4)
 
             def takim_anahtari(ad):
                 ad = norm(ad)
@@ -7198,11 +7233,14 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
         satirlar.extend([
             "",
-            spor_ikon[kategori]
+            spor_ikon[kategori],
+            ""
         ])
 
         # Aynı maçların tekrarını önle.
-        for mac in list(dict.fromkeys(maclar))[:12]:
+        for indeks, mac in enumerate(list(dict.fromkeys(maclar))[:12]):
+            if indeks:
+                satirlar.append("")
             satirlar.append(mac)
 
     return "\n".join(satirlar)
