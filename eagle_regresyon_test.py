@@ -61,6 +61,37 @@ def python_syntax_test():
         compile(kod, "<regresyon>", "exec")
 
 
+def program_uretme_regresyon_test():
+    from eagle_program_uretme_motoru import EagleProgramUretmeMotoru
+
+    motor = EagleProgramUretmeMotoru()
+
+    sorular = [
+        "Merhaba Dünya programı yaz",
+        "İki sayının toplamını hesaplayan program yaz",
+        "Bir sayının faktöriyelini hesaplayan program yaz",
+        "Python'da bir klasörü recursive olarak tarayan .py dosyalarını AST ile analiz eden ve JSON oluşturan program yaz",
+    ]
+
+    for soru in sorular:
+        sonuc = motor.uret(soru)
+
+        assert isinstance(sonuc, dict), f"Sonuç sözlük değil: {soru}"
+        assert sonuc.get("ok") is True, f"Program üretilemedi: {soru}"
+        assert sonuc.get("dil") == "python", f"Dil Python değil: {soru}"
+
+        kod = sonuc.get("kod", "")
+        assert isinstance(kod, str) and kod.strip(), f"Kod boş: {soru}"
+
+        compile(kod, "<program_regresyon>", "exec")
+
+    ast_sonuc = motor.uret(sorular[-1])
+    assert ast_sonuc.get("ana_dosya") == "python_ast_analyzer.py"
+    assert "--path" in ast_sonuc.get("kod", "")
+    assert "ast" in ast_sonuc.get("kod", "")
+    assert "json" in ast_sonuc.get("kod", "").lower()
+
+
 def konu_eslesme_test():
     import eagle_api
 
@@ -193,6 +224,7 @@ print()
 
 test("Bilgi bankası JSON ve 49 yeni Python kaydı", bilgi_bankasi_test)
 test("Python syntax temel testleri", python_syntax_test)
+test("Program üretme regresyonu", program_uretme_regresyon_test)
 test("Python konu eşleşmesi", konu_eslesme_test)
 test("Matematik bilgi bankası", matematik_test)
 test("Karar motoru", karar_motoru_test)
