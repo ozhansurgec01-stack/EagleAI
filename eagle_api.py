@@ -9409,9 +9409,9 @@ def sohbet():
 
         mesaj_kucuk = (mesaj or "").casefold()
         yarin_istegi = any(k in mesaj_kucuk for k in ["yarın", "yarin"])
-
-        secilen_gun = tahmin[1] if yarin_istegi and len(tahmin) > 1 else (
-            tahmin[0] if tahmin else {}
+        bes_gun_istegi = any(
+            ifade in mesaj_kucuk
+            for ifade in ["5 günlük", "5 gunluk"]
         )
 
         hava_metni = (
@@ -9423,14 +9423,56 @@ def sohbet():
             f"☁️ {current.get('description', '—')}"
         )
 
-        if secilen_gun:
-            gun_etiketi = "Yarın" if yarin_istegi else "Bugün"
-            hava_metni += (
-                "\n\n"
-                f"📅 {gun_etiketi}\n"
-                f"{secilen_gun.get('min', '—')}°C — {secilen_gun.get('max', '—')}°C\n"
-                f"🌧️ Yağış ihtimali: %{secilen_gun.get('rain_probability', '—')}"
+        if bes_gun_istegi and tahmin:
+            gun_adlari = {
+                0: "Pazartesi",
+                1: "Salı",
+                2: "Çarşamba",
+                3: "Perşembe",
+                4: "Cuma",
+                5: "Cumartesi",
+                6: "Pazar",
+            }
+
+            for i, gun in enumerate(tahmin[:5]):
+                tarih = str(gun.get("date", "")).strip()
+                gun_etiketi = ""
+
+                if tarih:
+                    try:
+                        gun_etiketi = gun_adlari[
+                            __import__("datetime").datetime.strptime(
+                                tarih, "%Y-%m-%d"
+                            ).weekday()
+                        ]
+                    except ValueError:
+                        pass
+
+                if i == 0:
+                    baslik = f"📅 Bugün — {gun_etiketi}" if gun_etiketi else "📅 Bugün"
+                else:
+                    baslik = f"📅 {gun_etiketi} — {tarih}" if gun_etiketi else f"📅 {tarih}"
+
+                hava_metni += (
+                    "\n\n"
+                    f"{baslik}\n"
+                    f"{gun.get('min', '—')}°C — {gun.get('max', '—')}°C\n"
+                    f"🌧️ Yağış ihtimali: %{gun.get('rain_probability', '—')}"
+                )
+
+        else:
+            secilen_gun = tahmin[1] if yarin_istegi and len(tahmin) > 1 else (
+                tahmin[0] if tahmin else {}
             )
+
+            if secilen_gun:
+                gun_etiketi = "Yarın" if yarin_istegi else "Bugün"
+                hava_metni += (
+                    "\n\n"
+                    f"📅 {gun_etiketi}\n"
+                    f"{secilen_gun.get('min', '—')}°C — {secilen_gun.get('max', '—')}°C\n"
+                    f"🌧️ Yağış ihtimali: %{secilen_gun.get('rain_probability', '—')}"
+                )
 
     elif hava_verisi and not hava_verisi.get("ok"):
         hava_metni = f"⚠️ {hava_verisi.get('error', 'Hava verisi alınamadı.')}"
