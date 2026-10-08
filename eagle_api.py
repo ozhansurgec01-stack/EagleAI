@@ -9393,7 +9393,7 @@ def sohbet():
                 hesaplama_metni = f"Zam miktarı: {sonuc_hesap} TL"
             elif yuzde_turu == "indirim_miktari":
                 hesaplama_metni = f"İndirim miktarı: {sonuc_hesap} TL"
-                hesaplama_metni = str(sonuc_hesap)
+            hesaplama_metni = str(sonuc_hesap)
 
     mantiksal_metni = ""
     ok, sonuc_mantiksal = guvenli_mantiksal_hesapla(mesaj)
