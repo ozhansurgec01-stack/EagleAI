@@ -3779,7 +3779,7 @@ def super_lig_getir(mesaj=""):
         ]):
             zaman_kapsami = "dun"
 
-        if not sonuc_istegi:
+        if not sonuc_istegi and "ne zaman" not in mesaj_kucuk:
             if zaman_kapsami == "bu_hafta":
                 baslangic = simdi.replace(
                     hour=0, minute=0, second=0, microsecond=0
