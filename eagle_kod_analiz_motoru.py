@@ -1,4 +1,5 @@
 import ast
+import builtins
 from pathlib import Path
 
 
@@ -275,7 +276,7 @@ class EagleKodAnalizMotoru:
         isimler = set()
 
         # Built-in isimler ve yerleşik Python hata sınıfları
-        isimler.update(dir(__builtins__))
+        isimler.update(dir(builtins))
         isimler.update({
             "Exception", "BaseException",
             "ArithmeticError", "ZeroDivisionError",
@@ -661,7 +662,7 @@ class EagleKodAnalizMotoru:
         # ---------------------------------------------------------
         if isinstance(node, ast.Name):
             if isinstance(node.ctx, ast.Load):
-                bilinen = set(dir(__builtins__))
+                bilinen = set(dir(builtins))
 
                 # Yaygın Python özel isimleri
                 bilinen.update({
@@ -1031,7 +1032,7 @@ class EagleKodAnalizMotoru:
 
                     # Built-in isimleri yazım hatası adayı olarak kullanma.
                     # Yalnızca kullanıcının kodunda tanımlanan isimleri değerlendir.
-                    builtin_isimler = set(dir(__builtins__))
+                    builtin_isimler = set(dir(builtins))
                     aday_havuzu = [
                         isim for isim in aday_havuzu
                         if isim not in builtin_isimler
