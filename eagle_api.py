@@ -8145,14 +8145,38 @@ def sohbet():
     print(f"🧠 EAGLE KARAR: {karar}", flush=True)
 
     def eagle_yapistirilmis_kod_mu(metin):
-        """Mesajın doğrudan Python kodu içerip içermediğini belirler."""
-        satirlar = metin.strip().splitlines()
+        """Doğrudan veya doğal dil içinde verilen Python kodunu algılar."""
+        metin = str(metin or "").strip()
+        if not metin:
+            return False
 
-        # Tek satırlı veya soru içine gömülmüş Python atamasını yakala.
+        satirlar = metin.splitlines()
+
+        # Mevcut doğrudan kod algılamalarını koru.
         if re.search(r'([A-Za-z_]\w*\s*=\s*[^?]+)$', metin):
             return True
-
         if re.search(r'(?m)^\s*print\s*\(', metin):
+            return True
+
+        # Tek satırda, doğal dildeki hata ayıklama isteğine gömülü kod.
+        tek_satir_kod = re.search(
+            r'\b(?:for\s+[A-Za-z_]\w*\s+in\b|'
+            r'while\s+.+:|if\s+.+:|'
+            r'def\s+[A-Za-z_]\w*\s*\(|'
+            r'class\s+[A-Za-z_]\w*|'
+            r'print\s*\(|import\s+\w+|'
+            r'from\s+\w+\s+import\b)',
+            metin,
+        )
+        kucuk = metin.lower()
+        kod_istegi = (
+            re.search(r'\b(?:python|kod|koddaki|kodundaki)\b', kucuk)
+            and any(
+                ifade in kucuk
+                for ifade in ("hata", "düzelt", "duzelt", "analiz", "incele", "bul")
+            )
+        )
+        if len(satirlar) == 1 and tek_satir_kod and kod_istegi:
             return True
 
         if len(satirlar) < 2:
@@ -8165,22 +8189,16 @@ def sohbet():
             "with ", "print(", " = ", "==",
             "raise ", "yield ", "async def "
         ]
-
         skor = 0
-
         for satir in satirlar:
             temiz = satir.strip()
-
             if not temiz:
                 continue
-
             if temiz.startswith("#"):
                 skor += 1
                 continue
-
             if any(isaret in temiz for isaret in kod_isaretleri):
                 skor += 1
-
         return skor >= 2
 
     # ▶️ AKTİF PYTHON KODU GERÇEK ÇIKTI TESTİ
@@ -8314,6 +8332,23 @@ def sohbet():
                 kaynak_kod = aktif_kod.strip()
             elif eagle_yapistirilmis_kod_mu(mesaj):
                 kaynak_kod = mesaj.strip()
+                # Tek satırdaki doğal dil önekini Python kaynağından ayır.
+                if "\n" not in kaynak_kod and ":" in kaynak_kod:
+                    on_ek, olasi_kod = kaynak_kod.split(":", 1)
+                    on_ek_kucuk = on_ek.lower()
+                    if (
+                        re.search(r"\b(?:python|kod|koddaki|kodundaki)\b", on_ek_kucuk)
+                        and any(
+                            ifade in on_ek_kucuk
+                            for ifade in ("hata", "düzelt", "duzelt", "analiz", "incele", "bul")
+                        )
+                        and re.search(
+                            r"\b(?:for|while|if|def|class|import|from)\b|print\s*\(|[A-Za-z_]\w*\s*=",
+                            olasi_kod,
+                        )
+                    ):
+                        kaynak_kod = olasi_kod.strip()
+
 
                 # Kodun arkasına eklenen doğal dil sorusunu Python kaynağına dahil etme.
                 soru_isaretleri = (
@@ -8368,6 +8403,22 @@ def sohbet():
                     satirlar = satirlar[:-1]
 
                 kaynak_kod = "\n".join(satirlar).strip()
+            # Yaygın tek satırlık for/print yazımını normalize et.
+            _eagle_inline_for_match = re.fullmatch(
+                r"for\s+([A-Za-z_]\w*)\s+in\s+range\((\d+)\)\s+print\(\s*([A-Za-z_]\w*)\s*\)",
+                kaynak_kod.strip(),
+            )
+            if (
+                _eagle_inline_for_match
+                and _eagle_inline_for_match.group(1)
+                == _eagle_inline_for_match.group(3)
+            ):
+                _eagle_var, _eagle_adet, _ = _eagle_inline_for_match.groups()
+                kaynak_kod = (
+                    f"for {_eagle_var} in range({_eagle_adet}):\n"
+                    f"    print({_eagle_var})"
+                )
+
             # 🧠 Temizlenmiş Python kodunu konuşma bağlamına kaydet.
             sohbet_baglam["aktif_kod"] = kaynak_kod
             sohbet_baglam["aktif_kod_dili"] = "python"
