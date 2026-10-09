@@ -1,5 +1,7 @@
 from eagle_merkez_motoru import eagle_merkez_motorunu_kur
 from eagle_akil_motoru import eagle_akil_motorunu_kur
+from eagle_karar_komutlari import slash_komutunu_coz
+from eagle_karar_sohbet import erken_sohbet_karari
 from eagle_autofix import EagleAutoFixEngine
 from eagle_genel_sohbet import genel_sohbet
 from eagle_cevap_motoru import _soru_gibi_mi, _slash_komut_uygula
@@ -1011,6 +1013,14 @@ def bilgi_bankasi_ara(mesaj):
                     if hedef_norm in mesaj_norm:
                         return [cevap]
 
+    # Genel Python sorularında temel tanımı döndür.
+    # Özel soru-cevap eşleşmeleri önce çalışmaya devam eder.
+    if mesaj_norm in {"python", "python nedir", "python ne ise yarar"}:
+        temel = bilgi.get("python", {}).get("temel", [])
+        for madde in temel:
+            if isinstance(madde, str) and madde.strip():
+                return [madde.strip()]
+
     # 🎯 isinstance() eski tip düz KB kayıtlarında tutulduğu için
     # özel doğrudan eşleşmeyle seç.
     if re.search(r"\bisinstance\s*\(?", metin, re.IGNORECASE):
@@ -1049,6 +1059,7 @@ def bilgi_bankasi_ara(mesaj):
         "yield", "decorator", "async", "await",
         "comprehension", "list comprehension", "dictionary comprehension",
         "set comprehension", "filter()", "filter", "map()", "map",
+        "zip()", "zip",
         "lambda"
     )
 
@@ -1096,7 +1107,6 @@ def bilgi_bankasi_ara(mesaj):
                     soru_metin = madde
                     cevap_metin = ""
                     gosterilecek = madde.strip()
-                    continue
 
                 if not gosterilecek:
                     continue
@@ -1537,6 +1547,7 @@ def bilgi_bankasi_ara(mesaj):
         "yield", "decorator", "async", "await",
         "comprehension", "list comprehension", "dictionary comprehension",
         "set comprehension", "filter()", "filter", "map()", "map",
+        "zip()", "zip",
         "lambda"
     )
 
@@ -1584,7 +1595,6 @@ def bilgi_bankasi_ara(mesaj):
                     soru_metin = madde
                     cevap_metin = ""
                     gosterilecek = madde.strip()
-                    continue
 
                 if not gosterilecek:
                     continue
@@ -2536,32 +2546,17 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
-    # 🦅 SLASH KOMUTLARI
-    # Komutlar mevcut "arac" routing sisteminden bağımsızdır.
-    # Komut yoksa mevcut davranış aynen korunur.
-    slash_komutlari = {
-        "brief": "brief",
-        "expert": "expert",
-        "eli5": "eli5",
-        "stepbystep": "stepbystep",
-        "summarize": "summarize",
-    }
+    # Slash komutlarının ayrıştırılması ayrı modülde yapılır.
+    slash_sonuc = slash_komutunu_coz(metin)
 
-    slash_eslesme = re.match(
-        r"^/(brief|expert|eli5|stepbystep|summarize)(?:\s+(.*))?$",
-        metin,
-        flags=re.IGNORECASE | re.DOTALL
-    )
+    if slash_sonuc:
+        komut = slash_sonuc["komut"]
+        komut_metni = slash_sonuc["komut_metni"]
 
-    if slash_eslesme:
-        komut = slash_eslesme.group(1).lower()
-        komut_metni = (slash_eslesme.group(2) or "").strip()
-
-        karar["komut"] = slash_komutlari[komut]
+        karar["komut"] = komut
         karar["komut_metni"] = komut_metni
 
-        # Routing, slash komutunun kendisini değil,
-        # komuttan sonraki gerçek kullanıcı mesajını değerlendirsin.
+        # Yönlendirme, komutun kendisini değil gerçek mesajı değerlendirir.
         metin = komut_metni
         k = metin.lower()
 
@@ -2575,57 +2570,10 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             })
             return karar
 
-    # 🧠 HAFIZA
-    # 🗣️ Basit sohbetleri doğrudan Eagle cevaplasın
-    basit_sohbet_kelimeleri = [
-        "merhaba", "selam", "selamlar", "günaydın", "gunaydin",
-        "iyi akşamlar", "iyi aksamlar", "iyi geceler",
-        "nasılsın", "nasilsin", "teşekkür ederim", "tesekkur ederim",
-        "sağ ol", "sag ol", "kimsin", "sen kimsin",
-        "senin adın ne", "senin adin ne", "ne yapabiliyorsun",
-        "ne yapabilirsin"
-    ]
-
-    if (
-        any(x in k for x in basit_sohbet_kelimeleri)
-        and not (
-            "program" in k
-            and (
-                "yap" in k
-                or "yaz" in k
-                or "oluştur" in k
-                or "olustur" in k
-                or "geliştir" in k
-                or "gelistir" in k
-            )
-        )
-    ):
-        karar.update({
-            "intent": "basit_sohbet",
-            "guven": "yüksek",
-            "neden": "Basit sohbet isteği algılandı.",
-            "arac": "eagle_sohbet",
-            "islem": "dogrudan_cevap",
-            "dogrulama": True
-        })
-        return karar
-
-    hafiza_kelimeleri = [
-        "hatırla", "hatirla", "unutma",
-        "hafızam", "hafizam", "hafıza", "hafiza",
-        "daha önce sana", "daha once sana",
-        "ne söylemiştim", "ne soylemistim",
-        "hatırlıyor musun", "hatirliyor musun"
-    ]
-
-    if any(x in k for x in hafiza_kelimeleri):
-        karar.update({
-            "intent": "hafiza",
-            "guven": "yüksek",
-            "neden": "Hafıza ile ilgili bir istek algılandı.",
-            "arac": "hafiza"
-        })
-        return karar
+    # Basit sohbet ve hafıza yönlendirmesi ayrı modülde.
+    erken_karar = erken_sohbet_karari(metin, karar)
+    if erken_karar is not None:
+        return erken_karar
 
     # 🧾 FATURA
     # Elektrik, su, internet, telefon ve D-Smart gibi
@@ -2778,6 +2726,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         elif tur == "indirim":
             karar["matematik_ifadesi"] = f"{ana_sayi} - ({ana_sayi} * {yuzde} / 100)"
             karar["yuzde_turu"] = "indirim"
+        else:
             karar["matematik_ifadesi"] = f"{ana_sayi} + ({ana_sayi} * {yuzde} / 100)"
             karar["yuzde_turu"] = "zam"
 
@@ -8251,11 +8200,9 @@ def sohbet():
                     calisma_klasoru,
                     timeout=5
                 )
-                stdout = calisma_output.strip()
-                stderr = ""
-
-                stdout = (sonuc.stdout or "").strip()
-                stderr = (sonuc.stderr or "").strip()
+                stdout = calisma_output.strip() if calisma_ok else ""
+                stderr = "" if calisma_ok else calisma_output.strip()
+                return_code = 0 if calisma_ok else 1
 
                 cevap = [
                     "🦅 EAGLE PYTHON ÇIKTI ANALİZİ",
@@ -8270,6 +8217,7 @@ def sohbet():
                         stdout,
                         "```"
                     ])
+                elif calisma_ok:
                     cevap.append("📤 Kod çalıştı ancak ekrana çıktı yazdırmadı.")
 
                 if stderr:
@@ -8282,14 +8230,15 @@ def sohbet():
                         "```"
                     ])
 
-                if sonuc.returncode == 0:
+                if calisma_ok:
                     cevap.extend([
                         "",
                         "✅ Python kodu başarıyla çalıştı."
                     ])
+                else:
                     cevap.extend([
                         "",
-                        f"❌ Python kodu hata koduyla sonlandı: {sonuc.returncode}"
+                        f"❌ Python kodu hata koduyla sonlandı: {return_code}"
                     ])
 
                 return jsonify({
@@ -8298,7 +8247,7 @@ def sohbet():
                     "eagle_direct": True,
                     "code_analysis": True,
                     "code_execution": True,
-                    "return_code": sonuc.returncode,
+                    "return_code": return_code,
                     "memory_count": len(hafiza_yukle())
                 })
 

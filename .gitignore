@@ -15,3 +15,8 @@ android/app/build/
 *_backup
 *_yedek
 *yedek*
+
+# Gizli anahtarlar ve SMS kimlik bilgileri
+/android/keystore.properties
+/generated_apps/uyeleri_uyelik_durumunu_odeme_web/.sms_worker.env
+/generated_apps/uyeleri_uyelik_durumunu_odeme_web/.sms_worker_token

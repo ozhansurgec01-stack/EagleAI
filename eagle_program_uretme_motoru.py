@@ -1022,6 +1022,48 @@ else:
                 "Listedeki sayıların toplamını ve ortalamasını hesaplayan programı hazırladım."
             )
 
+        # Dosyadan satır / kelime / karakter istatistikleri
+        dosya_istatistik = (
+            "dosya" in k
+            and any(x in k for x in (
+                "satır", "satir", "kelime say", "karakter say",
+            ))
+        )
+        if dosya_istatistik:
+            kod = r"""#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Metin dosyasının satır, kelime ve karakter sayısını hesaplar."
+    )
+    parser.add_argument("file", nargs="?", help="Okunacak metin dosyası")
+    args = parser.parse_args()
+
+    filename = args.file or input("Metin dosyasının yolu: ").strip()
+    path = Path(filename).expanduser()
+
+    if not path.is_file():
+        raise SystemExit(f"Dosya bulunamadı: {path}")
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise SystemExit(f"Dosya okunamadı: {exc}")
+
+    print("Satır sayısı:", len(text.splitlines()))
+    print("Kelime sayısı:", len(text.split()))
+    print("Karakter sayısı:", len(text))
+
+if __name__ == "__main__":
+    main()
+"""
+            return sonuc_olustur(
+                kod,
+                "Metin dosyasının satır, kelime ve karakter sayısını hesaplayan programı hazırladım."
+            )
+
         # Kelime / karakter sayacı
         if "kelime say" in k or "karakter say" in k:
             kod = """metin = input("Bir metin girin: ")
@@ -1056,6 +1098,71 @@ print("Küpü:", sayi ** 3)
         """Genel Python istekleri için güvenli yerel üretim."""
         metin = str(mesaj or "").strip()
         k = metin.lower().replace("\u0307", "")
+
+        # Recursive CSV dosyalarını listeleme
+        csv_listeleme = (
+            "csv" in k
+            and any(x in k for x in (
+                "listele", "listeleyen", "bul", "bulunan",
+            ))
+            and any(x in k for x in (
+                "klasör", "klasor", "alt klasör", "alt klasor",
+                "recursive", "klasörde", "klasorde",
+            ))
+        )
+        if csv_listeleme:
+            kod = r"""#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Klasörlerdeki CSV dosyalarını alt klasörlerle listeler."
+    )
+    parser.add_argument(
+        "path", nargs="?", default=".",
+        help="Taranacak klasör (varsayılan: mevcut klasör)"
+    )
+    args = parser.parse_args()
+    root = Path(args.path).expanduser().resolve()
+
+    if not root.exists():
+        raise SystemExit(f"Klasör bulunamadı: {root}")
+    if not root.is_dir():
+        raise SystemExit(f"Bu yol bir klasör değil: {root}")
+
+    files = sorted(
+        (p for p in root.rglob("*")
+         if p.is_file() and p.suffix.lower() == ".csv"),
+        key=lambda p: str(p).lower()
+    )
+
+    print(f"Bulunan CSV dosyası: {len(files)}")
+    for file in files:
+        print(file)
+
+if __name__ == "__main__":
+    main()
+"""
+            try:
+                ast.parse(kod)
+            except SyntaxError as exc:
+                return {
+                    "ok": False,
+                    "error": f"Üretilen Python kodunda sözdizimi hatası: {exc}",
+                }
+
+            return {
+                "ok": True,
+                "dil": "python",
+                "kod": kod,
+                "ana_dosya": "csv_dosyalari_listele.py",
+                "cikti_turu": "python_kodu",
+                "aciklama": (
+                    "Bir klasörü ve alt klasörlerini tarayarak "
+                    "CSV dosyalarını listeler."
+                ),
+            }
 
         # Recursive TXT dosyalarını listeleme
         txt_listeleme = (
