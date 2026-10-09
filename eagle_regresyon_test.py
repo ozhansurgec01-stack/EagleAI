@@ -69,6 +69,7 @@ def program_uretme_regresyon_test():
     sorular = [
         "Merhaba Dünya programı yaz",
         "İki sayının toplamını hesaplayan program yaz",
+        "Python\u0027da iki sayıyı toplayan basit bir program yaz.",
         "Bir sayının faktöriyelini hesaplayan program yaz",
         "Python'da bir klasörü recursive olarak tarayan .py dosyalarını AST ile analiz eden ve JSON oluşturan program yaz",
     ]

@@ -92,6 +92,16 @@
       "soru": "Bugün biraz canım sıkılıyor, ne yapabilirim?",
       "cevap": "🦅 Tabii, konuşalım. Ne düşündüğünü biraz daha anlatabilirsin.",
       "konu": "genel_sohbet"
+    },
+    {
+      "soru": "Merhaba",
+      "cevap": "🦅 Buradayım. Nasıl gidiyor?",
+      "konu": "genel_sohbet"
+    },
+    {
+      "soru": "Nasılsın?",
+      "cevap": "🦅 İyiyim Özhan, buradayım. Seninle konuşmaya ve yardımcı olmaya hazırım. 😊",
+      "konu": "genel_sohbet"
     }
   ]
 }

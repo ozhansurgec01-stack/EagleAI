@@ -800,9 +800,9 @@ if __name__ == "__main__":
             return sonuc
 
         if (
-            ("iki sayı" in k or "iki sayının" in k)
+            ("iki sayı" in k or "iki sayının" in k or "iki sayıyı" in k)
             and any(x in k for x in (
-                "toplam", "fark", "çarp", "carp", "böl", "bol"
+                "toplam", "toplayan", "fark", "çarp", "carp", "böl", "bol"
             ))
         ):
             kod = """sayi1 = float(input("Birinci sayıyı girin: "))
