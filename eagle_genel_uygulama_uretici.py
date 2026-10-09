@@ -142,6 +142,7 @@ class EagleGenelUygulamaUretici:
             import_ok = not import_hatalari
 
             functional_ok = False
+            proc = None
 
             if syntax_ok and import_ok:
                 varliklar = (plan or {}).get("varliklar") or ["kayit"]
@@ -300,15 +301,16 @@ print("__EAGLE_GENERATED_TESTS_OK__")
                         (stderr or stdout or "fonksiyon testi başarısız").strip()
                     )
 
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
+        stdout = (proc.stdout or "") if proc is not None else ""
+        stderr = (proc.stderr or "") if proc is not None else ""
 
         http_ok = (
-            proc.returncode == 0
+            proc is not None
+            and proc.returncode == 0
             and "__EAGLE_HTTP_OK__" in stdout
         )
         http_hatalari = [] if http_ok else [
-            (stderr or stdout or "HTTP testi başarısız").strip()
+            (stderr or stdout or "HTTP testi çalıştırılamadı veya başarısız").strip()
         ]
 
         validation_ok = (
