@@ -9368,6 +9368,7 @@ def sohbet():
             # 🇹🇷 Süper Lig'de resmi TFF verisi varsa onu ezme.
             # TVF resmî son sonuçları; doğrulanmamış tarih iddiasında bulunma.
             voleybol_tarih_istegi = any(k in mesaj_spor for k in [
+                "bugün", "bugun",
                 "dün", "dünkü", "dunun", "dunku",
                 "geçen hafta", "gecen hafta",
                 "geçen ay", "gecen ay"
