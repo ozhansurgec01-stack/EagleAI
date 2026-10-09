@@ -1057,6 +1057,74 @@ print("Küpü:", sayi ** 3)
         metin = str(mesaj or "").strip()
         k = metin.lower().replace("\u0307", "")
 
+        # Recursive TXT dosyalarını listeleme
+        txt_listeleme = (
+            any(x in k for x in (
+                "txt dosyalarını listele",
+                "txt dosyalarini listele",
+                "txt dosyalarını listeleyen",
+                "txt dosyalarini listeleyen",
+                "tüm txt dosyalarını",
+                "tum txt dosyalarini",
+            ))
+            and any(x in k for x in (
+                "klasör", "klasor", "recursive", "alt klasör", "alt klasor",
+            ))
+        )
+
+        if txt_listeleme:
+            kod = r"""#!/usr/bin/env python3
+import argparse
+from pathlib import Path
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Klasörlerdeki TXT dosyalarını recursive olarak listeler."
+    )
+    parser.add_argument(
+        "path", nargs="?", default=".",
+        help="Taranacak klasör (varsayılan: mevcut klasör)"
+    )
+    args = parser.parse_args()
+    root = Path(args.path).expanduser().resolve()
+
+    if not root.exists():
+        raise SystemExit(f"Klasör bulunamadı: {root}")
+    if not root.is_dir():
+        raise SystemExit(f"Bu yol bir klasör değil: {root}")
+
+    files = sorted(
+        (p for p in root.rglob("*") if p.is_file() and p.suffix.lower() == ".txt"),
+        key=lambda p: str(p).lower()
+    )
+
+    print(f"Bulunan TXT dosyası: {len(files)}")
+    for file in files:
+        print(file)
+
+if __name__ == "__main__":
+    main()
+"""
+            try:
+                ast.parse(kod)
+            except SyntaxError as exc:
+                return {
+                    "ok": False,
+                    "error": f"Üretilen Python kodunda sözdizimi hatası: {exc}",
+                }
+
+            return {
+                "ok": True,
+                "dil": "python",
+                "kod": kod,
+                "ana_dosya": "txt_dosyalari_listele.py",
+                "cikti_turu": "python_kodu",
+                "aciklama": (
+                    "Bir klasörü ve alt klasörlerini tarayarak "
+                    "TXT dosyalarını listeler."
+                ),
+            }
+
         # Genel Python üretim isteğini doğal dildeki teknik ipuçlarından anla.
         ast_analiz = any(x in k for x in (
             "ast ile", "ast kullan", "abstract syntax tree",
