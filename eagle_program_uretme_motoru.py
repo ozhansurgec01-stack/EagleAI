@@ -867,6 +867,14 @@ else:
 
             return sonuc
 
+        # Belirli sayı aralığını ekrana yazdırma
+        aralik = re.search(r"(\d+)\s*['’]?\s*den\s+(\d+)\s*['’]?\s*a\s+kadar", k)
+        if aralik and any(x in k for x in ("yazdır", "yazdir", "ekrana", "print")):
+            baslangic, bitis = map(int, aralik.groups())
+            if baslangic <= bitis and bitis - baslangic <= 10000:
+                kod = f"for sayi in range({baslangic}, {bitis} + 1):\n    print(sayi)"
+                return sonuc_olustur(kod, f"{baslangic} ile {bitis} arasındaki sayıları ekrana yazdıran Python programını hazırladım.")
+
         # Sayıların ortalaması
         if "ortalama" in k and "liste" not in k and "not" not in k:
             kod = """sayilar = input("Sayıları boşlukla ayırın: ").split()
