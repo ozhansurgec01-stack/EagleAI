@@ -2260,7 +2260,7 @@ def spor_arama_sorgusu(mesaj):
         "skor", "skorları", "skorlari"
     ])
 
-    if genel_sonuc_sorusu:
+    if genel_sonuc_sorusu and not (voleybol_mu and gecmis_mac):
         # Sonuç sorularında doğal dildeki soru kalıplarını temizle.
         # Böylece "Belçika Türkiye kaç kaç bitti" -> "Belçika Türkiye maç sonucu"
         # gibi arama motorunun daha iyi eşleştireceği bir sorgu üretilir.
@@ -4258,6 +4258,114 @@ def tvf_voleybol_getir(hedef_tarih=None, hafta=False):
     except Exception as e:
         print(f"⚠️ TVF arama hatası: {e}", flush=True)
         return []
+
+def tvf_voleybol_sonuclari_getir(limit=8):
+    """TVF resmî sonuç kartlarından maç ve set skorlarını çıkarır."""
+    import re
+
+    try:
+        url = "https://tvf.org.tr/"
+        cevap = requests.get(
+            url,
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=12
+        )
+        cevap.raise_for_status()
+
+        soup = BeautifulSoup(cevap.text, "html.parser")
+        bolum = soup.select_one("section.tvf-results")
+        if bolum is None:
+            print("TVF sonuç bölümü bulunamadı.", flush=True)
+            return []
+
+        sonuclar = []
+
+        for kart in bolum.select(".tvf-result")[:max(1, min(int(limit), 20))]:
+            satirlar = kart.select(".tvf-result__row")
+            tablo_satirlari = kart.select(".tvf-result__sets tr")
+
+            if len(satirlar) != 2 or len(tablo_satirlari) != 2:
+                continue
+
+            takimlar = []
+            for satir in satirlar:
+                ad_el = satir.select_one(".tvf-result__team")
+                skor_el = satir.select_one(".tvf-result__score")
+                ad = ad_el.get_text(" ", strip=True) if ad_el else ""
+                skor = skor_el.get_text(" ", strip=True) if skor_el else ""
+
+                if not ad or not re.fullmatch(r"\d+", skor):
+                    takimlar = []
+                    break
+
+                takimlar.append({"ad": ad, "skor": int(skor)})
+
+            if len(takimlar) != 2:
+                continue
+
+            set_verisi = {}
+            for satir in tablo_satirlari:
+                ad_el = satir.find("th", title=True)
+                if ad_el is None:
+                    continue
+
+                ad = ad_el.get("title", "").strip()
+                puanlar = []
+
+                for hucre in satir.select("td"):
+                    if "tvf-result__sets-total" in hucre.get("class", []):
+                        continue
+
+                    puan = hucre.get_text(" ", strip=True)
+                    if re.fullmatch(r"\d+", puan):
+                        puanlar.append(int(puan))
+
+                toplam_el = satir.select_one("td.tvf-result__sets-total")
+                toplam = toplam_el.get_text(" ", strip=True) if toplam_el else ""
+
+                if ad and puanlar and re.fullmatch(r"\d+", toplam):
+                    set_verisi[ad.casefold()] = {
+                        "puanlar": puanlar,
+                        "toplam": int(toplam)
+                    }
+
+            puan_listeleri = []
+            for takim in takimlar:
+                veri = set_verisi.get(takim["ad"].casefold())
+                if veri is None or veri["toplam"] != takim["skor"]:
+                    puan_listeleri = []
+                    break
+                puan_listeleri.append(veri["puanlar"])
+
+            if len(puan_listeleri) != 2:
+                continue
+            if len(puan_listeleri[0]) != len(puan_listeleri[1]):
+                continue
+
+            lig_el = kart.select_one(".tvf-result__league")
+            lig = lig_el.get_text(" ", strip=True) if lig_el else ""
+            setler = [
+                f"{puan_listeleri[0][i]}-{puan_listeleri[1][i]}"
+                for i in range(len(puan_listeleri[0]))
+            ]
+
+            sonuclar.append({
+                "ev": takimlar[0]["ad"],
+                "ev_skor": takimlar[0]["skor"],
+                "deplasman": takimlar[1]["ad"],
+                "deplasman_skor": takimlar[1]["skor"],
+                "lig": lig,
+                "setler": setler,
+                "kaynak": url
+            })
+
+        print(f"TVF: {len(sonuclar)} sonuç kartı okundu.", flush=True)
+        return sonuclar
+
+    except Exception as e:
+        print(f"TVF sonuç okuma hatası: {e}", flush=True)
+        return []
+
 
 def web_arastir(sorgu, limit=6):
     """Güncel web araması: DuckDuckGo -> Google -> Bing."""
@@ -9258,6 +9366,41 @@ def sohbet():
 # 🌐 Genel spor veri kaynağı — UEFA/TFF/TVF boşsa ESPN
             # 🏟️ Geçmiş/son maç sonucu sorularında çoklu web araması.
             # 🇹🇷 Süper Lig'de resmi TFF verisi varsa onu ezme.
+            # TVF resmî son sonuçları; doğrulanmamış tarih iddiasında bulunma.
+            voleybol_tarih_istegi = any(k in mesaj_spor for k in [
+                "dün", "dünkü", "dunun", "dunku",
+                "geçen hafta", "gecen hafta",
+                "geçen ay", "gecen ay"
+            ])
+
+            if voleybol_mu and gecmis_mac and not voleybol_tarih_istegi:
+                tvf_sonuclari = tvf_voleybol_sonuclari_getir()
+
+                if tvf_sonuclari:
+                    satirlar = [
+                        "🏐 TVF RESMÎ SON VOLEYBOL SONUÇLARI",
+                        "_Kaynak: TVF resmî sitesi; tarih filtresi uygulanmamıştır._"
+                    ]
+
+                    for mac in tvf_sonuclari:
+                        satirlar.extend([
+                            "",
+                            f"**{mac['ev']} {mac['ev_skor']}-"
+                            f"{mac['deplasman_skor']} {mac['deplasman']}**"
+                        ])
+                        if mac["lig"]:
+                            satirlar.append(f"_{mac['lig']}_")
+                        satirlar.append("Setler: " + " · ".join(mac["setler"]))
+
+                    return jsonify({
+                        "ok": True,
+                        "answer": "\n".join(satirlar),
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
             if gecmis_mac and not super_lig_mi:
                 arama_sorgusu = spor_arama_sorgusu(mesaj)
                 web_verisi = web_arastir(
@@ -9279,6 +9422,26 @@ def sohbet():
                     arama_sorgusu,
                     limit=8
                 )
+
+            # Tarihli voleybol sorgusunda doğrulanmış sonuç yoksa
+            # tarihsiz TVF kartlarını geçmiş sonuç gibi sunma.
+            if (
+                voleybol_mu
+                and voleybol_tarih_istegi
+                and not web_verisi
+            ):
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🏐 İstenen tarih veya dönem için doğrulanmış "
+                        "voleybol maç sonucu bulamadım. TVF'nin tarihsiz "
+                        "güncel sonuç kartlarını geçmiş sonuç gibi sunmuyorum."
+                    ),
+                    "eagle_direct": True,
+                    "web_search": True,
+                    "merkez_motor": False,
+                    "memory_count": len(hafiza_yukle())
+                })
 
     elif karar.get("arac") == "web_arastirma":
         # 🧠 Öğrenme hafızası: güncel olmayan genel konuda önce mevcut bilgiyi kullan
@@ -9846,15 +10009,15 @@ def sohbet():
                         flush=True
                     )
 
-        if cevap and str(cevap).strip():
-            sohbet_hafizaya_ekle(mesaj, cevap, konu="genel_sohbet")
+    if cevap and str(cevap).strip():
+        sohbet_hafizaya_ekle(mesaj, cevap, konu="genel_sohbet")
 
-            return jsonify({
-                "ok": True,
-                "answer": cevap,
-                "eagle_direct": True,
-                "memory_count": len(hafiza_yukle())
-            })
+        return jsonify({
+            "ok": True,
+            "answer": cevap,
+            "eagle_direct": True,
+            "memory_count": len(hafiza_yukle())
+        })
 
     # 🏟️ Spor fikstürü — karar/routing dalından bağımsız doğrudan cevapla.
     # Genel "Bugün maç var mı?" sorusu takım belirtmese de mevcut günün
