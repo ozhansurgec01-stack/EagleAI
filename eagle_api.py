@@ -8164,7 +8164,7 @@ def sohbet():
             r'while\s+.+:|if\s+.+:|'
             r'def\s+[A-Za-z_]\w*\s*\(|'
             r'class\s+[A-Za-z_]\w*|'
-            r'print\s*\(|import\s+\w+|'
+            r'print\s*\(|raise\s+[A-Za-z_]\w*\s*\(|import\s+\w+|'
             r'from\s+\w+\s+import\b)',
             metin,
         )
@@ -8176,7 +8176,10 @@ def sohbet():
                 for ifade in ("hata", "düzelt", "duzelt", "analiz", "incele", "bul")
             )
         )
-        if len(satirlar) == 1 and tek_satir_kod and kod_istegi:
+        if len(satirlar) == 1 and tek_satir_kod and (
+            kod_istegi
+            or re.match(r"^\s*raise\s+[A-Za-z_]\w*\s*\(", metin)
+        ):
             return True
 
         if len(satirlar) < 2:
