@@ -106,6 +106,39 @@ def konu_eslesme_test():
     assert sonuc, "NameError sorusuna cevap bulunamadı"
 
 
+def temel_python_soru_cevap_test():
+    import eagle_api
+
+    kontroller = [
+        ("Python'da liste nasıl oluşturulur?", "sayilar = [1, 2, 3]"),
+        ("Python listesi nedir?", "sıralı"),
+        ("Python'da sözlük nasıl oluşturulur?", '"ad": "Ali"'),
+        ("Python'da fonksiyon nasıl yazılır?", "def selamla(isim):"),
+    ]
+
+    for soru, beklenen in kontroller:
+        sonuc = eagle_api.bilgi_bankasi_ara(soru)
+        metin = "\n".join(str(x) for x in sonuc) if sonuc else ""
+        assert beklenen.lower() in metin.lower(), (
+            f"{soru!r} için beklenen içerik bulunamadı: {sonuc!r}"
+        )
+
+    append_sonuc = eagle_api.bilgi_bankasi_ara(
+        "Python listesinde append() ne işe yarar?"
+    )
+    assert len(append_sonuc or []) == 1, (
+        f"append() için tek cevap bekleniyordu: {append_sonuc!r}"
+    )
+
+    filtre_sonuc = eagle_api.bilgi_bankasi_ara(
+        "Python filter() kullanmadan yeni liste nasıl oluşturulur?"
+    )
+    assert not any(
+        "dictionary comprehension" in str(cevap).lower()
+        for cevap in (filtre_sonuc or [])
+    ), f"Liste sorusuna sözlük cevabı karıştı: {filtre_sonuc!r}"
+
+
 def matematik_test():
     import eagle_api
 
@@ -227,6 +260,7 @@ test("Bilgi bankası JSON ve 49 yeni Python kaydı", bilgi_bankasi_test)
 test("Python syntax temel testleri", python_syntax_test)
 test("Program üretme regresyonu", program_uretme_regresyon_test)
 test("Python konu eşleşmesi", konu_eslesme_test)
+test("Temel Python soru-cevap kalitesi", temel_python_soru_cevap_test)
 test("Matematik bilgi bankası", matematik_test)
 test("Karar motoru", karar_motoru_test)
 test("Kod analiz motoru", kod_analiz_import_test)

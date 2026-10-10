@@ -951,6 +951,84 @@ def bilgi_bankasi_ara(mesaj):
 
     # 🎯 Yeni Python konularında tam soru önceliği.
     # İlgili başka kayıtlar yerine doğrudan sorulan kavramın kaydını seçer.
+    # Temel Python sorularında açıklama ve doğrudan kullanılabilir örnek.
+    temel_mesaj = re.sub(r"\s+", " ", metin.lower()).strip()
+
+    ozel_konu_var = bool(re.search(
+        r"\b(append|extend|insert|remove|pop|clear|reverse|"
+        r"keys|values|items|get|update|comprehension|sorted|"
+        r"lambda|decorator|generator|iterator|parametre|"
+        r"yield|zip|filter|map)\b",
+        temel_mesaj,
+    ))
+
+    if not ozel_konu_var:
+        liste_sorusu = bool(re.search(
+            r"\b(liste|listesi|listeler|listeleri|listesine|listede|listeden|list)\b",
+            temel_mesaj,
+        ))
+        sozluk_sorusu = bool(re.search(
+            r"\b(sözlük|sözlüğü|sözlüğe|sözlükler|sozluk|dictionary|dict)\b",
+            temel_mesaj,
+        ))
+        fonksiyon_sorusu = bool(re.search(
+            r"\b(fonksiyon|fonksiyonu|fonksiyonlar|fonksiyonları|"
+            r"fonksiyonlari|function|def)\b",
+            temel_mesaj,
+        ))
+        olusturma_sorusu = bool(re.search(
+            r"\b(nasıl|nasil|oluşturulur|olusturulur|oluşturmak|"
+            r"olusturmak|yazılır|yazilir|tanımlanır|tanimlanir)\b",
+            temel_mesaj,
+        ))
+        tanim_sorusu = bool(re.search(
+            r"\b(nedir|ne demek)\b", temel_mesaj
+        ))
+
+        if liste_sorusu and not sozluk_sorusu and not fonksiyon_sorusu:
+            if olusturma_sorusu:
+                return [
+                    "Python'da liste köşeli parantezlerle oluşturulur.\n"
+                    "sayilar = [1, 2, 3]\n"
+                    "isimler = ['Ali', 'Ayşe']\n"
+                    "Boş liste: liste = []"
+                ]
+            if tanim_sorusu:
+                return [
+                    "Python listesi, birden fazla değeri sıralı biçimde "
+                    "tutan ve değiştirilebilen bir veri yapısıdır. "
+                    "Örnek: sayilar = [1, 2, 3]. İlk indeks 0'dır."
+                ]
+
+        if sozluk_sorusu and not liste_sorusu and not fonksiyon_sorusu:
+            if olusturma_sorusu:
+                return [
+                    "Python'da sözlük anahtar-değer çiftleriyle oluşturulur.\n"
+                    'ogrenci = {"ad": "Ali", "yas": 15}\n'
+                    "Boş sözlük: ogrenci = {}"
+                ]
+            if tanim_sorusu:
+                return [
+                    "Python sözlüğü verileri anahtar-değer çiftleriyle tutar. "
+                    'Örnek: ogrenci = {"ad": "Ali", "yas": 15}. '
+                    'Bir değere ogrenci["ad"] ile erişilir.'
+                ]
+
+        if fonksiyon_sorusu and not liste_sorusu and not sozluk_sorusu:
+            if olusturma_sorusu:
+                return [
+                    "Python'da fonksiyon def ile tanımlanır.\n"
+                    "def selamla(isim):\n"
+                    '    return f"Merhaba, {isim}"\n'
+                    "Çağırma: print(selamla('Ali'))"
+                ]
+            if tanim_sorusu:
+                return [
+                    "Python fonksiyonu belirli bir işi yapan ve tekrar "
+                    "çağrılabilen kod bloğudur. Örnek: "
+                    "def topla(a, b): return a + b"
+                ]
+
     ozgun_python_sorular = {
         "datetime.now()": ["datetime.now() ne işe yarar?"],
         "timedelta": ["timedelta nedir?"],
@@ -1115,6 +1193,34 @@ def bilgi_bankasi_ara(mesaj):
                 cevap_alt = cevap_metin.lower().replace(" ", "")
                 madde_alt = (soru_metin + " " + cevap_metin).lower()
 
+                # Liste sorusuna sözlük comprehension cevabını ekleme.
+                if (
+                    "set comprehension" in madde_alt
+                    and re.search(
+                        r"\b(liste|list|listeye|listede|listeden)\b",
+                        metin
+                    )
+                    and not re.search(
+                        r"\b(set|küme|kume)\b",
+                        metin
+                    )
+                ):
+                    continue
+
+                if (
+                    filter_yasak
+                    and "dictionary comprehension" in madde_alt
+                    and re.search(
+                        r"\b(liste|list|listeye|listede|listeden)\b",
+                        metin
+                    )
+                    and not re.search(
+                        r"\b(sözlük|sozluk|dictionary|dict)\b",
+                        metin
+                    )
+                ):
+                    continue
+
                 # datetime sorgusunda datetime.now() kaydını yanlışlıkla
                 # genel datetime sorusuna seçtirme.
                 if (
@@ -1231,7 +1337,22 @@ def bilgi_bankasi_ara(mesaj):
                 gorulen.add(anahtar)
                 sonuc.append(madde)
 
-                if len(sonuc) >= 3:
+                sonuc_limiti = (
+                    1 if (
+                        (
+                            "append()" in eslesen_terimler
+                            and "copy" not in mesaj_alt
+                            and "fonksiyon" not in mesaj_alt
+                        )
+                        or (
+                            "get()" in eslesen_terimler
+                            and "copy" not in mesaj_alt
+                            and "fonksiyon" not in mesaj_alt
+                        )
+                    )
+                    else 3
+                )
+                if len(sonuc) >= sonuc_limiti:
                     break
 
             if sonuc:
@@ -1603,6 +1724,35 @@ def bilgi_bankasi_ara(mesaj):
                 cevap_alt = cevap_metin.lower().replace(" ", "")
                 madde_alt = (soru_metin + " " + cevap_metin).lower()
 
+                # Liste sorusuna sözlük oluşturma kaydını karıştırma.
+                if (
+                    "set comprehension" in madde_alt
+                    and re.search(
+                        r"\b(liste|list|listeye|listede|listeden)\b",
+                        metin
+                    )
+                    and not re.search(
+                        r"\b(set|küme|kume)\b",
+                        metin
+                    )
+                ):
+                    continue
+
+                if (
+                    filter_yasak
+                    and "dictionary comprehension" in madde_alt
+                    and re.search(
+                        r"\b(liste|list|listeye|listede|listeden)\b",
+                        metin
+                    )
+                    and not re.search(
+                        r"\b(sözlük|sozluk|dictionary|dict)\b",
+                        metin
+                    )
+                ):
+                    continue
+
+
                 # datetime sorgusunda datetime.now() kaydını yanlışlıkla
                 # genel datetime sorusuna seçtirme.
                 if (
@@ -1719,7 +1869,23 @@ def bilgi_bankasi_ara(mesaj):
                 gorulen.add(anahtar)
                 sonuc.append(madde)
 
-                if len(sonuc) >= 3:
+                # Doğrudan append sorusunda tekrar cevapları gösterme.
+                sonuc_limiti = (
+                    1 if (
+                        (
+                            "append()" in eslesen_terimler
+                            and "copy" not in mesaj_alt
+                            and "fonksiyon" not in mesaj_alt
+                        )
+                        or (
+                            "get()" in eslesen_terimler
+                            and "copy" not in mesaj_alt
+                            and "fonksiyon" not in mesaj_alt
+                        )
+                    )
+                    else 3
+                )
+                if len(sonuc) >= sonuc_limiti:
                     break
 
             if sonuc:
@@ -1767,7 +1933,7 @@ def bilgi_bankasi_ara(mesaj):
     # alakasız kayıtları sonuç olarak döndürmemeli; web fallback'e bırakılmalı.
     python_sorusu = bool(re.search(r"\bpython(?:['’](?:da|de)|\s+(?:da|de))?\b", metin))
 
-    if (konu != "python" and not python_sorusu) or bulunan:
+    if konu != "python" and (not python_sorusu or not bulunan):
         tara(bilgi)
 
     # Konu bulunamadığında kayıt metni üzerinden güvenli ikinci arama yap.
@@ -9152,13 +9318,17 @@ def sohbet():
                     for sonuc in web_verisi:
                         baslik = str(sonuc.get("title", "")).strip()
                         ozet = str(sonuc.get("snippet", "")).strip()
-                        saat_eslesme = re.search(
-                            r"\d{2}\.\d{2}\.\d{4}\s*-\s*(\d{1,2}:\d{2})",
+                        tarih_saat_eslesme = re.search(
+                            r"(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{1,2}:\d{2})",
                             ozet
                         )
-                        saat = saat_eslesme.group(1) if saat_eslesme else ""
                         if baslik:
-                            satir = f"🕓 {saat} — {baslik}" if saat else f"🏐 {baslik}"
+                            if tarih_saat_eslesme:
+                                tarih = tarih_saat_eslesme.group(1)
+                                saat = tarih_saat_eslesme.group(2)
+                                satir = f"📅 {tarih} 🕓 {saat} — {baslik}"
+                            else:
+                                satir = f"🏐 {baslik} — Tarih/saat bilgisi kaynakta bulunamadı"
                             mac_satirlari.append(satir)
 
                     cevap_metni = (

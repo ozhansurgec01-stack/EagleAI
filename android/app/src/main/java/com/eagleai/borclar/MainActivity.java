@@ -1580,7 +1580,119 @@ private void sohbetYukle(String id) {
         return disKutu;
     }
 
+
+    private boolean voleybolSonucKartlariEkle(LinearLayout kutu, String metin) {
+        if (!metin.contains("TVF RESMÎ SON VOLEYBOL SONUÇLARI")) {
+            return false;
+        }
+
+        TextView baslik = new TextView(this);
+        baslik.setText("🏐 VOLEYBOL MAÇ SONUÇLARI");
+        baslik.setTextSize(18);
+        baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        baslik.setTextColor(Color.rgb(25, 65, 115));
+        baslik.setPadding(0, 0, 0, 12);
+        kutu.addView(baslik);
+
+        String ev = null, deplasman = null, lig = "", setler = "";
+        java.util.regex.Pattern skorDeseni = java.util.regex.Pattern.compile(
+                "^\\*\\*(.+?)\\s+(\\d+)-(\\d+)\\s+(.+?)\\*\\*$"
+        );
+
+        for (String satir : metin.split("\\n")) {
+            String temiz = satir.trim();
+            java.util.regex.Matcher eslesme = skorDeseni.matcher(temiz);
+
+            if (eslesme.matches()) {
+                if (ev != null) {
+                    voleybolKartEkle(kutu, ev, deplasman, lig, setler);
+                }
+                ev = eslesme.group(1).trim() + "  " + eslesme.group(2);
+                deplasman = eslesme.group(4).trim() + "  " + eslesme.group(3);
+                lig = "";
+                setler = "";
+            } else if (ev != null && temiz.startsWith("_") && temiz.endsWith("_")) {
+                lig = temiz.substring(1, temiz.length() - 1);
+            } else if (ev != null && temiz.startsWith("Setler:")) {
+                setler = temiz;
+            }
+        }
+
+        if (ev == null) return false;
+        voleybolKartEkle(kutu, ev, deplasman, lig, setler);
+        return true;
+    }
+
+    private void voleybolKartEkle(
+            LinearLayout kutu, String ev, String deplasman, String lig, String setler) {
+        LinearLayout kart = new LinearLayout(this);
+        kart.setOrientation(LinearLayout.VERTICAL);
+        kart.setPadding(16, 14, 16, 14);
+
+        android.graphics.drawable.GradientDrawable arkaPlan =
+                new android.graphics.drawable.GradientDrawable();
+        arkaPlan.setColor(Color.rgb(248, 250, 253));
+        arkaPlan.setCornerRadius(18);
+        arkaPlan.setStroke(1, Color.rgb(220, 228, 238));
+        kart.setBackground(arkaPlan);
+
+        LinearLayout satir = new LinearLayout(this);
+        satir.setOrientation(LinearLayout.HORIZONTAL);
+        satir.setGravity(android.view.Gravity.CENTER_VERTICAL);
+
+        String evAdi = ev.replaceFirst("\\s+\\d+$", "");
+        String deplasmanAdi = deplasman.replaceFirst("\\s+\\d+$", "");
+        String skor = ev.substring(ev.lastIndexOf(' ') + 1) + "–"
+                + deplasman.substring(deplasman.lastIndexOf(' ') + 1);
+
+        TextView takimlar = new TextView(this);
+        takimlar.setText(evAdi + "\n" + deplasmanAdi);
+        takimlar.setTextSize(15);
+        takimlar.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        takimlar.setTextColor(Color.rgb(35, 45, 60));
+        takimlar.setLineSpacing(5, 1f);
+        satir.addView(takimlar, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView skorYazisi = new TextView(this);
+        skorYazisi.setText(skor);
+        skorYazisi.setTextSize(23);
+        skorYazisi.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        skorYazisi.setTextColor(Color.rgb(180, 30, 45));
+        skorYazisi.setGravity(android.view.Gravity.END | android.view.Gravity.CENTER_VERTICAL);
+        satir.addView(skorYazisi, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        kart.addView(satir);
+
+        if (!lig.isEmpty()) {
+            TextView ligYazisi = new TextView(this);
+            ligYazisi.setText(lig);
+            ligYazisi.setTextSize(12);
+            ligYazisi.setTextColor(Color.rgb(90, 100, 115));
+            ligYazisi.setPadding(0, 8, 0, 0);
+            kart.addView(ligYazisi);
+        }
+
+        if (!setler.isEmpty()) {
+            TextView setYazisi = new TextView(this);
+            setYazisi.setText(setler);
+            setYazisi.setTextSize(13);
+            setYazisi.setTextColor(Color.rgb(45, 95, 145));
+            setYazisi.setPadding(0, 5, 0, 0);
+            kart.addView(setYazisi);
+        }
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = 12;
+        kutu.addView(kart, lp);
+    }
+
     private void mesajIcerigiEkle(LinearLayout kutu, String metin) {
+        if (voleybolSonucKartlariEkle(kutu, metin)) return;
         Pattern blockPattern = Pattern.compile("```[a-zA-Z]*\\n([\\s\\S]*?)```");
         Matcher blockMatcher = blockPattern.matcher(metin);
 
