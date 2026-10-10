@@ -2288,7 +2288,7 @@ def genelle_spor_fikstur_istegi_mu(mesaj):
         "şampiyonlar ligi", "sampiyonlar ligi",
         "premier lig", "premier league",
         "la liga", "bundesliga", "serie a", "ligue 1",
-        "süper lig", "super lig"
+        "süper lig", "super lig", "süperlig", "superlig"
     ])
 
     return zaman_var and fikstur_var and not sonuc_istegi and not ozel_spor
@@ -2305,7 +2305,7 @@ def spor_sorgusu_mu(mesaj):
         "fikstür", "fikstur",
         "maç programı", "mac programi",
         "milli takım", "milli takim",
-        "şampiyonlar ligi", "süper lig", "super lig",
+        "şampiyonlar ligi", "süper lig", "super lig", "süperlig", "superlig",
         "premier lig", "la liga", "serie a", "bundesliga",
         "maçımız", "macimiz",
         "oynanıyor", "oynanacak",
@@ -3343,7 +3343,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "bu hafta", "gelecek hafta",
         "puan durumu", "voleybol", "futbol",
         "basketbol", "tenis", "vnl",
-        "süper lig", "super lig",
+        "süper lig", "super lig", "süperlig", "superlig",
         "premier lig", "premier league",
         "şampiyonlar ligi", "sampiyonlar ligi",
         "filenin sultanları", "filenin efeleri"
@@ -4524,6 +4524,84 @@ def tvf_voleybol_sonuclari_getir(limit=8):
                 "setler": setler,
                 "kaynak": url
             })
+
+        # Tamamlanmış sonuçları resmî TVF fikstür tablolarıyla eşleştir.
+        try:
+            ana_sayfa = "https://fikstur.tvf.org.tr/"
+            ana_cevap = requests.get(
+                ana_sayfa,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=5
+            )
+            ana_cevap.raise_for_status()
+            ana_soup = BeautifulSoup(ana_cevap.text, "html.parser")
+
+            def takim_anahtari(ad):
+                import unicodedata
+                ad = unicodedata.normalize("NFKD", ad.casefold())
+                ad = "".join(c for c in ad if not unicodedata.combining(c))
+                return re.sub(r"\s+", " ", ad).strip()
+
+            lig_urlleri = list(dict.fromkeys(
+                el.get("href", "").strip()
+                for el in ana_soup.select(
+                    'a[href*="/FSM/"], a[href*="/FSW/"]'
+                )
+                if el.get("href", "").strip()
+            ))
+
+            tarihli_maclar = {}
+            for lig_yolu in lig_urlleri:
+                try:
+                    cevap = requests.get(
+                        requests.compat.urljoin(ana_sayfa, lig_yolu),
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=5
+                    )
+                    cevap.raise_for_status()
+                    lig_soup = BeautifulSoup(cevap.text, "html.parser")
+
+                    for tr in lig_soup.select("tr"):
+                        hucreler = tr.find_all(["td", "th"], recursive=False)
+                        d = [h.get_text(" ", strip=True) for h in hucreler]
+                        if len(d) < 9:
+                            continue
+
+                        tarih, saat = d[0], d[1]
+                        if not re.fullmatch(r"\d{2}\.\d{2}\.\d{4}", tarih):
+                            continue
+                        if not re.fullmatch(r"\d{2}:\d{2}", saat):
+                            continue
+
+                        ev, ev_skor, dep_skor, deplasman = d[4:8]
+                        if not (
+                            ev and deplasman
+                            and re.fullmatch(r"\d+", ev_skor)
+                            and re.fullmatch(r"\d+", dep_skor)
+                        ):
+                            continue
+
+                        anahtar = (
+                            takim_anahtari(ev), int(ev_skor),
+                            takim_anahtari(deplasman), int(dep_skor)
+                        )
+                        tarihli_maclar.setdefault(anahtar, set()).add((tarih, saat))
+
+                except Exception as hata:
+                    print(f"TVF lig tablosu okunamadı: {hata}", flush=True)
+
+            for mac in sonuclar:
+                anahtar = (
+                    takim_anahtari(mac["ev"]), int(mac["ev_skor"]),
+                    takim_anahtari(mac["deplasman"]),
+                    int(mac["deplasman_skor"])
+                )
+                eslesmeler = tarihli_maclar.get(anahtar, set())
+                if len(eslesmeler) == 1:
+                    mac["tarih"], mac["saat"] = next(iter(eslesmeler))
+
+        except Exception as hata:
+            print(f"TVF tarih eşleştirme hatası: {hata}", flush=True)
 
         print(f"TVF: {len(sonuclar)} sonuç kartı okundu.", flush=True)
         return sonuclar
@@ -9421,7 +9499,9 @@ def sohbet():
             # 🇹🇷 Türkiye / Süper Lig için resmi TFF fikstürü
             super_lig_mi = any(k in mesaj_spor for k in [
                 "süper lig",
-                "super lig"
+                "super lig",
+                "süperlig",
+                "superlig"
             ])
 
             puan_durumu_istegi = any(k in mesaj_spor for k in [
@@ -9559,6 +9639,10 @@ def sohbet():
                             f"**{mac['ev']} {mac['ev_skor']}-"
                             f"{mac['deplasman_skor']} {mac['deplasman']}**"
                         ])
+                        if mac.get("tarih") and mac.get("saat"):
+                            satirlar.append(
+                                f"📅 {mac['tarih']} · 🕓 {mac['saat']}"
+                            )
                         if mac["lig"]:
                             satirlar.append(f"_{mac['lig']}_")
                         satirlar.append("Setler: " + " · ".join(mac["setler"]))
