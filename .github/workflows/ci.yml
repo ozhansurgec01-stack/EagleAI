@@ -58,6 +58,10 @@ jobs:
         run: chmod +x gradlew
         working-directory: android
 
+      - name: Remove Termux-only AAPT2 override
+        run: sed -i "/^android.aapt2FromMavenOverride=/d" gradle.properties
+        working-directory: android
+
       - name: Compile Android app
         run: ./gradlew --no-daemon compileDebugJavaWithJavac
         working-directory: android
