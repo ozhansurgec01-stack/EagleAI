@@ -8854,17 +8854,6 @@ def sohbet():
                 )
             ]
 
-            # Geçici Python dosyası oluştur.
-            gecici_klasor = Path(
-                tempfile.mkdtemp(prefix=".eagle_code_", dir=str(Path(__file__).resolve().parent))
-            )
-
-            gecici_dosya = gecici_klasor / "pasted_code.py"
-            gecici_dosya.write_text(
-                kaynak_kod,
-                encoding="utf-8"
-            )
-
             guvenlik_sonucu = EagleKodGuvenlikMotoru().kontrol_et(kaynak_kod)
             if not guvenlik_sonucu.get("guvenli"):
                 return jsonify({
@@ -8883,6 +8872,17 @@ def sohbet():
                     "security_findings": guvenlik_sonucu.get("bulgular", []),
                     "memory_count": len(hafiza_yukle())
                 })
+
+            # Geçici Python dosyası oluştur.
+            gecici_klasor = Path(
+                tempfile.mkdtemp(prefix=".eagle_code_", dir=str(Path(__file__).resolve().parent))
+            )
+
+            gecici_dosya = gecici_klasor / "pasted_code.py"
+            gecici_dosya.write_text(
+                kaynak_kod,
+                encoding="utf-8"
+            )
 
             try:
                 # Yapıştırılmış Python kodunun güvenli çalışma çıktısını al.
