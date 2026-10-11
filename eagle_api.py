@@ -9659,7 +9659,11 @@ def sohbet():
             # 🇹🇷 Genel Süper Lig sonuçlarını resmi TFF verisinden doğrudan cevapla.
             # Takım adı aranmaz; yapılandırılmış TFF maç kayıtları kullanılır.
             if super_lig_sonuc_istegi and web_verisi:
-                satirlar = ["🇹🇷 SÜPER LİG SONUÇLARI"]
+                satirlar = [
+                    "🇹🇷 SÜPER LİG SONUÇLARI",
+                    "_Kaynak: TFF resmî fikstürü._"
+                ]
+                mac_sayisi = 0
 
                 for mac in web_verisi:
                     ev = str(mac.get("ev", "")).strip()
@@ -9668,16 +9672,32 @@ def sohbet():
                     deplasman_skor = mac.get("deplasman_skor")
 
                     if (
-                        ev
-                        and deplasman
+                        ev and deplasman
                         and ev_skor is not None
                         and deplasman_skor is not None
                     ):
-                        satirlar.append(
-                            f"{ev} {ev_skor}-{deplasman_skor} {deplasman}"
-                        )
+                        satirlar.extend([
+                            "",
+                            f"**{ev} {ev_skor} - "
+                            f"{deplasman_skor} {deplasman}**"
+                        ])
 
-                if len(satirlar) > 1:
+                        tarih = mac.get("tarih")
+                        saat = mac.get("saat")
+                        if tarih and saat:
+                            satirlar.append(
+                                f"📅 {tarih} · 🕓 {saat}"
+                            )
+
+                        hafta = mac.get("hafta")
+                        if hafta:
+                            satirlar.append(
+                                f"_Süper Lig {hafta}. hafta_"
+                            )
+
+                        mac_sayisi += 1
+
+                if mac_sayisi:
                     return jsonify({
                         "ok": True,
                         "answer": "\n".join(satirlar),
