@@ -4252,101 +4252,225 @@ def genel_spor_fiksturu_getir(mesaj=""):
 
 
 def tvf_voleybol_getir(hedef_tarih=None, hafta=False):
-    """TVF resmi fikstüründen güncel/yaklaşan voleybol maçlarını çeker."""
-    try:
-        from datetime import datetime, timedelta
-        import re
-        import requests
-        from bs4 import BeautifulSoup
+    """TVF HTML fikstürünü dener; gerekirse resmî Excel fikstürünü kullanır."""
+    import io
+    import re
+    import zipfile
+    import xml.etree.ElementTree as ET
+    from datetime import datetime, timedelta
+    from pathlib import PurePosixPath
+    import requests
+    from bs4 import BeautifulSoup
 
-        url = "https://fikstur.tvf.org.tr/Takvim"
+    html_url = "https://fikstur.tvf.org.tr/Takvim"
+    excel_url = (
+        "https://tvf.org.tr/_dosyalar/Lig_Sezon_Arsivi/"
+        "Genel_Fiksturler/2026-2027_genel_fikstur.xlsx"
+    )
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/140 Mobile Safari/537.36"
+        ),
+        "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7",
+    }
 
+    def html_fiksturunu_oku():
         cevap = requests.get(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Linux; Android 15) "
-                    "AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) "
-                    "Chrome/140 Mobile Safari/537.36"
-                ),
-                "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
-            },
-            timeout=8
+            html_url, headers=headers, timeout=8
         )
-
-        print(f"🏐 TVF HTTP {cevap.status_code}", flush=True)
-
+        print(f"🏐 TVF HTML HTTP {cevap.status_code}", flush=True)
         if cevap.status_code != 200:
             return []
 
         soup = BeautifulSoup(cevap.text, "html.parser")
-        maclar = soup.select("span.tvf-upcoming-match-link")
-
         bulunan = []
 
-        for mac in maclar:
-            metin = mac.get_text(" ", strip=True)
-
-            parcalar = [x.strip() for x in metin.split("/")]
-
+        for mac in soup.select("span.tvf-upcoming-match-link"):
+            parcalar = [
+                x.strip()
+                for x in mac.get_text(" ", strip=True).split("/")
+            ]
             if len(parcalar) < 3:
                 continue
 
-            takimlar = parcalar[0]
-            tarih_saat = parcalar[1]
-            yer = " / ".join(parcalar[2:]).strip()
-
-            takim_parcalari = re.split(
-                r"\s+Vs\s+",
-                takimlar,
-                maxsplit=1,
-                flags=re.IGNORECASE
+            takimlar = re.split(
+                r"\s+Vs\s+", parcalar[0],
+                maxsplit=1, flags=re.IGNORECASE
             )
-
-            if len(takim_parcalari) != 2:
-                continue
-
-            tarih_match = re.search(
+            tarih_saat = re.search(
                 r"(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{1,2}:\d{2})",
-                tarih_saat
+                parcalar[1]
             )
-
-            if not tarih_match:
+            if len(takimlar) != 2 or not tarih_saat:
                 continue
-
-            ev_sahibi = takim_parcalari[0].strip()
-            deplasman = takim_parcalari[1].strip()
-            tarih = tarih_match.group(1)
-            saat = tarih_match.group(2)
 
             bulunan.append({
-                "ev_sahibi": ev_sahibi,
-                "deplasman": deplasman,
-                "tarih": tarih,
-                "saat": saat,
-                "yer": yer
+                "ev_sahibi": takimlar[0].strip(),
+                "deplasman": takimlar[1].strip(),
+                "tarih": tarih_saat.group(1),
+                "saat": tarih_saat.group(2),
+                "yer": " / ".join(parcalar[2:]).strip(),
+                "lig": "",
             })
 
         print(
-            f"🏐 TVF: HTML'den {len(bulunan)} voleybol maçı ayrıştırıldı",
+            f"🏐 TVF HTML ayrıştırılan maç: {len(bulunan)}",
             flush=True
         )
+        return bulunan
 
+    def excel_fiksturunu_oku():
+        cevap = requests.get(excel_url, headers=headers, timeout=20)
+        print(f"🏐 TVF Excel HTTP {cevap.status_code}", flush=True)
+        cevap.raise_for_status()
+
+        with zipfile.ZipFile(io.BytesIO(cevap.content)) as kitap:
+            ns = {
+                "m": "http://schemas.openxmlformats.org/"
+                     "spreadsheetml/2006/main",
+                "r": "http://schemas.openxmlformats.org/"
+                     "officeDocument/2006/relationships",
+                "rel": "http://schemas.openxmlformats.org/"
+                       "package/2006/relationships",
+            }
+
+            shared = []
+            if "xl/sharedStrings.xml" in kitap.namelist():
+                root = ET.fromstring(kitap.read("xl/sharedStrings.xml"))
+                for item in root.findall("m:si", ns):
+                    shared.append("".join(
+                        node.text or ""
+                        for node in item.findall(".//m:t", ns)
+                    ))
+
+            workbook = ET.fromstring(kitap.read("xl/workbook.xml"))
+            sheet = workbook.find("m:sheets/m:sheet", ns)
+            if sheet is None:
+                raise ValueError("Excel çalışma sayfası bulunamadı")
+
+            rel_id = sheet.attrib.get(
+                "{http://schemas.openxmlformats.org/"
+                "officeDocument/2006/relationships}id"
+            )
+            rel_root = ET.fromstring(
+                kitap.read("xl/_rels/workbook.xml.rels")
+            )
+            target = None
+            for rel in rel_root.findall("rel:Relationship", ns):
+                if rel.attrib.get("Id") == rel_id:
+                    target = rel.attrib.get("Target")
+                    break
+            if not target:
+                raise ValueError("Excel sayfa yolu bulunamadı")
+
+            if target.startswith("/"):
+                sheet_path = target.lstrip("/")
+            else:
+                sheet_path = str(
+                    PurePosixPath("xl") / PurePosixPath(target)
+                )
+            sheet_path = str(PurePosixPath(sheet_path))
+            root = ET.fromstring(kitap.read(sheet_path))
+
+            bulunan = []
+            excel_epoch = datetime(1899, 12, 30)
+
+            for row in root.findall(".//m:sheetData/m:row", ns):
+                hucreler = {}
+                for cell in row.findall("m:c", ns):
+                    ref = cell.attrib.get("r", "")
+                    col_match = re.match(r"([A-Z]+)", ref)
+                    if not col_match:
+                        continue
+                    col = col_match.group(1)
+                    value_node = cell.find("m:v", ns)
+                    value = value_node.text if value_node is not None else ""
+
+                    if cell.attrib.get("t") == "s" and value:
+                        value = shared[int(value)]
+                    elif cell.attrib.get("t") == "inlineStr":
+                        value = "".join(
+                            node.text or ""
+                            for node in cell.findall(".//m:t", ns)
+                        )
+                    hucreler[col] = value
+
+                try:
+                    tarih_sayi = float(hucreler.get("A", ""))
+                    tarih = (excel_epoch + timedelta(
+                        days=tarih_sayi
+                    )).date()
+                    saat_ham = hucreler.get("E")
+                    if saat_ham is None or not str(saat_ham).strip():
+                        continue
+                    saat_sayi = float(saat_ham)
+                    if not 0 <= saat_sayi < 1:
+                        continue
+                    toplam_saniye = round(saat_sayi * 86400) % 86400
+                    saat = (
+                        f"{toplam_saniye // 3600:02d}:"
+                        f"{(toplam_saniye % 3600) // 60:02d}"
+                    )
+                except (ValueError, TypeError, OverflowError):
+                    continue
+
+                ev = str(hucreler.get("F", "")).strip()
+                dep = str(hucreler.get("G", "")).strip()
+                if not ev or not dep:
+                    continue
+
+                tarih_metni = tarih.strftime("%d.%m.%Y")
+                yer = " / ".join(
+                    str(hucreler.get(c, "")).strip()
+                    for c in ("C", "D")
+                    if str(hucreler.get(c, "")).strip()
+                )
+                bulunan.append({
+                    "ev_sahibi": ev,
+                    "deplasman": dep,
+                    "tarih": tarih_metni,
+                    "saat": saat,
+                    "yer": yer or "TVF fikstüründe belirtilmemiş",
+                    "lig": str(hucreler.get("J", "")).strip(),
+                })
+
+        print(
+            f"🏐 TVF Excel ayrıştırılan maç: {len(bulunan)}",
+            flush=True
+        )
+        return bulunan
+
+    try:
+        try:
+            bulunan = html_fiksturunu_oku()
+        except Exception as exc:
+            print(
+                f"⚠️ TVF HTML kaynağı başarısız: {exc}",
+                flush=True
+            )
+            bulunan = []
+
+        kaynak_url = html_url
         if not bulunan:
-            return []
+            print("🏐 TVF resmî Excel yedeği deneniyor.", flush=True)
+            try:
+                bulunan = excel_fiksturunu_oku()
+                kaynak_url = excel_url
+            except Exception as exc:
+                print(
+                    f"⚠️ TVF Excel yedeği başarısız: {exc}",
+                    flush=True
+                )
+                return []
 
         benzersiz = []
         gorulen = set()
-
         for mac in bulunan:
             anahtar = (
-                mac["ev_sahibi"],
-                mac["deplasman"],
-                mac["tarih"],
-                mac["saat"]
+                mac["ev_sahibi"], mac["deplasman"],
+                mac["tarih"], mac["saat"]
             )
-
             if anahtar not in gorulen:
                 gorulen.add(anahtar)
                 benzersiz.append(mac)
@@ -4360,71 +4484,53 @@ def tvf_voleybol_getir(hedef_tarih=None, hafta=False):
             hedef = datetime.strptime(
                 hedef_tarih, "%d.%m.%Y"
             ).date()
-
             secilen = [
                 m for m in benzersiz
                 if tarih_cevir(m["tarih"]) == hedef
             ]
-
         elif hafta:
             haftanin_basi = bugun - timedelta(days=bugun.weekday())
             haftanin_sonu = haftanin_basi + timedelta(days=6)
-
             secilen = [
                 m for m in benzersiz
                 if haftanin_basi <= tarih_cevir(m["tarih"]) <= haftanin_sonu
             ]
-
         else:
             secilen = [
                 m for m in benzersiz
                 if tarih_cevir(m["tarih"]) >= bugun
             ]
 
-            secilen.sort(
-                key=lambda m: (
-                    tarih_cevir(m["tarih"]),
-                    m["saat"]
-                )
-            )
+        secilen.sort(key=lambda m: (
+            tarih_cevir(m["tarih"]), m["saat"],
+            m["ev_sahibi"], m["deplasman"]
+        ))
 
         sonuclar = []
-
         for m in secilen[:8]:
+            lig = f" — Lig: {m['lig']}" if m.get("lig") else ""
             sonuclar.append({
-                "title": (
-                    f"{m['ev_sahibi']} - {m['deplasman']}"
-                ),
-                "url": url,
+                "title": f"{m['ev_sahibi']} - {m['deplasman']}",
+                "url": kaynak_url,
                 "snippet": (
                     f"{m['tarih']} - {m['saat']} — "
-                    f"Yer: {m['yer']} — TVF resmi fikstürü."
-                )
+                    f"Yer: {m['yer']}{lig} — TVF resmî fikstürü."
+                ),
             })
 
         if hedef_tarih:
-            print(
-                f"🏐 TVF: {hedef_tarih} için "
-                f"{len(sonuclar)} maç bulundu",
-                flush=True
-            )
+            mesaj = f"{hedef_tarih} için {len(sonuclar)} maç"
         elif hafta:
-            print(
-                f"🏐 TVF: Bu hafta {len(sonuclar)} maç bulundu",
-                flush=True
-            )
+            mesaj = f"Bu hafta {len(sonuclar)} maç"
         else:
-            print(
-                f"🏐 TVF: Bugün/yaklaşan {len(sonuclar)} maç bulundu",
-                flush=True
-            )
+            mesaj = f"Bugün/yaklaşan {len(sonuclar)} maç"
 
+        print(f"🏐 TVF: {mesaj} bulundu.", flush=True)
         return sonuclar
 
-    except Exception as e:
-        print(f"⚠️ TVF arama hatası: {e}", flush=True)
+    except Exception as exc:
+        print(f"⚠️ TVF fikstür hatası: {exc}", flush=True)
         return []
-
 def tvf_voleybol_sonuclari_getir(limit=8):
     """TVF resmî sonuç kartlarından maç ve set skorlarını çıkarır."""
     import re
