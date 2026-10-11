@@ -99,7 +99,11 @@ def guvenlik_hook(workspace):
                     raise PermissionError(
                         f"EAGLE_SECURITY_BLOCK: çalışma alanı dışı erişim engellendi: {yol}"
                     )
-            elif not _guvenli_yol(yol, workspace):
+            elif not _guvenli_yol(
+                yol,
+                workspace,
+                read_only=event in {"os.scandir", "os.listdir"},
+            ):
                 raise PermissionError(
                     f"EAGLE_SECURITY_BLOCK: çalışma alanı dışı erişim engellendi: {yol}"
                 )
