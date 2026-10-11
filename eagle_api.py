@@ -10,6 +10,7 @@ from eagle_kod_guvenlik_motoru import EagleKodGuvenlikMotoru
 from eagle_kod_calistirici import secure_run
 from flask import Flask, request, jsonify
 import os
+import shutil
 
 
 def _env_dosyasini_yukle(dosya_yolu=".env"):
@@ -8994,7 +8995,7 @@ def sohbet():
                         gecici_dosya.unlink()
 
                     if gecici_klasor.exists():
-                        gecici_klasor.rmdir()
+                        shutil.rmtree(gecici_klasor)
                 except Exception as temizlik_hatasi:
                     print(
                         f"⚠️ Geçici dosya temizleme uyarısı: {temizlik_hatasi}",
