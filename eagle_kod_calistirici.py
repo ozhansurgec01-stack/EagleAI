@@ -18,13 +18,14 @@ def _guvenli_yol(path, workspace, read_only=False):
         except ValueError:
             pass
 
-        # Python'un kendi runtime/kütüphane dosyaları yalnızca okunabilir.
+        # Python'un temel ve sanal ortam kütüphaneleri yalnızca okunabilir.
         if read_only:
-            try:
-                p.relative_to(Path(sys.prefix).resolve())
-                return True
-            except ValueError:
-                pass
+            for runtime_root in {sys.prefix, sys.base_prefix}:
+                try:
+                    p.relative_to(Path(runtime_root).resolve())
+                    return True
+                except ValueError:
+                    pass
 
         return False
     except (ValueError, OSError):
