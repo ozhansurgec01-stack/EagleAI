@@ -15,6 +15,13 @@ class EagleGenelUygulamaUretici:
         konu = str(plan.get("konu") or "genel uygulama").strip()
         paket = self._paket_adi(konu)
         bilesenler = set(plan.get("bilesenler") or ())
+        rss_haber = "rss" in konu.lower() and "haber" in konu.lower()
+
+        if rss_haber:
+            bilesenler.update({
+                "model", "service", "database", "api",
+                "source", "ui", "detail", "tests"
+            })
 
         # Planner tarafından çıkarılan gereksinimleri üretim katmanına aktar.
         # Alanlar bilinmiyorsa mevcut güvenli Kayit/veri fallback'i korunur.
@@ -28,6 +35,12 @@ class EagleGenelUygulamaUretici:
         ]
 
         plan = dict(plan)
+        if rss_haber:
+            plan["rss_haber"] = True
+            plan["dis_kaynak"] = True
+            plan["veri_tabanli"] = True
+            plan["api"] = True
+            plan["arayuz"] = True
         plan["varliklar"] = list(varliklar)
         plan["alanlar"] = dict(alanlar)
         plan["islemler"] = list(islemler)
@@ -50,7 +63,7 @@ class EagleGenelUygulamaUretici:
             dosyalar[f"src/{paket}/api.py"] = self._api(paket, plan)
 
         if "source" in bilesenler:
-            dosyalar[f"src/{paket}/source.py"] = self._source()
+            dosyalar[f"src/{paket}/source.py"] = self._source(plan)
 
         if "ui" in bilesenler:
             dosyalar["templates/index.html"] = self._index_html(konu, plan)
@@ -448,8 +461,26 @@ print("__EAGLE_GENERATED_TESTS_OK__")
             "        return jsonify({'ok': False, 'error': 'Kayıt bulunamadı'}), 404",
             "    return jsonify({'ok': True, 'kayit': kayit})",
         ]
+        if plan.get("rss_haber"):
+            lines.extend([
+                "",
+                "@api.get('/haberler')",
+                "def haberleri_getir():",
+                "    from src." + paket + ".source import rss_getir",
+                "    urls = request.args.getlist('url')",
+                "    tum_haberler = rss_getir(urls or None)",
+                "    arama = request.args.get('q', '').casefold().strip()",
+                "    kategori = request.args.get('kategori', '').casefold().strip()",
+                "    kategoriler = sorted({h.get('kategori', 'Genel') for h in tum_haberler})",
+                "    haberler = tum_haberler",
+                "    if arama:",
+                "        haberler = [h for h in haberler if arama in (h.get('baslik', '') + ' ' + h.get('icerik', '')).casefold()]",
+                "    if kategori:",
+                "        haberler = [h for h in haberler if h.get('kategori', 'Genel').casefold() == kategori]",
+                "    return jsonify({'ok': True, 'haberler': haberler, 'kategoriler': kategoriler, 'adet': len(haberler)})",
+                "",
+            ])
         return "\n".join(lines)
-
     @staticmethod
     def _model(plan):
         varliklar = plan.get("varliklar") or ["kayit"]
@@ -592,7 +623,62 @@ print("__EAGLE_GENERATED_TESTS_OK__")
         return "\n".join(lines)
 
     @staticmethod
-    def _source():
+    def _source(plan=None):
+        if (plan or {}).get("rss_haber"):
+            lines = [
+                "import requests",
+                "import xml.etree.ElementTree as ET",
+                "",
+                "VARSAYILAN_RSS = [",
+                "    'https://feeds.bbci.co.uk/turkce/rss.xml',",
+                "    'https://www.trthaber.com/sondakika.rss',",
+                "]",
+                "",
+                "def rss_getir(urls=None, timeout=10):",
+                "    haberler = []",
+                "    for url in (urls or VARSAYILAN_RSS):",
+                "        try:",
+                "            response = requests.get(url, timeout=timeout, headers={'User-Agent': 'EagleAI-RSS/1.0'})",
+                "            response.raise_for_status()",
+                "            root = ET.fromstring(response.content)",
+                "            for item in root.iter():",
+                "                etiket = item.tag.split('}')[-1].lower()",
+                "                if etiket not in ('item', 'entry'):",
+                "                    continue",
+                "                alanlar = {}",
+                "                for child in item:",
+                "                    ad = child.tag.split('}')[-1].lower()",
+                "                    deger = child.attrib.get('href', '') if ad == 'link' else ''.join(child.itertext()).strip()",
+                "                    if ad == 'link' and not deger:",
+                "                        deger = (child.text or '').strip()",
+                "                    if deger and ad not in alanlar:",
+                "                        alanlar[ad] = deger",
+                "                baslik = alanlar.get('title', '').strip()",
+                "                if not baslik:",
+                "                    continue",
+                "                kategori = alanlar.get('category', 'Genel') or 'Genel'",
+                "                haberler.append({",
+                "                    'baslik': baslik,",
+                "                    'icerik': alanlar.get('description', alanlar.get('summary', alanlar.get('content', ''))),",
+                "                    'kategori': kategori,",
+                "                    'tarih': alanlar.get('pubdate', alanlar.get('published', alanlar.get('updated', ''))),",
+                "                    'link': alanlar.get('link', ''),",
+                "                    'kaynak': url,",
+                "                })",
+                "        except (requests.RequestException, ET.ParseError, ValueError):",
+                "            continue",
+                "    return haberler",
+                "",
+                "def getir(url, params=None, timeout=10):",
+                "    try:",
+                "        response = requests.get(url, params=params, timeout=timeout)",
+                "        response.raise_for_status()",
+                "        return response.json()",
+                "    except requests.RequestException as exc:",
+                "        return {'ok': False, 'error': str(exc)}",
+            ]
+            return "\n".join(lines)
+
         lines = [
             "import requests",
             "",
@@ -610,6 +696,72 @@ print("__EAGLE_GENERATED_TESTS_OK__")
     def _index_html(konu, plan=None):
         baslik = str(konu or "Genel Uygulama")
         plan = plan or {}
+        if plan.get("rss_haber"):
+            return """<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RSS Haber Merkezi</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:950px;margin:24px auto;padding:0 16px;background:#f4f6f8;color:#202938}
+h1{margin-bottom:6px}.filtreler{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:20px 0}
+input,select,button{padding:12px;border:1px solid #ccd3dc;border-radius:9px;font:inherit;min-width:0}
+button{background:#174ea6;color:white;cursor:pointer}
+#durum{color:#596579}.haber{background:white;border:1px solid #e1e5eb;border-radius:12px;padding:16px;margin:12px 0}
+.haber h2{font-size:1.1rem;margin:8px 0}.haber a{color:#174ea6}.meta{font-size:.85rem;color:#596579}
+@media(max-width:600px){.filtreler{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<h1>📰 RSS Haber Merkezi</h1>
+<p>RSS/Atom akışlarını ara ve kategorilere göre filtrele.</p>
+<div class="filtreler">
+<input id="rss" type="url" placeholder="RSS adresi (isteğe bağlı)">
+<input id="arama" type="search" placeholder="Haberlerde ara...">
+<select id="kategori"><option value="">Tüm kategoriler</option></select>
+<button id="yenile">Haberleri getir</button>
+</div>
+<p id="durum">Haberler yükleniyor…</p>
+<main id="liste"></main>
+<script>
+const $=id=>document.getElementById(id);
+async function yukle(){
+  const durum=$('durum'), liste=$('liste'), secim=$('kategori');
+  durum.textContent='Haberler yükleniyor…'; liste.replaceChildren();
+  const p=new URLSearchParams();
+  if($('rss').value.trim()) p.append('url',$('rss').value.trim());
+  if($('arama').value.trim()) p.set('q',$('arama').value.trim());
+  if(secim.value) p.set('kategori',secim.value);
+  try{
+    const r=await fetch('/api/haberler?'+p.toString());
+    const data=await r.json();
+    if(!r.ok||!data.ok) throw new Error(data.error||'İstek başarısız');
+    const onceki=secim.value;
+    secim.replaceChildren(new Option('Tüm kategoriler',''));
+    for(const k of data.kategoriler||[]) secim.add(new Option(k,k));
+    if((data.kategoriler||[]).includes(onceki)) secim.value=onceki;
+    for(const h of data.haberler||[]){
+      const kart=document.createElement('article'); kart.className='haber';
+      const meta=document.createElement('div'); meta.className='meta';
+      meta.textContent=(h.kategori||'Genel')+(h.tarih?' · '+h.tarih:'');
+      const baslik=document.createElement('h2'); baslik.textContent=h.baslik||'Başlıksız haber';
+      kart.append(meta,baslik);
+      if(h.icerik){const ozet=document.createElement('p');ozet.textContent=h.icerik;kart.append(ozet);}
+      if(h.link){const a=document.createElement('a');a.href=h.link;a.target='_blank';a.rel='noopener noreferrer';a.textContent='Haberi oku ↗';kart.append(a);}
+      liste.append(kart);
+    }
+    durum.textContent=(data.adet||0)+' haber bulundu.';
+    if(!data.adet) durum.textContent='Haber bulunamadı. RSS adresini kontrol edebilir veya filtreleri değiştirebilirsin.';
+  }catch(e){durum.textContent='Haberler alınamadı: '+e.message;}
+}
+$('yenile').addEventListener('click',yukle);
+$('arama').addEventListener('keydown',e=>{if(e.key==='Enter')yukle();});
+$('kategori').addEventListener('change',yukle);
+yukle();
+</script>
+</body>
+</html>"""
         varliklar = plan.get("varliklar") or ["kayit"]
         alanlar = plan.get("alanlar") or {"kayit": ["id", "veri"]}
         ilk_varlik = str(varliklar[0])
@@ -859,6 +1011,38 @@ print("__EAGLE_GENERATED_TESTS_OK__")
             "    r = client.get(f'/api/kayitlar/{kayit_id}')",
             "    assert r.status_code == 404",
         ]
+
+        if plan.get("rss_haber"):
+            lines.extend([
+                "",
+                "def test_rss_haberler_ve_filtreler():",
+                "    import importlib",
+                f"    source = importlib.import_module('src.{paket}.source')",
+                "    onceki = source.rss_getir",
+                "    fixture = [",
+                "        {'baslik': 'Borsa yükseldi', 'icerik': 'Piyasa hareketli', 'kategori': 'Ekonomi'},",
+                "        {'baslik': 'Takım kazandı', 'icerik': 'Lig maçı', 'kategori': 'Spor'},",
+                "    ]",
+                "    source.rss_getir = lambda urls=None: fixture",
+                "    try:",
+                "        client = app.test_client()",
+                "        r = client.get('/api/haberler')",
+                "        assert r.status_code == 200",
+                "        data = r.get_json()",
+                "        assert data['ok'] is True and data['adet'] == 2",
+                "        assert data['kategoriler'] == ['Ekonomi', 'Spor']",
+                "        r = client.get('/api/haberler?q=borsa')",
+                "        assert r.status_code == 200 and r.get_json()['adet'] == 1",
+                "        assert r.get_json()['haberler'][0]['baslik'] == 'Borsa yükseldi'",
+                "        r = client.get('/api/haberler?kategori=spor')",
+                "        assert r.status_code == 200 and r.get_json()['adet'] == 1",
+                "        assert r.get_json()['haberler'][0]['kategori'] == 'Spor'",
+                "        r = client.get('/api/haberler?q=borsa&kategori=Ekonomi')",
+                "        assert r.status_code == 200 and r.get_json()['adet'] == 1",
+                "    finally:",
+                "        source.rss_getir = onceki",
+                "",
+            ])
 
         return "\n".join(lines)
 
