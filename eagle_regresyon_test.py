@@ -191,6 +191,19 @@ def karar_motoru_test():
         sonuc = eagle_api.eagle_karar_motoru(soru, [])
         assert sonuc is not None, f"Karar motoru sonuç üretmedi: {soru}"
 
+    rss = eagle_api.eagle_karar_motoru("RSS haber merkezi oluştur", [])
+    assert rss.get("intent") == "program_yazma", (
+        f"RSS isteği yanlış yönlendirildi: {rss}"
+    )
+    assert rss.get("arac") == "program_yazma", (
+        f"RSS üretim aracı seçilmedi: {rss}"
+    )
+
+    guncel = eagle_api.eagle_karar_motoru("Son dakika haberleri var mı?", [])
+    assert guncel.get("intent") == "guncel_bilgi", (
+        f"Güncel haber isteği bozuldu: {guncel}"
+    )
+
 
 def kod_analiz_import_test():
     import eagle_kod_analiz_motoru

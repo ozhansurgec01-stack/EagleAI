@@ -3393,6 +3393,28 @@ def eagle_karar_motoru(mesaj, gecmis=None):
 
     guncel_k = guncel_metin.casefold()
 
+    rss_haber_merkezi_istegi = (
+        "rss" in guncel_k
+        and "haber" in guncel_k
+        and any(x in guncel_k for x in (
+            "oluştur", "olustur", "yap", "hazırla", "hazirla",
+            "üret", "uret", "geliştir", "gelistir"
+        ))
+        and any(x in guncel_k for x in (
+            "merkezi", "merkez", "uygulama", "sistemi", "sistem"
+        ))
+    )
+
+    if rss_haber_merkezi_istegi:
+        karar.update({
+            "intent": "program_yazma",
+            "guven": "yüksek",
+            "neden": "RSS haber merkezi oluşturma isteği algılandı.",
+            "arac": "program_yazma",
+            "islem": "program_uret"
+        })
+        return karar
+
     if any(x in guncel_k for x in guncel_kelimeleri):
         karar.update({
             "intent": "guncel_bilgi",
