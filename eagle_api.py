@@ -8225,6 +8225,19 @@ def sohbet():
     sil_desenleri = ["hafızadan sil:", "hafizadan sil:", "hafızadan çıkar:", "hafizadan cikar:"]
     mesaj_kucuk = mesaj.lower()
 
+    proje = sohbet_baglam.get("aktif_proje", {})
+    istek = mesaj.casefold()
+    if (isinstance(proje, dict) and isinstance(proje.get("dosyalar"), dict)
+            and "app.py" in istek
+            and any(x in istek for x in ("kod", "göster", "goster", "içeri", "icerik"))):
+        dosyalar = proje["dosyalar"]
+        kod = str(dosyalar.get("app.py", ""))
+        if kod:
+            dil = str(proje.get("dil") or "python")
+            return jsonify({"ok": True, "answer": f"**Ana dosya:** `app.py`\n\n```{dil}\n{kod}\n```",
+                "kod": kod, "dil": dil, "ana_dosya": "app.py", "dosyalar": dosyalar,
+                "program_yazma": True, "eagle_direct": True, "web_search": False})
+
     silindi = False
     for desen in sil_desenleri:
         if mesaj_kucuk.startswith(desen):
@@ -9020,6 +9033,13 @@ def sohbet():
             cikti_turu = program_sonuc.get("cikti_turu")
             proje_adi = program_sonuc.get("proje_adi")
             ana_dosya = program_sonuc.get("ana_dosya")
+            ana_kod = program_sonuc.get("kod") or dosyalar.get(ana_dosya, "")
+            dil = program_sonuc.get("dil") or "python"
+            if dosyalar and ana_dosya:
+                sohbet_baglam["aktif_proje"] = {
+                    "proje_adi": proje_adi, "ana_dosya": ana_dosya,
+                    "dosyalar": dosyalar, "cikti_turu": cikti_turu, "dil": dil}
+                sohbet_baglam_kaydet(sohbet_baglam)
 
             dosya_bilgisi = ""
             if dosyalar:
@@ -9031,14 +9051,14 @@ def sohbet():
             if cikti_turu in ("proje", "sablon"):
                 kod_gosterimi = (
                     f"**Ana dosya:** `{ana_dosya}`\n\n"
-                    f"```{program_sonuc.get('dil', '')}\n"
-                    f"{program_sonuc.get('kod', '')}\n"
+                    f"```{dil}\n"
+                    f"{ana_kod}\n"
                     "```"
                 )
             else:
                 kod_gosterimi = (
-                    f"```{program_sonuc.get('dil', '')}\n"
-                    f"{program_sonuc.get('kod', '')}\n"
+                    f"```{dil}\n"
+                    f"{ana_kod}\n"
                     "```"
                 )
 
@@ -9063,8 +9083,8 @@ def sohbet():
                         else ""
                     )
                 ),
-                "kod": program_sonuc.get("kod", ""),
-                "dil": program_sonuc.get("dil"),
+                "kod": ana_kod,
+                "dil": dil,
                 "syntax_ok": program_sonuc.get("syntax_ok"),
                 "validation_ok": program_sonuc.get("validation_ok"),
                 "import_ok": program_sonuc.get("import_ok"),
