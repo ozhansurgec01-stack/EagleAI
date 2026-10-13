@@ -3145,12 +3145,11 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         for x in kapsam_terimleri
     ) and program_fili_var
 
-    python_uretim_istegi = (
-        any(x in k for x in (
-            "python'da",
-            "pythonda",
-            "python ile",
-        ))
+    kod_dili_uretim_istegi = (
+        any(
+            re.search(r"(?<!\w)" + re.escape(dil) + r"(?!\w)", k)
+            for dil in ("python", "java", "javascript", "typescript", "html", "css")
+        )
         and program_fili_var
     )
 
@@ -3188,7 +3187,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         (
             (program_hedefi_var and program_fili_var)
             or kapsam_istegi
-            or python_uretim_istegi
+            or kod_dili_uretim_istegi
             or uygulama_uretim_istegi
         )
         and not uygulama_bilgi_sorusu
