@@ -8431,6 +8431,28 @@ def sohbet():
     akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
 
+    # Kimlik sorularını web aramasından önce yerel sohbet motorunda yanıtla.
+    kimlik_metni = str(mesaj_orijinal or "").casefold().strip().rstrip(" ?!.")
+    kimlik_sorulari = {
+        "kimsin", "sen kimsin", "senin adın ne", "senin adin ne",
+        "ne yapabiliyorsun", "ne yapabilirsin",
+    }
+    if kimlik_metni in kimlik_sorulari:
+        cevap = genel_sohbet(
+            mesaj_orijinal,
+            gecmis=gecmis,
+            hafiza=kalici_hafiza,
+            karar=karar,
+        )
+        return jsonify({
+            "ok": True,
+            "answer": cevap,
+            "eagle_direct": True,
+            "web_search": False,
+            "merkez_motor": False,
+            "memory_count": len(hafiza_yukle()),
+        })
+
     # 🦅 Slash komutlarında downstream katmanlara gerçek kullanıcı mesajını ver.
     # Böylece bilgi bankası / web araştırması "/brief" gibi komut öneklerini sorgulamaz.
     if karar.get("komut") in {
