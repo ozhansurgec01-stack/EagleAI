@@ -8511,6 +8511,17 @@ def sohbet():
         r'(?m)^\s*(?:from\s+\w+|import\s+\w+|def\s+\w+|class\s+\w+|print\s*\(|[A-Za-z_]\w*\s*=)',
         mesaj
     )
+    if not yeni_kod_eslesmesi and (
+        re.search(r"\b(?:python|kod|koddaki|kodundaki)\b", mesaj_kucuk)
+        and any(x in mesaj_kucuk for x in ("hata", "düzelt", "duzelt", "analiz", "incele"))
+    ):
+        yeni_kod_eslesmesi = re.search(
+            r"\b(?:print\s*\(|raise\s+[A-Za-z_]\w*\s*\(|"
+            r"import\s+\w+|from\s+\w+\s+import\b|"
+            r"def\s+[A-Za-z_]\w*\s*\(|class\s+[A-Za-z_]\w*)",
+            mesaj,
+        )
+
     yeni_kod_var = bool(yeni_kod_eslesmesi)
 
     if aktif_kod and not yeni_kod_var and not any(
@@ -8816,6 +8827,31 @@ def sohbet():
                     ):
                         kaynak_kod = olasi_kod.strip()
 
+
+                # Doğal dildeki hata ayıklama isteğini tek satırlık koddan ayır.
+                if "\n" not in kaynak_kod:
+                    kod_baslangici = re.search(
+                        r"\b(?:print\s*\(|raise\s+[A-Za-z_]\w*\s*\(|"
+                        r"import\s+\w+|from\s+\w+\s+import\b|"
+                        r"def\s+[A-Za-z_]\w*\s*\(|"
+                        r"class\s+[A-Za-z_]\w*|"
+                        r"for\s+[A-Za-z_]\w*\s+in\b|"
+                        r"while\s+.+:|if\s+.+:)",
+                        kaynak_kod,
+                    )
+                    if kod_baslangici:
+                        on_ek = kaynak_kod[:kod_baslangici.start()].lower()
+                        if (
+                            re.search(r"\b(?:python|kod|koddaki|kodundaki)\b", on_ek)
+                            and any(
+                                ifade in on_ek
+                                for ifade in (
+                                    "hata", "düzelt", "duzelt",
+                                    "analiz", "incele", "bul",
+                                )
+                            )
+                        ):
+                            kaynak_kod = kaynak_kod[kod_baslangici.start():].strip()
 
                 # Kodun arkasına eklenen doğal dil sorusunu Python kaynağına dahil etme.
                 soru_isaretleri = (
