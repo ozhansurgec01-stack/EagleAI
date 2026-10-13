@@ -307,6 +307,17 @@ def _konusma_durumu_analiz_et(gecmis, mesaj):
 def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None, baglam="", durum=None):
     kucuk = mesaj.strip().lower()
 
+    kimlik_sorulari = {
+        "kimsin", "sen kimsin", "senin adın ne", "senin adin ne",
+        "ne yapabiliyorsun", "ne yapabilirsin",
+    }
+    if kucuk.rstrip(" ?!.") in kimlik_sorulari:
+        return (
+            "🦅 Ben EagleAI; yerel cevap motoru ve bilgi araçlarıyla "
+            "çalışan bir yapay zekâ asistanıyım. Soruları yanıtlamaya, "
+            "Python ve kodlama konularında yardımcı olmaya çalışırım."
+        )
+
 
     # Konuşma durumu, hafıza ve bilgi bankasından önce değerlendirilir.
     # Sosyal karşılıklar ve takip soruları bilgi aramasına düşmemeli.
