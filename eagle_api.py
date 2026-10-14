@@ -8265,7 +8265,19 @@ def sohbet():
                         "bunu açıkça belirt ve görselden doğrulanabilen bilgilerle "
                         "sınırlı kal. "
                         "Öncelik sırası: görseli anla, soruyu görsele göre cevapla, "
-                        "ancak gerekirse daha sonra dış bilgi doğrulaması yapılabilir."
+                        "ancak gerekirse daha sonra dış bilgi doğrulaması yapılabilir. "
+                        "Yanıtında üç şeyi birbirinden ayır: "
+                        "1) GÖZLEM: Görselde gerçekten görülen nesneler, yazılar ve sayılar. "
+                        "2) YORUM: Gözlemlerden makul biçimde çıkarılabilecek sonuçlar. "
+                        "3) BELİRSİZLİK: Görselin tek başına doğrulayamadığı bilgiler. "
+                        "Tahminleri kesin gerçek gibi sunma; bir simgenin anlamı, "
+                        "haritadaki renklerin ölçüsü veya verilerin güncelliği "
+                        "doğrulanamıyorsa bunu açıkça belirt. "
+                        "Ekran görüntülerinde teknik hata, bozuk yerleşim veya "
+                        "yanlışlıkla gösterilen kaynak kodu gibi sorunları da belirt. "
+                        "Kullanıcı yalnızca yorum istiyorsa uzun bir ekran öğeleri "
+                        "listesi yerine en önemli bulguları ve sonuçlarını açıkla. "
+                        "Okunabilir metinleri doğru aktar; görünmeyen ayrıntıları uydurma."
                     )
 
                     gemini_payload = {
