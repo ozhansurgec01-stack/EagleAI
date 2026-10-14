@@ -266,6 +266,21 @@ def api_fonksiyon_test():
     assert hasattr(eagle_api, "app")
 
 
+def genel_soru_algilama_test():
+    from eagle_cevap_motoru import _soru_gibi_mi
+
+    sorular = [
+        "EagleAI, Türkiye'nin başkenti neresidir? Yalnızca kısa cevap ver.",
+        "Türkiye'nin başkenti neresi?",
+    ]
+    import eagle_api
+
+    for soru in sorular:
+        assert _soru_gibi_mi(soru), f"Genel bilgi sorusu algılanmadı: {soru}"
+        cevaplar = eagle_api.bilgi_bankasi_ara(soru)
+        assert "Ankara" in cevaplar, f"Başkent cevabı bulunamadı: {soru} -> {cevaplar}"
+
+
 print("===== EAGLEAI REGRESYON TEST =====")
 print()
 
@@ -280,6 +295,7 @@ test("Kod analiz motoru", kod_analiz_import_test)
 test("AutoFix", autofix_import_test)
 test("BooleanComparison AutoFix", boolean_autofix_test)
 test("API /api/sohbet altyapısı", api_fonksiyon_test)
+test("Genel bilgi soru algılama", genel_soru_algilama_test)
 
 print()
 print("===== SONUÇ =====")
