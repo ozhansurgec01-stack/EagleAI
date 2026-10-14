@@ -661,6 +661,32 @@ def bilgi_bankasi_yukle():
 def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").replace("İ", "i").lower()
 
+    # Genel bilgiler ayrı JSON dosyasından okunur.
+    genel_bilgi_dosyasi = Path(__file__).resolve().with_name("eagle_genel_bilgi.json")
+    try:
+        genel_kayitlar = json.loads(genel_bilgi_dosyasi.read_text(encoding="utf-8"))
+        def genel_norm(deger):
+            deger = str(deger or "").lower().translate(str.maketrans(
+                "çğıöşü", "cgiosu"
+            ))
+            deger = re.sub(r"[^a-z0-9\\s]", " ", deger)
+            return re.sub(r"\\s+", " ", deger).strip()
+
+        soru_norm = " " + genel_norm(metin) + " "
+        for kayit in genel_kayitlar:
+            if not isinstance(kayit, dict):
+                continue
+            cevap = str(kayit.get("cevap", "")).strip()
+            anahtarlar = kayit.get("anahtarlar", [])
+            if not cevap or not isinstance(anahtarlar, list):
+                continue
+            for anahtar in anahtarlar:
+                ifade = genel_norm(anahtar)
+                if ifade and (" " + ifade + " ") in soru_norm:
+                    return [cevap]
+    except (OSError, ValueError, TypeError) as hata:
+        print("Genel bilgi dosyası okunamadı:", hata, flush=True)
+
     # Yaygın Python yazım hatalarını normalize et
     metin = re.sub(r"\bpyhton\b", "python", metin)
 
@@ -8441,6 +8467,41 @@ def sohbet():
     mesaj = mesaj_karar
     akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
+
+    # Genel bilgi JSON kaydını web/matematik yönlendirmesinden önce dene.
+    if karar.get("arac") not in (
+        "borc_modulu", "spor_kaynaklari", "hava_api",
+        "guvenli_hesaplama", "kod_analiz", "program_yazma",
+    ) and not karar.get("komut"):
+        genel_dosya = Path(__file__).resolve().with_name("eagle_genel_bilgi.json")
+        try:
+            genel_kayitlar = json.loads(genel_dosya.read_text(encoding="utf-8"))
+            def _genel_norm(v):
+                v = str(v or "").casefold().translate(str.maketrans(
+                    {"ç":"c", "ğ":"g", "ı":"i", "ö":"o", "ş":"s", "ü":"u"}
+                ))
+                v = re.sub(r"[^a-z0-9\s]", " ", v)
+                return re.sub(r"\s+", " ", v).strip()
+
+            _soru = " " + _genel_norm(mesaj_orijinal) + " "
+            for _kayit in genel_kayitlar:
+                if not isinstance(_kayit, dict):
+                    continue
+                _cevap = str(_kayit.get("cevap", "")).strip()
+                for _anahtar in _kayit.get("anahtarlar", []):
+                    _ifade = _genel_norm(_anahtar)
+                    if _cevap and _ifade and (" " + _ifade + " ") in _soru:
+                        return jsonify({
+                            "ok": True,
+                            "answer": "🦅 EAGLE BİLGİ BANKASI\n\n• " + _cevap,
+                            "eagle_direct": True,
+                            "knowledge_base": True,
+                            "web_search": False,
+                            "memory_count": len(hafiza_yukle()),
+                        })
+        except (OSError, ValueError, TypeError) as _hata:
+            print("Genel bilgi JSON hatası:", _hata, flush=True)
+
 
     # Kimlik sorularını web aramasından önce yerel sohbet motorunda yanıtla.
     kimlik_metni = str(mesaj_orijinal or "").casefold().strip().rstrip(" ?!.")
