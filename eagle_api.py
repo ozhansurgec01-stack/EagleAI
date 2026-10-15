@@ -6184,6 +6184,8 @@ def fotmob_iki_takim_skoru_getir(mesaj, takimlar):
 
 
 def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
+    import re
+    import re
     # İki takım arasındaki doğal sonuç sorgusu → doğrudan SofaScore.
     # Genel web aramasının ülke/haber sayfalarına kaymasını engeller.
     sonuc_istegi = any(k in mesaj.casefold() for k in (
@@ -6193,6 +6195,116 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
     ))
 
     if sonuc_istegi:
+        ilk_yari_istegi = any(k in mesaj.casefold() for k in (
+            "ilk yarı", "ilk yari", "devre sonucu", "devre skoru"
+        ))
+        import datetime
+        import unicodedata
+        import requests
+
+        def _fm_norm(v):
+            v = unicodedata.normalize("NFKD", str(v or "").casefold())
+            return "".join(
+                c for c in v if not unicodedata.combining(c)
+            ).replace("ı", "i")
+
+        temiz = re.sub(
+            r"\b(?:ilk|yarı|yari|devre|sonucu|sonuç|sonuc|skoru|skor|"
+            r"maçı|maci|maç|mac|kaç|kac|nedir|ne)\b",
+            " ", _fm_norm(mesaj)
+        )
+        sorgu = " ".join(temiz.split())
+
+        try:
+            rr = requests.get(
+                "https://www.fotmob.com/api/data/search/suggest",
+                params={"term": sorgu},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=10
+            )
+            mac_adaylari = []
+            if rr.ok:
+                for grup in rr.json():
+                    for x in grup.get("suggestions", []):
+                        if x.get("type") != "match" or not x.get("id"):
+                            continue
+                        ev = x.get("homeTeamName", "")
+                        dep = x.get("awayTeamName", "")
+                        kelimeler = set(sorgu.split())
+                        if _fm_norm(ev) in _fm_norm(sorgu) and _fm_norm(dep) in _fm_norm(sorgu):
+                            try:
+                                tarih = datetime.datetime.fromisoformat(
+                                    x.get("matchDate", "").replace("Z", "+00:00")
+                                )
+                            except (ValueError, TypeError):
+                                continue
+                            mac_adaylari.append((tarih, x))
+
+            if mac_adaylari:
+                simdi = datetime.datetime.now(datetime.timezone.utc)
+                mac_adaylari.sort(
+                    key=lambda z: abs((z[0] - simdi).total_seconds())
+                )
+
+                for kickoff, mac_adayi in mac_adaylari:
+                    detay = requests.get(
+                        "https://www.fotmob.com/api/data/matchDetails",
+                        params={"matchId": mac_adayi["id"]},
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=10
+                    )
+                    if not detay.ok:
+                        continue
+
+                    veri = detay.json()
+                    baslik = veri.get("header", {})
+                    durum = baslik.get("status", {})
+                    if durum.get("cancelled"):
+                        continue
+
+                    takimlar_fm = baslik.get("teams", [])
+                    if len(takimlar_fm) < 2:
+                        continue
+
+                    ev = takimlar_fm[0].get("name", mac_adayi.get("homeTeamName", ""))
+                    dep = takimlar_fm[1].get("name", mac_adayi.get("awayTeamName", ""))
+
+                    if kickoff > simdi and not durum.get("started"):
+                        return f"{ev} - {dep} maçı henüz başlamadı; sonuç henüz yok."
+
+                    skor_ev = takimlar_fm[0].get("score", 0)
+                    skor_dep = takimlar_fm[1].get("score", 0)
+
+                    if ilk_yari_istegi:
+                        if not durum.get("finished") and not durum.get("started"):
+                            return f"{ev} - {dep} maçı henüz başlamadı; ilk yarı sonucu yok."
+                        olaylar = (
+                            veri.get("content", {}).get("matchFacts", {})
+                            .get("events", {}).get("events", [])
+                        )
+                        yari_ev = yari_dep = 0
+                        for olay in olaylar:
+                            if olay.get("type") != "Goal":
+                                continue
+                            try:
+                                dakika = int(str(
+                                    olay.get("time", olay.get("timeStr", ""))
+                                ).split("+")[0])
+                            except (ValueError, TypeError):
+                                continue
+                            if dakika <= 45:
+                                yari_ev = olay.get("homeScore", yari_ev)
+                                yari_dep = olay.get("awayScore", yari_dep)
+                        return f"İlk yarı sonucu: {ev} {yari_ev} - {yari_dep} {dep}"
+
+                    if durum.get("finished"):
+                        return f"{ev} {skor_ev} - {skor_dep} {dep}"
+                    if durum.get("started"):
+                        return f"Maç devam ediyor: {ev} {skor_ev} - {skor_dep} {dep}"
+
+        except Exception as e:
+            print(f"FotMob maç sonucu sorgusu: {e}", flush=True)
+
         takim_adlari = [
             "Türkiye", "Belçika", "İtalya", "Fransa",
             "Almanya", "İspanya", "İngiltere", "Portekiz",
