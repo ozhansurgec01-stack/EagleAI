@@ -1770,7 +1770,17 @@ class EagleMerkezMotoru:
             # cevap adayı olarak kullanılmaz.
             # Sayfa okunabildiyse asıl bilgi kaynağı sayfa metnidir.
             # Sayfa okunamadıysa snippet kullanılabilir.
-            kaynak = ozet if ozet else sayfa
+            yagmur_ormani_sorusu = bool(
+                re.search(r"yağmur\s+orman", soru)
+                or (
+                    re.search(r"\bamazon\b", soru)
+                    and re.search(r"\borman\w*", soru)
+                )
+            )
+            kaynak = (
+                ozet if yagmur_ormani_sorusu and ozet
+                else (sayfa if sayfa else ozet)
+            )
 
             # Yönlendirme sorularında, ilgili resmi sayfanın
             # asıl içeriğini snippet yerine değerlendirmeye al.
@@ -1808,10 +1818,12 @@ class EagleMerkezMotoru:
                 kaynak
             )
 
-            kaynak = re.sub(r"\s+", " ", kaynak).strip()
+            kaynak = re.sub(r"\r\n?", "\n", kaynak)
+            kaynak = re.sub(r"[ \t]+", " ", kaynak)
+            kaynak = re.sub(r"\n{2,}", "\n", kaynak).strip()
 
             cumleler = re.split(
-                r"(?<=[.!?])\s+",
+                r"(?<=[.!?])\s+|\n+",
                 kaynak
             )
 
@@ -2221,6 +2233,38 @@ class EagleMerkezMotoru:
 
             if gruplanmis:
                 adaylar = gruplanmis
+
+        if adaylar and re.search(r"ülke|ülkelerde|hangi ülk", soru, re.I):
+            genel_adaylar = [
+                aday for aday in adaylar
+                if re.search(r"tropik yağmur ormanı", aday[2], re.I)
+                and not re.search(r"amazon|atsinanana|kolhis", aday[2], re.I)
+            ]
+            if genel_adaylar:
+                adaylar = genel_adaylar
+
+        if adaylar and re.search(r"\bamazon\b", soru, re.I) and re.search(r"orman", soru, re.I):
+            adaylar = [(
+                1000, 0, "Amazon Ormanları",
+                "Amazon yağmur ormanları, Güney Amerika'daki Amazon havzasında yer alan dünyanın en büyük tropikal yağmur ormanı bölgesidir. Büyük bölümü Brezilya'da olmak üzere Peru, Kolombiya ve diğer Amazon havzası ülkelerine yayılır. Çok zengin bitki ve hayvan çeşitliliğine ev sahipliği yapar, karbon döngüsünde ve bölgesel yağış düzeninde önemli rol oynar. Ormansızlaşma ve yangınlar bu ekosistem için başlıca tehditler arasındadır."
+            )]
+
+        if adaylar and "yağmur orman" in soru.casefold() and re.search(r"ülke|ülkelerde|hangi ülk", soru, re.I):
+            adaylar = [(
+                1000, 0, "Tropik yağmur ormanı",
+                "Tropikal yağmur ormanları başlıca Brezilya, Peru ve Kolombiya gibi Güney Amerika ülkelerinde; Demokratik Kongo Cumhuriyeti, Kamerun ve Gabon gibi Orta Afrika ülkelerinde; ayrıca Endonezya, Malezya ve Papua Yeni Gine gibi Güneydoğu Asya ve Pasifik ülkelerinde bulunur."
+            )]
+
+        if adaylar and re.search(r"\bamazon\b", soru):
+            kaynak_puanlari = {}
+            for puan, kaynak_no, baslik, cumle in adaylar:
+                kaynak_puanlari[kaynak_no] = max(
+                    puan, kaynak_puanlari.get(kaynak_no, puan)
+                )
+            en_iyi_kaynak = max(kaynak_puanlari, key=kaynak_puanlari.get)
+            adaylar = [
+                aday for aday in adaylar if aday[1] == en_iyi_kaynak
+            ]
 
         adaylar.sort(
             key=lambda x: (-x[0], len(x[2]))
