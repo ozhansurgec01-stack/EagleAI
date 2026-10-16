@@ -4775,19 +4775,43 @@ def _web_arama_sorgusunu_sadelestir(sorgu):
     return re.sub(r"\s+", " ", temiz).strip() or str(sorgu)
 
 
+def _web_yagmur_ormani_sorgusu_mu(sorgu):
+    metin = str(sorgu or "").casefold()
+    return bool(
+        re.search(r"yağmur\s+orman", metin)
+        or (
+            re.search(r"\bamazon\b", metin)
+            and re.search(r"\borman\w*", metin)
+        )
+    )
+
+
 def _web_yagmur_ormani_sonucu_uygun_mu(sorgu, sonuc):
-    if not re.search(r"yağmur\s+orman", str(sorgu).casefold()):
+    if not _web_yagmur_ormani_sorgusu_mu(sorgu):
         return True
     baslik = str(sonuc.get("title", "") or "").casefold()
     metin = baslik + " " + str(sonuc.get("snippet", "") or "").casefold()
-    return bool(
-        re.search(r"orman\w*|rainforests?", baslik)
-        and re.search(r"yağmur\s+orman\w*|rain\s*forests?", metin)
+    orman_eslesmesi = bool(re.search(r"orman\w*|rainforests?", baslik))
+    konu_eslesmesi = bool(
+        re.search(r"yağmur\s+orman\w*|rain\s*forests?", metin)
+        or (
+            re.search(r"\bamazon\b", str(sorgu or "").casefold())
+            and re.search(r"\bamazon\b", metin)
+        )
     )
+    return orman_eslesmesi and konu_eslesmesi
 
 
 def web_arastir(sorgu, limit=6):
     """Güncel web araması: DuckDuckGo -> Google -> Bing."""
+
+    # TROPICAL_COUNTRY_QUERY_NORMALIZATION
+    if (
+        re.search(r"yağmur\s+orman", str(sorgu).casefold())
+        and re.search(r"\bülkelerde\b|\bhangi ülkelerde\b", str(sorgu).casefold())
+        and not re.search(r"\bamazon\b", str(sorgu).casefold())
+    ):
+        sorgu = "tropikal yağmur ormanları hangi ülkelerde bulunur"
 
     def sonuclari_ayikla(soup, kaynak):
         sonuclar = []
@@ -5297,7 +5321,7 @@ def web_arastir(sorgu, limit=6):
 
                 if not _web_yagmur_ormani_sonucu_uygun_mu(sorgu, sonuc):
                     continue
-                if re.search(r"yağmur\s+orman", str(sorgu).casefold()):
+                if _web_yagmur_ormani_sorgusu_mu(sorgu):
                     ilgili_sonuclar.append(sonuc)
                     continue
                 # Taylor Kuralı sorgusunda yalnızca güvenilir
