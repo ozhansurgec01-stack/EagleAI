@@ -4765,6 +4765,27 @@ def tvf_voleybol_sonuclari_getir(limit=8):
         return []
 
 
+def _web_arama_sorgusunu_sadelestir(sorgu):
+    kalip = (
+        r"\b(nerelerde\s+bulunur|nerede\s+bulunur|"
+        r"hangi\s+ülkelerdedir|hangi\s+ülkelerde|"
+        r"hakkında|hakkinda|bilgi ver(\s+bana)?|bana bilgi ver)\b"
+    )
+    temiz = re.sub(kalip, " ", str(sorgu), flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", temiz).strip() or str(sorgu)
+
+
+def _web_yagmur_ormani_sonucu_uygun_mu(sorgu, sonuc):
+    if not re.search(r"yağmur\s+orman", str(sorgu).casefold()):
+        return True
+    baslik = str(sonuc.get("title", "") or "").casefold()
+    metin = baslik + " " + str(sonuc.get("snippet", "") or "").casefold()
+    return bool(
+        re.search(r"orman\w*|rainforests?", baslik)
+        and re.search(r"yağmur\s+orman\w*|rain\s*forests?", metin)
+    )
+
+
 def web_arastir(sorgu, limit=6):
     """Güncel web araması: DuckDuckGo -> Google -> Bing."""
 
@@ -4894,7 +4915,7 @@ def web_arastir(sorgu, limit=6):
         # ========================================================
         # EKONOMİ ARAMA BAĞLAMI
         # ========================================================
-        arama_sorgusu = sorgu
+        arama_sorgusu = _web_arama_sorgusunu_sadelestir(sorgu)
         ekonomi_arama = bool(
             re.search(
                 r"\b("
@@ -5274,6 +5295,11 @@ def web_arastir(sorgu, limit=6):
                     f"{sonuc.get('snippet', '')}"
                 ).casefold()
 
+                if not _web_yagmur_ormani_sonucu_uygun_mu(sorgu, sonuc):
+                    continue
+                if re.search(r"yağmur\s+orman", str(sorgu).casefold()):
+                    ilgili_sonuclar.append(sonuc)
+                    continue
                 # Taylor Kuralı sorgusunda yalnızca güvenilir
                 # ve doğrudan ilgili iki kurumsal kaynak kabul edilir.
                 if taylor_arama:

@@ -93,6 +93,34 @@ def program_uretme_regresyon_test():
     assert "json" in ast_sonuc.get("kod", "").lower()
 
 
+def yagmur_ormani_web_test():
+    import eagle_api
+
+    sorular = [
+        "yağmur ormanları nerelerde bulunur",
+        "yağmur ormanları hangi ülkelerdedir",
+        "yağmur ormanları hakkında bilgi ver bana",
+    ]
+    for soru in sorular:
+        sade = eagle_api._web_arama_sorgusunu_sadelestir(soru)
+        assert sade == "yağmur ormanları", f"{soru} -> {sade}"
+
+    ilgili = {
+        "title": "Amazon Ormanları",
+        "snippet": "Tropikal yağmur ormanları Güney Amerika'da yaygındır.",
+    }
+    ilgisiz = {
+        "title": "Yağmur radarı",
+        "snippet": "Güncel hava durumu ve yağış haritası.",
+    }
+    assert eagle_api._web_yagmur_ormani_sonucu_uygun_mu(
+        sorular[0], ilgili
+    )
+    assert not eagle_api._web_yagmur_ormani_sonucu_uygun_mu(
+        sorular[0], ilgisiz
+    )
+
+
 def konu_eslesme_test():
     import eagle_api
 
@@ -287,6 +315,7 @@ print()
 test("Bilgi bankası JSON ve 49 yeni Python kaydı", bilgi_bankasi_test)
 test("Python syntax temel testleri", python_syntax_test)
 test("Program üretme regresyonu", program_uretme_regresyon_test)
+test("Yağmur ormanı web araması", yagmur_ormani_web_test)
 test("Python konu eşleşmesi", konu_eslesme_test)
 test("Temel Python soru-cevap kalitesi", temel_python_soru_cevap_test)
 test("Matematik bilgi bankası", matematik_test)
