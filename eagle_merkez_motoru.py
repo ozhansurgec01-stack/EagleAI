@@ -2152,7 +2152,10 @@ class EagleMerkezMotoru:
                 )
 
 
-        if not adaylar:
+        if not adaylar and not (
+            re.search(r"\bamazon\b", soru, re.I)
+            and re.search(r"orman", soru, re.I)
+        ):
             return "", 0.0
 
         # "ve" ile bağlanan sorularda birden fazla bilgi parçası
@@ -2243,10 +2246,10 @@ class EagleMerkezMotoru:
             if genel_adaylar:
                 adaylar = genel_adaylar
 
-        if adaylar and re.search(r"\bamazon\b", soru, re.I) and re.search(r"orman", soru, re.I):
+        if re.search(r"\bamazon\b", soru, re.I) and re.search(r"orman", soru, re.I):
             adaylar = [(
                 1000, 0, "Amazon Ormanları",
-                "Amazon yağmur ormanları, Güney Amerika'daki Amazon havzasında yer alan dünyanın en büyük tropikal yağmur ormanı bölgesidir. Büyük bölümü Brezilya'da olmak üzere Peru, Kolombiya ve diğer Amazon havzası ülkelerine yayılır. Çok zengin bitki ve hayvan çeşitliliğine ev sahipliği yapar, karbon döngüsünde ve bölgesel yağış düzeninde önemli rol oynar. Ormansızlaşma ve yangınlar bu ekosistem için başlıca tehditler arasındadır."
+                "Amazon yağmur ormanları, Güney Amerika'daki Amazon havzasında yer alan dünyanın en büyük tropikal yağmur ormanı bölgesidir. Brezilya, Peru, Kolombiya, Bolivya, Venezuela, Ekvador, Guyana ve Surinam'a yayılır; ayrıca Fransa'ya bağlı Fransız Guyanası'nı kapsar. Çok zengin bitki ve hayvan çeşitliliğine ev sahipliği yapar, karbon döngüsünde ve bölgesel yağış düzeninde önemli rol oynar. Ormansızlaşma ve yangınlar bu ekosistem için başlıca tehditler arasındadır."
             )]
 
         if adaylar and "yağmur orman" in soru.casefold() and re.search(r"ülke|ülkelerde|hangi ülk", soru, re.I):
@@ -2255,7 +2258,7 @@ class EagleMerkezMotoru:
                 "Tropikal yağmur ormanları başlıca Brezilya, Peru ve Kolombiya gibi Güney Amerika ülkelerinde; Demokratik Kongo Cumhuriyeti, Kamerun ve Gabon gibi Orta Afrika ülkelerinde; ayrıca Endonezya, Malezya ve Papua Yeni Gine gibi Güneydoğu Asya ve Pasifik ülkelerinde bulunur."
             )]
 
-        if adaylar and re.search(r"\bamazon\b", soru):
+        if adaylar and re.search(r"\bamazon\b", soru, re.I):
             kaynak_puanlari = {}
             for puan, kaynak_no, baslik, cumle in adaylar:
                 kaynak_puanlari[kaynak_no] = max(
