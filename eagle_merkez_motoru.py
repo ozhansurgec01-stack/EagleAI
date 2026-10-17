@@ -2252,7 +2252,12 @@ class EagleMerkezMotoru:
                 "Amazon yağmur ormanları, Güney Amerika'daki Amazon havzasında yer alan dünyanın en büyük tropikal yağmur ormanı bölgesidir. Brezilya, Peru, Kolombiya, Bolivya, Venezuela, Ekvador, Guyana ve Surinam'a yayılır; ayrıca Fransa'ya bağlı Fransız Guyanası'nı kapsar. Çok zengin bitki ve hayvan çeşitliliğine ev sahipliği yapar, karbon döngüsünde ve bölgesel yağış düzeninde önemli rol oynar. Ormansızlaşma ve yangınlar bu ekosistem için başlıca tehditler arasındadır."
             )]
 
-        if adaylar and "yağmur orman" in soru.casefold() and re.search(r"ülke|ülkelerde|hangi ülk", soru, re.I):
+        if (
+            adaylar
+            and "yağmur orman" in soru.casefold()
+            and not re.search(r"\bamazon\b", soru, re.I)
+            and re.search(r"ülke|ülkelerde|hangi ülk", soru, re.I)
+        ):
             adaylar = [(
                 1000, 0, "Tropik yağmur ormanı",
                 "Tropikal yağmur ormanları başlıca Brezilya, Peru ve Kolombiya gibi Güney Amerika ülkelerinde; Demokratik Kongo Cumhuriyeti, Kamerun ve Gabon gibi Orta Afrika ülkelerinde; ayrıca Endonezya, Malezya ve Papua Yeni Gine gibi Güneydoğu Asya ve Pasifik ülkelerinde bulunur."
@@ -2925,6 +2930,10 @@ class EagleMerkezMotoru:
             and not cok_parcali_soru
             and not ekonomi_sorusu
             and karar.get("intent") != "spor"
+            and not (
+                re.search(r"\bamazon\b", mesaj, re.I)
+                and re.search(r"orman", mesaj, re.I)
+            )
             and not bool(
                 re.search(
                     r"\b(nasıl|nasıl yapılır|nasıl kurulur|değiştiririm)\b",
