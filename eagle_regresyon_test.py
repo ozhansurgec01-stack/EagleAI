@@ -120,6 +120,27 @@ def yagmur_ormani_web_test():
         sorular[0], ilgisiz
     )
 
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    motor = EagleMerkezMotoru()
+    amazon_cevap, guven = motor.genel_web_cevabi(
+        "Amazon Ormanları hangi ülkelerde bulunur?",
+        [{
+            "title": "Amazon Ormanları",
+            "snippet": "Amazon yağmur ormanları Güney Amerika'da bulunur.",
+            "url": "https://example.com/amazon",
+        }],
+    )
+
+    assert guven >= 0.75, f"Amazon cevabının güveni düşük: {guven}"
+    for ulke in (
+        "Brezilya", "Peru", "Kolombiya", "Bolivya", "Venezuela",
+        "Ekvador", "Guyana", "Surinam", "Fransız Guyanası",
+    ):
+        assert ulke.casefold() in amazon_cevap.casefold(), (
+            f"Amazon cevabında {ulke} eksik: {amazon_cevap}"
+        )
+
 
 def konu_eslesme_test():
     import eagle_api
