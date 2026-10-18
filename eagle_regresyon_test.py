@@ -93,6 +93,28 @@ def program_uretme_regresyon_test():
     assert "json" in ast_sonuc.get("kod", "").lower()
 
 
+def yagmur_ormani_web_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    motor = EagleMerkezMotoru()
+    cevap, guven = motor.genel_web_cevabi(
+        "Amazon Ormanları hangi ülkelerde bulunur?",
+        [{
+            "title": "Amazon Ormanları",
+            "snippet": "Amazon yağmur ormanları Güney Amerika'da bulunur.",
+            "url": "https://example.com/amazon",
+        }],
+    )
+    assert guven >= 0.75, f"Amazon cevabının güveni düşük: {guven}"
+    for ulke in (
+        "Brezilya", "Peru", "Kolombiya", "Bolivya", "Venezuela",
+        "Ekvador", "Guyana", "Surinam", "Fransız Guyanası",
+    ):
+        assert ulke.casefold() in cevap.casefold(), (
+            f"Amazon cevabında {ulke} eksik: {cevap}"
+        )
+
+
 def web_url_tekillestirme_test():
     from eagle_api import web_url_tekillestirme_anahtari
 
@@ -341,6 +363,19 @@ def karar_motoru_test():
         sonuc = eagle_api.eagle_karar_motoru(soru, [])
         assert sonuc is not None, f"Karar motoru sonuç üretmedi: {soru}"
 
+    rss = eagle_api.eagle_karar_motoru("RSS haber merkezi oluştur", [])
+    assert rss.get("intent") == "program_yazma", (
+        f"RSS isteği yanlış yönlendirildi: {rss}"
+    )
+    assert rss.get("arac") == "program_yazma", (
+        f"RSS üretim aracı seçilmedi: {rss}"
+    )
+
+    guncel = eagle_api.eagle_karar_motoru("Son dakika haberleri var mı?", [])
+    assert guncel.get("intent") == "guncel_bilgi", (
+        f"Güncel haber isteği bozuldu: {guncel}"
+    )
+
 
 def kod_analiz_import_test():
     import eagle_kod_analiz_motoru
@@ -456,12 +491,28 @@ def api_fonksiyon_test():
     assert hasattr(eagle_api, "app")
 
 
+def genel_soru_algilama_test():
+    from eagle_cevap_motoru import _soru_gibi_mi
+
+    sorular = [
+        "EagleAI, Türkiye'nin başkenti neresidir? Yalnızca kısa cevap ver.",
+        "Türkiye'nin başkenti neresi?",
+    ]
+    import eagle_api
+
+    for soru in sorular:
+        assert _soru_gibi_mi(soru), f"Genel bilgi sorusu algılanmadı: {soru}"
+        cevaplar = eagle_api.bilgi_bankasi_ara(soru)
+        assert "Ankara" in cevaplar, f"Başkent cevabı bulunamadı: {soru} -> {cevaplar}"
+
+
 print("===== EAGLEAI REGRESYON TEST =====")
 print()
 
 test("Bilgi bankası JSON ve 49 yeni Python kaydı", bilgi_bankasi_test)
 test("Python syntax temel testleri", python_syntax_test)
 test("Program üretme regresyonu", program_uretme_regresyon_test)
+test("Yağmur ormanı web araması", yagmur_ormani_web_test)
 test("Web URL tekilleştirme", web_url_tekillestirme_test)
 test("Atlas Okyanusu sayfa içeriği önceliği", atlas_okyanusu_sayfa_onceligi_test)
 test("Konum sorusunda tamamlayıcı cümle", konum_sorusunda_tamamlayici_cumle_test)
@@ -476,6 +527,7 @@ test("AutoFix", autofix_import_test)
 test("BooleanComparison AutoFix", boolean_autofix_test)
 test("Voleybol takım eşleşmesi ve genel sonuçlar", voleybol_takim_eslesme_regresyon_test)
 test("API /api/sohbet altyapısı", api_fonksiyon_test)
+test("Genel bilgi soru algılama", genel_soru_algilama_test)
 
 print()
 print("===== SONUÇ =====")

@@ -661,6 +661,32 @@ def bilgi_bankasi_yukle():
 def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").replace("İ", "i").lower()
 
+    # Genel bilgiler ayrı JSON dosyasından okunur.
+    genel_bilgi_dosyasi = Path(__file__).resolve().with_name("eagle_genel_bilgi.json")
+    try:
+        genel_kayitlar = json.loads(genel_bilgi_dosyasi.read_text(encoding="utf-8"))
+        def genel_norm(deger):
+            deger = str(deger or "").lower().translate(str.maketrans(
+                "çğıöşü", "cgiosu"
+            ))
+            deger = re.sub(r"[^a-z0-9\\s]", " ", deger)
+            return re.sub(r"\\s+", " ", deger).strip()
+
+        soru_norm = " " + genel_norm(metin) + " "
+        for kayit in genel_kayitlar:
+            if not isinstance(kayit, dict):
+                continue
+            cevap = str(kayit.get("cevap", "")).strip()
+            anahtarlar = kayit.get("anahtarlar", [])
+            if not cevap or not isinstance(anahtarlar, list):
+                continue
+            for anahtar in anahtarlar:
+                ifade = genel_norm(anahtar)
+                if ifade and (" " + ifade + " ") in soru_norm:
+                    return [cevap]
+    except (OSError, ValueError, TypeError) as hata:
+        print("Genel bilgi dosyası okunamadı:", hata, flush=True)
+
     # Yaygın Python yazım hatalarını normalize et
     metin = re.sub(r"\bpyhton\b", "python", metin)
 
@@ -2213,7 +2239,7 @@ def hava_durumu_getir(mesaj):
         }
 
 
-# ============================================================
+# =====================================================
 # 🌐 ÜCRETSİZ WEB ARAŞTIRMA
 # DuckDuckGo HTML — ücretli API kullanılmaz
 # ============================================================
@@ -3391,6 +3417,28 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         guncel_metin = metin.split(baglam_isareti, 1)[1].strip()
 
     guncel_k = guncel_metin.casefold()
+
+    rss_haber_merkezi_istegi = (
+        "rss" in guncel_k
+        and "haber" in guncel_k
+        and any(x in guncel_k for x in (
+            "oluştur", "olustur", "yap", "hazırla", "hazirla",
+            "üret", "uret", "geliştir", "gelistir"
+        ))
+        and any(x in guncel_k for x in (
+            "merkezi", "merkez", "uygulama", "sistemi", "sistem"
+        ))
+    )
+
+    if rss_haber_merkezi_istegi:
+        karar.update({
+            "intent": "program_yazma",
+            "guven": "yüksek",
+            "neden": "RSS haber merkezi oluşturma isteği algılandı.",
+            "arac": "program_yazma",
+            "islem": "program_uret"
+        })
+        return karar
 
     if any(x in guncel_k for x in guncel_kelimeleri):
         karar.update({
@@ -4753,6 +4801,41 @@ def tvf_voleybol_sonuclari_getir(limit=8):
         return []
 
 
+def _web_arama_sorgusunu_sadelestir(sorgu):
+    kalip = (
+        r"\b(nerelerde\s+bulunur|nerede\s+bulunur|"
+        r"hangi\s+ülkelerdedir|hangi\s+ülkelerde|"
+        r"hakkında|hakkinda|bilgi ver(\s+bana)?|bana bilgi ver)\b"
+    )
+    temiz = re.sub(kalip, " ", str(sorgu), flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", temiz).strip() or str(sorgu)
+
+
+def _web_yagmur_ormani_sorgusu_mu(sorgu):
+    metin = str(sorgu or "").casefold()
+    return bool(
+        re.search(r"yağmur\s+orman", metin)
+        or (
+            re.search(r"\bamazon\b", metin)
+            and re.search(r"\borman\w*", metin)
+        )
+    )
+
+
+def _web_yagmur_ormani_sonucu_uygun_mu(sorgu, sonuc):
+    if not _web_yagmur_ormani_sorgusu_mu(sorgu):
+        return True
+    baslik = str(sonuc.get("title", "") or "").casefold()
+    metin = baslik + " " + str(sonuc.get("snippet", "") or "").casefold()
+    orman_eslesmesi = bool(re.search(r"orman\w*|rainforests?", baslik))
+    konu_eslesmesi = bool(
+        re.search(r"yağmur\s+orman\w*|rain\s*forests?", metin)
+        or (
+            re.search(r"\bamazon\b", str(sorgu or "").casefold())
+            and re.search(r"\bamazon\b", metin)
+        )
+    )
+    return orman_eslesmesi and konu_eslesmesi
 def _gerekli_web_eslesme_sayisi(kelime_sayisi):
     """Arama sonucunda eşleşmesi gereken en az anlamlı kelime sayısı."""
     if kelime_sayisi <= 1:
@@ -4842,6 +4925,14 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
 
 def web_arastir(sorgu, limit=6):
     """Güncel web araması: DuckDuckGo -> Google -> Bing."""
+
+    # TROPICAL_COUNTRY_QUERY_NORMALIZATION
+    if (
+        re.search(r"yağmur\s+orman", str(sorgu).casefold())
+        and re.search(r"\bülkelerde\b|\bhangi ülkelerde\b", str(sorgu).casefold())
+        and not re.search(r"\bamazon\b", str(sorgu).casefold())
+    ):
+        sorgu = "tropikal yağmur ormanları hangi ülkelerde bulunur"
 
     def sonuclari_ayikla(soup, kaynak):
         sonuclar = []
@@ -4969,13 +5060,7 @@ def web_arastir(sorgu, limit=6):
         # ========================================================
         # EKONOMİ ARAMA BAĞLAMI
         # ========================================================
-        arama_sorgusu = re.sub(
-            r"\b(nerelerde\s+bulunur|nerede\s+bulunur|nerededir|nerede|nedir|kimdir|kaçtır|kactir|nasıl|nasil|ne\s+zaman|hangi\s+ülkelerdedir|hangi\s+ülkelerde|hakkında|hakkinda|bilgi ver(\s+bana)?|bana bilgi ver)\b",
-            " ",
-            str(sorgu),
-            flags=re.IGNORECASE,
-        )
-        arama_sorgusu = re.sub(r"\s+", " ", arama_sorgusu).strip() or sorgu
+        arama_sorgusu = _web_arama_sorgusunu_sadelestir(sorgu)
         ekonomi_arama = bool(
             re.search(
                 r"\b("
@@ -5356,6 +5441,11 @@ def web_arastir(sorgu, limit=6):
                     f"{sonuc.get('snippet', '')}"
                 ).casefold()
 
+                if not _web_yagmur_ormani_sonucu_uygun_mu(sorgu, sonuc):
+                    continue
+                if _web_yagmur_ormani_sorgusu_mu(sorgu):
+                    ilgili_sonuclar.append(sonuc)
+                    continue
                 # Taylor Kuralı sorgusunda yalnızca güvenilir
                 # ve doğrudan ilgili iki kurumsal kaynak kabul edilir.
                 if taylor_arama:
@@ -8482,7 +8572,19 @@ def sohbet():
                         "bunu açıkça belirt ve görselden doğrulanabilen bilgilerle "
                         "sınırlı kal. "
                         "Öncelik sırası: görseli anla, soruyu görsele göre cevapla, "
-                        "ancak gerekirse daha sonra dış bilgi doğrulaması yapılabilir."
+                        "ancak gerekirse daha sonra dış bilgi doğrulaması yapılabilir. "
+                        "Yanıtında üç şeyi birbirinden ayır: "
+                        "1) GÖZLEM: Görselde gerçekten görülen nesneler, yazılar ve sayılar. "
+                        "2) YORUM: Gözlemlerden makul biçimde çıkarılabilecek sonuçlar. "
+                        "3) BELİRSİZLİK: Görselin tek başına doğrulayamadığı bilgiler. "
+                        "Tahminleri kesin gerçek gibi sunma; bir simgenin anlamı, "
+                        "haritadaki renklerin ölçüsü veya verilerin güncelliği "
+                        "doğrulanamıyorsa bunu açıkça belirt. "
+                        "Ekran görüntülerinde teknik hata, bozuk yerleşim veya "
+                        "yanlışlıkla gösterilen kaynak kodu gibi sorunları da belirt. "
+                        "Kullanıcı yalnızca yorum istiyorsa uzun bir ekran öğeleri "
+                        "listesi yerine en önemli bulguları ve sonuçlarını açıkla. "
+                        "Okunabilir metinleri doğru aktar; görünmeyen ayrıntıları uydurma."
                     )
 
                     gemini_payload = {
@@ -8647,6 +8749,41 @@ def sohbet():
     akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
 
+    # Genel bilgi JSON kaydını web/matematik yönlendirmesinden önce dene.
+    if karar.get("arac") not in (
+        "borc_modulu", "spor_kaynaklari", "hava_api",
+        "guvenli_hesaplama", "kod_analiz", "program_yazma",
+    ) and not karar.get("komut"):
+        genel_dosya = Path(__file__).resolve().with_name("eagle_genel_bilgi.json")
+        try:
+            genel_kayitlar = json.loads(genel_dosya.read_text(encoding="utf-8"))
+            def _genel_norm(v):
+                v = str(v or "").casefold().translate(str.maketrans(
+                    {"ç":"c", "ğ":"g", "ı":"i", "ö":"o", "ş":"s", "ü":"u"}
+                ))
+                v = re.sub(r"[^a-z0-9\s]", " ", v)
+                return re.sub(r"\s+", " ", v).strip()
+
+            _soru = " " + _genel_norm(mesaj_orijinal) + " "
+            for _kayit in genel_kayitlar:
+                if not isinstance(_kayit, dict):
+                    continue
+                _cevap = str(_kayit.get("cevap", "")).strip()
+                for _anahtar in _kayit.get("anahtarlar", []):
+                    _ifade = _genel_norm(_anahtar)
+                    if _cevap and _ifade and (" " + _ifade + " ") in _soru:
+                        return jsonify({
+                            "ok": True,
+                            "answer": "🦅 EAGLE BİLGİ BANKASI\n\n• " + _cevap,
+                            "eagle_direct": True,
+                            "knowledge_base": True,
+                            "web_search": False,
+                            "memory_count": len(hafiza_yukle()),
+                        })
+        except (OSError, ValueError, TypeError) as _hata:
+            print("Genel bilgi JSON hatası:", _hata, flush=True)
+
+
     # Kimlik sorularını web aramasından önce yerel sohbet motorunda yanıtla.
     kimlik_metni = str(mesaj_orijinal or "").casefold().strip().rstrip(" ?!.")
     kimlik_sorulari = {
@@ -8728,6 +8865,17 @@ def sohbet():
         r'(?m)^\s*(?:from\s+\w+|import\s+\w+|def\s+\w+|class\s+\w+|print\s*\(|[A-Za-z_]\w*\s*=)',
         mesaj
     )
+    if not yeni_kod_eslesmesi and (
+        re.search(r"\b(?:python|kod|koddaki|kodundaki)\b", mesaj_kucuk)
+        and any(x in mesaj_kucuk for x in ("hata", "düzelt", "duzelt", "analiz", "incele"))
+    ):
+        yeni_kod_eslesmesi = re.search(
+            r"\b(?:print\s*\(|raise\s+[A-Za-z_]\w*\s*\(|"
+            r"import\s+\w+|from\s+\w+\s+import\b|"
+            r"def\s+[A-Za-z_]\w*\s*\(|class\s+[A-Za-z_]\w*)",
+            mesaj,
+        )
+
     yeni_kod_var = bool(yeni_kod_eslesmesi)
 
     if aktif_kod and not yeni_kod_var and not any(
@@ -9035,6 +9183,31 @@ def sohbet():
                     ):
                         kaynak_kod = olasi_kod.strip()
 
+
+                # Doğal dildeki hata ayıklama isteğini tek satırlık koddan ayır.
+                if "\n" not in kaynak_kod:
+                    kod_baslangici = re.search(
+                        r"\b(?:print\s*\(|raise\s+[A-Za-z_]\w*\s*\(|"
+                        r"import\s+\w+|from\s+\w+\s+import\b|"
+                        r"def\s+[A-Za-z_]\w*\s*\(|"
+                        r"class\s+[A-Za-z_]\w*|"
+                        r"for\s+[A-Za-z_]\w*\s+in\b|"
+                        r"while\s+.+:|if\s+.+:)",
+                        kaynak_kod,
+                    )
+                    if kod_baslangici:
+                        on_ek = kaynak_kod[:kod_baslangici.start()].lower()
+                        if (
+                            re.search(r"\b(?:python|kod|koddaki|kodundaki)\b", on_ek)
+                            and any(
+                                ifade in on_ek
+                                for ifade in (
+                                    "hata", "düzelt", "duzelt",
+                                    "analiz", "incele", "bul",
+                                )
+                            )
+                        ):
+                            kaynak_kod = kaynak_kod[kod_baslangici.start():].strip()
 
                 # Kodun arkasına eklenen doğal dil sorusunu Python kaynağına dahil etme.
                 soru_isaretleri = (
