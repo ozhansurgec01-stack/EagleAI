@@ -2239,7 +2239,7 @@ def hava_durumu_getir(mesaj):
         }
 
 
-# ============================================================
+# =====================================================
 # 🌐 ÜCRETSİZ WEB ARAŞTIRMA
 # DuckDuckGo HTML — ücretli API kullanılmaz
 # ============================================================
@@ -3551,6 +3551,23 @@ def web_arastirma_gerekli(mesaj):
     return any(k in mesaj_kucuk for k in kelimeler)
 
 
+def web_url_tekillestirme_anahtari(url):
+    """Aynı web sayfasının farklı URL yazımlarını tek anahtarda toplar."""
+    url = web_kaynak_url(str(url or "").strip())
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+        return parsed._replace(
+            scheme=parsed.scheme.lower(),
+            netloc=parsed.netloc.lower(),
+            path=parsed.path.rstrip("/") or "/",
+            fragment="",
+        ).geturl()
+    except Exception:
+        return url
+
+
 def web_kaynak_url(url):
     """DuckDuckGo yönlendirme URL'sinden gerçek kaynak adresini çıkarır."""
     try:
@@ -4692,7 +4709,7 @@ def tvf_voleybol_sonuclari_getir(limit=8):
 
             def takim_anahtari(ad):
                 import unicodedata
-                ad = unicodedata.normalize("NFKD", ad.casefold())
+                ad = unicodedata.normalize("NFKD", ad.casefold().replace("ı", "i"))
                 ad = "".join(c for c in ad if not unicodedata.combining(c))
                 return re.sub(r"\s+", " ", ad).strip()
 
@@ -4705,6 +4722,7 @@ def tvf_voleybol_sonuclari_getir(limit=8):
             ))
 
             tarihli_maclar = {}
+            fikstur_sonuclari = []
             for lig_yolu in lig_urlleri:
                 try:
                     cevap = requests.get(
@@ -4735,6 +4753,7 @@ def tvf_voleybol_sonuclari_getir(limit=8):
                         ):
                             continue
 
+                        # Fikstür yalnızca tarih/saat eşleştirmesinde kullanılır.
                         anahtar = (
                             takim_anahtari(ev), int(ev_skor),
                             takim_anahtari(deplasman), int(dep_skor)
@@ -4757,7 +4776,24 @@ def tvf_voleybol_sonuclari_getir(limit=8):
         except Exception as hata:
             print(f"TVF tarih eşleştirme hatası: {hata}", flush=True)
 
-        print(f"TVF: {len(sonuclar)} sonuç kartı okundu.", flush=True)
+        # Resmî sonuç kayıtlarındaki tekrarları önle.
+        birlesik = []
+        gorulen = set()
+
+        for mac in sonuclar:
+            anahtar_mac = (
+                str(mac["ev"]).casefold(),
+                int(mac["ev_skor"]),
+                str(mac["deplasman"]).casefold(),
+                int(mac["deplasman_skor"]),
+            )
+            if anahtar_mac in gorulen:
+                continue
+            gorulen.add(anahtar_mac)
+            birlesik.append(mac)
+
+        sonuclar = birlesik[:max(1, min(int(limit), 20))]
+        print(f"TVF: {len(sonuclar)} sonuç kaydı hazırlandı.", flush=True)
         return sonuclar
 
     except Exception as e:
@@ -4800,6 +4836,91 @@ def _web_yagmur_ormani_sonucu_uygun_mu(sorgu, sonuc):
         )
     )
     return orman_eslesmesi and konu_eslesmesi
+def _gerekli_web_eslesme_sayisi(kelime_sayisi):
+    """Arama sonucunda eşleşmesi gereken en az anlamlı kelime sayısı."""
+    if kelime_sayisi <= 1:
+        return 1
+    return (kelime_sayisi + 1) // 2
+
+
+def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
+    """Sorgu terimlerini ve başlığı birlikte kullanarak arama sonucunu süzer."""
+    durak = {
+        "nerede", "nerelerde", "nereye", "nereden", "bulunur",
+        "nasıl", "nasil", "neden", "niçin", "ne", "nedir",
+        "kim", "hangi", "hangileri", "ülkelerde", "ülkeler",
+        "hakkında", "hakkinda", "bilgi", "ver", "bana",
+        "kaç", "kac", "zaman", "ne zaman", "ile", "için",
+        "icin", "olan", "olarak", "nedeniyle", "mıdır", "midir",
+        "nerededir", "kıtadadır", "yaptı", "yapti",
+    }
+    kelimeler = {
+        k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
+        if len(k) >= 4 and k not in durak
+    }
+    if not kelimeler:
+        kelimeler = {
+            k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
+            if len(k) >= 4
+        }
+
+    baslik = str(sonuc.get("title", "") or "").casefold()
+    metin = (baslik + " " + str(sonuc.get("snippet", "") or "")).casefold()
+
+    def eslesiyor(kelime, hedef):
+        if kelime in hedef:
+            return True
+        for parca in re.findall(r"[a-z0-9çğıöşü]+", hedef):
+            ortak = 0
+            for x, y in zip(kelime, parca):
+                if x != y:
+                    break
+                ortak += 1
+            if ortak >= 5:
+                return True
+        return False
+
+    baslik_eslesmesi = sum(1 for k in kelimeler if eslesiyor(k, baslik))
+    toplam_eslesme = sum(1 for k in kelimeler if eslesiyor(k, metin))
+    gerekli = _gerekli_web_eslesme_sayisi(len(kelimeler))
+
+    # Konum sorularında tek kelimelik yer adını doğrudan başlıkta doğrula.
+    sorgu_metni = str(sorgu).casefold()
+    konum_sorusu = bool(
+        re.search(r"\b(?:nerede|nerededir|nerelerde|nereye|nereden)\b", sorgu_metni)
+    )
+    if konum_sorusu and len(kelimeler) == 1:
+        baslik_kelimeleri = re.findall(r"[a-z0-9çğıöşü]+", baslik)
+        if baslik_kelimeleri != [next(iter(kelimeler))]:
+            return False
+
+    # Yağmur ormanı kavramı başlıkta veya açıklamada bulunabilir.
+    if re.search(r"yağmur\s+orman", sorgu_metni):
+        if not re.search(r"orman\w*|rainforests?", metin):
+            return False
+        # Hayvan gibi ikincil konular, yalnızca açıklamada orman geçiyor diye
+        # kabul edilmemeli; başlık da yağmur ormanı konusuyla ilişkili olmalı.
+        if not any(eslesiyor(k, baslik) for k in kelimeler):
+            return False
+
+    # Birden fazla konu terimi varsa, yalnızca snippet eşleşmesi yeterli değil:
+    # başlık da sorunun konusuyla ilişkili olmalı.
+    if len(kelimeler) >= 2:
+        # Birden fazla konu teriminde, yalnızca ikincil
+        # bir kelimenin başlıkta geçmesi yeterli değildir.
+        ilk_konu = next(
+            (k for k in re.findall(
+                r"[a-z0-9çğıöşü]+",
+                str(sorgu).casefold()
+            ) if len(k) >= 4 and k not in durak),
+            None,
+        )
+        yagmur_ormani_sorgusu = bool(
+            re.search(r"yağmur\s+orman", sorgu_metni)
+        )
+        if not yagmur_ormani_sorgusu and baslik_eslesmesi == 0:
+            return False
+    return toplam_eslesme >= gerekli
 
 
 def web_arastir(sorgu, limit=6):
@@ -5313,6 +5434,7 @@ def web_arastir(sorgu, limit=6):
             }
 
             ilgili_sonuclar = []
+            gorulen_url_anahtarlari = set()
             for sonuc in tum_sonuclar:
                 metin = (
                     f"{sonuc.get('title', '')} "
@@ -5342,61 +5464,44 @@ def web_arastir(sorgu, limit=6):
                     ):
                         continue
 
-                # Tek bir sorgu kelimesinin geçmesi sonucu ilgili
-                # kabul etmek için yeterli değildir.
-                # Önce anlam taşıyan sorgu kelimelerini ayır.
-                soru_kelimeleri = {
-                    "nerede", "nereye", "nereden",
-                    "nasıl", "nasil", "neden", "niçin",
-                    "ne", "nedir", "kim", "hangi",
-                    "kaç", "kac", "ne zaman", "zaman"
-                }
-
-                anlam_kelimeleri = {
-                    kelime for kelime in sorgu_kelime
-                    if kelime not in soru_kelimeleri
-                }
-
-                if not anlam_kelimeleri:
-                    anlam_kelimeleri = sorgu_kelime
-
-                def kelime_eslesiyor_mu(kelime, metin):
-                    if kelime in metin:
-                        return True
-
-                    for metin_kelime in re.findall(
-                        r"[a-z0-9çğıöşü]+",
-                        metin
-                    ):
-                        ortak = 0
-                        for a, b in zip(kelime, metin_kelime):
-                            if a != b:
-                                break
-                            ortak += 1
-
-                        if ortak >= 5:
-                            return True
-
-                    return False
-
-                eslesen = sum(
-                    1
-                    for kelime in anlam_kelimeleri
-                    if kelime_eslesiyor_mu(kelime, metin)
-                )
-
-                # Tek ortak kelime nedeniyle alakasız sonuçları kabul etme.
-                # İki veya daha fazla anlam kelimesi varsa hepsinin
-                # sonuçta bulunmasını bekle; tek anlam kelimesi varsa
-                # mevcut davranışı koru.
-                gerekli_eslesme = (
-                    len(anlam_kelimeleri)
-                    if len(anlam_kelimeleri) >= 2
-                    else 1
-                )
-
-                if eslesen >= gerekli_eslesme:
+                if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
+                    kaynak_url = web_url_tekillestirme_anahtari(
+                        sonuc.get("url", "")
+                    )
+                    if kaynak_url and kaynak_url in gorulen_url_anahtarlari:
+                        continue
+                    if kaynak_url:
+                        gorulen_url_anahtarlari.add(kaynak_url)
                     ilgili_sonuclar.append(sonuc)
+
+            # Genel aramada başlık eşleşmesini öne çıkar.
+            anlamli = {
+                k for k in re.findall(r"[a-z0-9çğıöşü]+", soru)
+                if len(k) >= 4 and k not in {
+                    "nerede", "nerededir", "nedir", "nasıl", "nasil",
+                    "hangi", "hakkında", "hakkinda", "bilgi", "son",
+                    "gelişmeler", "gelismeler", "bulunur", "ülkelerde",
+                    "ülkeler", "olan", "olarak", "için", "icin",
+                }
+            }
+
+            def baslik_puani(sonuc):
+                baslik = str(sonuc.get("title", "")).casefold()
+                aciklama = str(sonuc.get("snippet", "")).casefold()
+                puan = 0
+                for kelime in anlamli:
+                    if re.search(
+                        r"(?<![a-z0-9çğıöşü])" + re.escape(kelime)
+                        + r"(?![a-z0-9çğıöşü])", baslik
+                    ):
+                        puan += 10
+                    elif kelime in baslik:
+                        puan += 5
+                    elif kelime in aciklama:
+                        puan += 1
+                return puan
+
+            ilgili_sonuclar.sort(key=baslik_puani, reverse=True)
 
             # Hiçbir sonuç sorguyla eşleşmiyorsa alakasız sonuçları
             # cevap motoruna aktarma.
@@ -5597,11 +5702,17 @@ def web_arastir(sorgu, limit=6):
                     )
 
                     if ikinci:
+                        ikinci_ilgili = [
+                            sonuc for sonuc in ikinci
+                            if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc)
+                        ]
                         print(
-                            f"🧠 Kısa sorgu sonucu: {len(ikinci)}",
+                            f"🧠 Kısa sorgu: {len(ikinci)} sonuç, "
+                            f"özgün soruyla ilgili: {len(ikinci_ilgili)}",
                             flush=True
                         )
-                        return ikinci
+                        if ikinci_ilgili:
+                            return ikinci_ilgili
 
             print(
                 f"🧠 Web toplam: {len(ilk_sonuclar)} sonuç (çoklu kaynak)",
@@ -5674,7 +5785,15 @@ def web_sayfa_oku(url, limit=7000):
                     break
 
         kaynak = icerik if icerik is not None else soup
-        metin = " ".join(kaynak.stripped_strings)
+        paragraflar = [
+            p.get_text(" ", strip=True)
+            for p in kaynak.find_all("p")
+            if len(p.get_text(" ", strip=True)) >= 45
+        ]
+        if sum(len(x) for x in paragraflar) >= 300:
+            metin = " ".join(paragraflar)
+        else:
+            metin = " ".join(kaynak.stripped_strings)
         metin = re.sub(r"\s+", " ", metin).strip()
 
         if len(metin) > limit:
@@ -8923,19 +9042,6 @@ def sohbet():
         try:
             import tempfile
 
-            calisma_klasoru = Path(
-                tempfile.mkdtemp(
-                    prefix=".eagle_exec_",
-                    dir=str(Path(__file__).resolve().parent)
-                )
-            )
-
-            calisma_dosyasi = calisma_klasoru / "aktif_kod.py"
-            calisma_dosyasi.write_text(
-                aktif_kod,
-                encoding="utf-8"
-            )
-
             guvenlik_sonucu = EagleKodGuvenlikMotoru().kontrol_et(aktif_kod)
             if not guvenlik_sonucu.get("guvenli"):
                 return jsonify({
@@ -8954,6 +9060,21 @@ def sohbet():
                     "security_findings": guvenlik_sonucu.get("bulgular", []),
                     "memory_count": len(hafiza_yukle())
                 })
+
+            calisma_klasoru = Path(
+                tempfile.mkdtemp(
+                    prefix=".eagle_exec_",
+                    dir=str(Path(__file__).resolve().parent)
+                )
+            )
+
+            calisma_dosyasi = calisma_klasoru / "aktif_kod.py"
+            calisma_dosyasi.write_text(
+                aktif_kod,
+                encoding="utf-8"
+            )
+
+
 
             try:
                 calisma_ok, calisma_output = secure_run(
@@ -9210,6 +9331,8 @@ def sohbet():
                 kaynak_kod,
                 encoding="utf-8"
             )
+
+
 
             try:
                 # Yapıştırılmış Python kodunun güvenli çalışma çıktısını al.
@@ -10078,20 +10201,99 @@ def sohbet():
             # 🏟️ Geçmiş/son maç sonucu sorularında çoklu web araması.
             # 🇹🇷 Süper Lig'de resmi TFF verisi varsa onu ezme.
             # TVF resmî son sonuçları; doğrulanmamış tarih iddiasında bulunma.
-            voleybol_tarih_istegi = any(k in mesaj_spor for k in [
-                "bugün", "bugun",
-                "dün", "dünkü", "dunun", "dunku",
-                "geçen hafta", "gecen hafta",
-                "geçen ay", "gecen ay"
+            voleybol_bugun_istegi = any(k in mesaj_spor for k in [
+                "bugün", "bugun", "bugünkü", "bugunku"
             ])
+            voleybol_tarih_istegi = voleybol_bugun_istegi or any(
+                k in mesaj_spor for k in [
+                    "dün", "dünkü", "dunun", "dunku",
+                    "geçen hafta", "gecen hafta",
+                    "geçen ay", "gecen ay"
+                ]
+            )
 
-            if voleybol_mu and gecmis_mac and not voleybol_tarih_istegi:
-                tvf_sonuclari = tvf_voleybol_sonuclari_getir()
+            if (
+                voleybol_mu and gecmis_mac
+                and (not voleybol_tarih_istegi or voleybol_bugun_istegi)
+            ):
+                tvf_sonuclari = tvf_voleybol_sonuclari_getir(limit=20)
+
+                if voleybol_bugun_istegi:
+                    from datetime import datetime, timezone, timedelta
+                    turkiye_saati = timezone(timedelta(hours=3))
+                    bugunun_tarihi = datetime.now(
+                        turkiye_saati
+                    ).strftime("%d.%m.%Y")
+                    tvf_sonuclari = [
+                        mac for mac in tvf_sonuclari
+                        if mac.get("tarih") == bugunun_tarihi
+                    ]
+
+                # Takım adı içeren sorgularda yalnızca ilgili maçları göster.
+                import unicodedata
+
+                def voleybol_anahtar(metin):
+                    metin = unicodedata.normalize("NFKD", metin.casefold().replace("ı", "i"))
+                    metin = "".join(
+                        c for c in metin
+                        if not unicodedata.combining(c)
+                    )
+                    return re.sub(r"[^a-z0-9]+", " ", metin).strip()
+
+                durak_kelimeleri = {
+                    "voleybol", "mac", "maci", "macin", "maclar",
+                    "son", "sonucu", "sonuclari", "skor", "skorlari",
+                    "kac", "bitti", "takim", "takimi", "takimin",
+                    "icin", "ile", "ve", "nedir", "ne", "getir",
+                    "bul", "hangi", "sonuc", "kadin", "kadinlar",
+                    "erkek", "erkekler", "lig", "sultanlar", "efeler",
+                    "bugun", "bugunku", "dun", "dunku"
+                }
+
+                sorgu_kelimeleri = [
+                    kelime for kelime in voleybol_anahtar(mesaj).split()
+                    if len(kelime) >= 3 and kelime not in durak_kelimeleri
+                ]
+
+                if sorgu_kelimeleri:
+                    tvf_sonuclari = [
+                        mac for mac in tvf_sonuclari
+                        if all(
+                            kelime in voleybol_anahtar(
+                                mac["ev"] + " " + mac["deplasman"]
+                            ).split()
+                            for kelime in sorgu_kelimeleri
+                        )
+                    ]
+
+                if voleybol_bugun_istegi and not tvf_sonuclari:
+                    return jsonify({
+                        "ok": True,
+                        "answer": (
+                            "🏐 Bugün için istenen takımlara uygun, "
+                            "TVF verisiyle doğrulanmış tamamlanmış bir "
+                            "maç sonucu bulamadım. Başka günlerin "
+                            "skorlarını bugünün sonucu olarak göstermiyorum."
+                        ),
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
 
                 if tvf_sonuclari:
                     satirlar = [
-                        "🏐 TVF RESMÎ SON VOLEYBOL SONUÇLARI",
-                        "_Kaynak: TVF resmî sitesi; tarih filtresi uygulanmamıştır._"
+                        (
+                            "🏐 BUGÜNÜN TVF VOLEYBOL SONUÇLARI"
+                            if voleybol_bugun_istegi
+                            else "🏐 TVF RESMÎ SON VOLEYBOL SONUÇLARI"
+                        ),
+                        (
+                            f"_Kaynak: TVF resmî sitesi; tarih: "
+                            f"{bugunun_tarihi}._"
+                            if voleybol_bugun_istegi
+                            else "_Kaynak: TVF resmî sitesi._"
+                        )
                     ]
 
                     for mac in tvf_sonuclari:
@@ -10116,6 +10318,25 @@ def sohbet():
                         "merkez_motor": False,
                         "memory_count": len(hafiza_yukle())
                     })
+
+            # Takim eslesmesi yoksa alakasiz web skorlarini gosterme.
+            if (
+                voleybol_mu and gecmis_mac
+                and not voleybol_tarih_istegi
+                and sorgu_kelimeleri and not tvf_sonuclari
+            ):
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🏐 Belirtilen takımlar arasında doğrulanmış bir "
+                        "maç sonucu bulamadım. "
+                        "Bu nedenle başka takımların skorlarını göstermiyorum."
+                    ),
+                    "eagle_direct": True,
+                    "web_search": False,
+                    "merkez_motor": False,
+                    "memory_count": len(hafiza_yukle())
+                })
 
             if gecmis_mac and not super_lig_mi:
                 arama_sorgusu = spor_arama_sorgusu(mesaj)
@@ -10404,10 +10625,16 @@ def sohbet():
     # 🌐 Karar motoru basit_sohbet dediği halde mesaj gerçek bir bilgi
     # sorusuysa mevcut web araştırma zincirine geçir.
     # Sosyal sohbet soruları burada web'e gönderilmez.
+    mesaj_yonlendirme = str(mesaj or "").casefold().strip().rstrip(" ?!.")
+    kimlik_sorusu = mesaj_yonlendirme in {
+        "kimsin", "sen kimsin", "senin adın ne", "senin adin ne",
+        "ne yapabiliyorsun", "ne yapabilirsin",
+    }
     if (
         karar.get("intent") in ("basit_sohbet", "sohbet")
         and karar.get("arac") == "eagle_sohbet"
         and not web_verisi
+        and not kimlik_sorusu
         and _soru_gibi_mi(str(mesaj or "").casefold().strip())
         and not any(
             ifade in str(mesaj or "").casefold()
@@ -10452,6 +10679,9 @@ def sohbet():
             "ne dusunuyorsun",
             "sence",
             "fikrin ne",
+            "kimsin", "sen kimsin",
+            "senin adın ne", "senin adin ne",
+            "ne yapabiliyorsun", "ne yapabilirsin",
         )
     )
 
