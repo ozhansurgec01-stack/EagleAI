@@ -10,6 +10,7 @@ from eagle_kod_guvenlik_motoru import EagleKodGuvenlikMotoru
 from eagle_kod_calistirici import secure_run
 from flask import Flask, request, jsonify
 import os
+import shutil
 
 
 def _env_dosyasini_yukle(dosya_yolu=".env"):
@@ -3502,6 +3503,23 @@ def web_arastirma_gerekli(mesaj):
     return any(k in mesaj_kucuk for k in kelimeler)
 
 
+def web_url_tekillestirme_anahtari(url):
+    """Aynı web sayfasının farklı URL yazımlarını tek anahtarda toplar."""
+    url = web_kaynak_url(str(url or "").strip())
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+        return parsed._replace(
+            scheme=parsed.scheme.lower(),
+            netloc=parsed.netloc.lower(),
+            path=parsed.path.rstrip("/") or "/",
+            fragment="",
+        ).geturl()
+    except Exception:
+        return url
+
+
 def web_kaynak_url(url):
     """DuckDuckGo yönlendirme URL'sinden gerçek kaynak adresini çıkarır."""
     try:
@@ -4251,101 +4269,225 @@ def genel_spor_fiksturu_getir(mesaj=""):
 
 
 def tvf_voleybol_getir(hedef_tarih=None, hafta=False):
-    """TVF resmi fikstüründen güncel/yaklaşan voleybol maçlarını çeker."""
-    try:
-        from datetime import datetime, timedelta
-        import re
-        import requests
-        from bs4 import BeautifulSoup
+    """TVF HTML fikstürünü dener; gerekirse resmî Excel fikstürünü kullanır."""
+    import io
+    import re
+    import zipfile
+    import xml.etree.ElementTree as ET
+    from datetime import datetime, timedelta
+    from pathlib import PurePosixPath
+    import requests
+    from bs4 import BeautifulSoup
 
-        url = "https://fikstur.tvf.org.tr/Takvim"
+    html_url = "https://fikstur.tvf.org.tr/Takvim"
+    excel_url = (
+        "https://tvf.org.tr/_dosyalar/Lig_Sezon_Arsivi/"
+        "Genel_Fiksturler/2026-2027_genel_fikstur.xlsx"
+    )
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/140 Mobile Safari/537.36"
+        ),
+        "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7",
+    }
 
+    def html_fiksturunu_oku():
         cevap = requests.get(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Linux; Android 15) "
-                    "AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) "
-                    "Chrome/140 Mobile Safari/537.36"
-                ),
-                "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
-            },
-            timeout=8
+            html_url, headers=headers, timeout=8
         )
-
-        print(f"🏐 TVF HTTP {cevap.status_code}", flush=True)
-
+        print(f"🏐 TVF HTML HTTP {cevap.status_code}", flush=True)
         if cevap.status_code != 200:
             return []
 
         soup = BeautifulSoup(cevap.text, "html.parser")
-        maclar = soup.select("span.tvf-upcoming-match-link")
-
         bulunan = []
 
-        for mac in maclar:
-            metin = mac.get_text(" ", strip=True)
-
-            parcalar = [x.strip() for x in metin.split("/")]
-
+        for mac in soup.select("span.tvf-upcoming-match-link"):
+            parcalar = [
+                x.strip()
+                for x in mac.get_text(" ", strip=True).split("/")
+            ]
             if len(parcalar) < 3:
                 continue
 
-            takimlar = parcalar[0]
-            tarih_saat = parcalar[1]
-            yer = " / ".join(parcalar[2:]).strip()
-
-            takim_parcalari = re.split(
-                r"\s+Vs\s+",
-                takimlar,
-                maxsplit=1,
-                flags=re.IGNORECASE
+            takimlar = re.split(
+                r"\s+Vs\s+", parcalar[0],
+                maxsplit=1, flags=re.IGNORECASE
             )
-
-            if len(takim_parcalari) != 2:
-                continue
-
-            tarih_match = re.search(
+            tarih_saat = re.search(
                 r"(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{1,2}:\d{2})",
-                tarih_saat
+                parcalar[1]
             )
-
-            if not tarih_match:
+            if len(takimlar) != 2 or not tarih_saat:
                 continue
-
-            ev_sahibi = takim_parcalari[0].strip()
-            deplasman = takim_parcalari[1].strip()
-            tarih = tarih_match.group(1)
-            saat = tarih_match.group(2)
 
             bulunan.append({
-                "ev_sahibi": ev_sahibi,
-                "deplasman": deplasman,
-                "tarih": tarih,
-                "saat": saat,
-                "yer": yer
+                "ev_sahibi": takimlar[0].strip(),
+                "deplasman": takimlar[1].strip(),
+                "tarih": tarih_saat.group(1),
+                "saat": tarih_saat.group(2),
+                "yer": " / ".join(parcalar[2:]).strip(),
+                "lig": "",
             })
 
         print(
-            f"🏐 TVF: HTML'den {len(bulunan)} voleybol maçı ayrıştırıldı",
+            f"🏐 TVF HTML ayrıştırılan maç: {len(bulunan)}",
             flush=True
         )
+        return bulunan
 
+    def excel_fiksturunu_oku():
+        cevap = requests.get(excel_url, headers=headers, timeout=20)
+        print(f"🏐 TVF Excel HTTP {cevap.status_code}", flush=True)
+        cevap.raise_for_status()
+
+        with zipfile.ZipFile(io.BytesIO(cevap.content)) as kitap:
+            ns = {
+                "m": "http://schemas.openxmlformats.org/"
+                     "spreadsheetml/2006/main",
+                "r": "http://schemas.openxmlformats.org/"
+                     "officeDocument/2006/relationships",
+                "rel": "http://schemas.openxmlformats.org/"
+                       "package/2006/relationships",
+            }
+
+            shared = []
+            if "xl/sharedStrings.xml" in kitap.namelist():
+                root = ET.fromstring(kitap.read("xl/sharedStrings.xml"))
+                for item in root.findall("m:si", ns):
+                    shared.append("".join(
+                        node.text or ""
+                        for node in item.findall(".//m:t", ns)
+                    ))
+
+            workbook = ET.fromstring(kitap.read("xl/workbook.xml"))
+            sheet = workbook.find("m:sheets/m:sheet", ns)
+            if sheet is None:
+                raise ValueError("Excel çalışma sayfası bulunamadı")
+
+            rel_id = sheet.attrib.get(
+                "{http://schemas.openxmlformats.org/"
+                "officeDocument/2006/relationships}id"
+            )
+            rel_root = ET.fromstring(
+                kitap.read("xl/_rels/workbook.xml.rels")
+            )
+            target = None
+            for rel in rel_root.findall("rel:Relationship", ns):
+                if rel.attrib.get("Id") == rel_id:
+                    target = rel.attrib.get("Target")
+                    break
+            if not target:
+                raise ValueError("Excel sayfa yolu bulunamadı")
+
+            if target.startswith("/"):
+                sheet_path = target.lstrip("/")
+            else:
+                sheet_path = str(
+                    PurePosixPath("xl") / PurePosixPath(target)
+                )
+            sheet_path = str(PurePosixPath(sheet_path))
+            root = ET.fromstring(kitap.read(sheet_path))
+
+            bulunan = []
+            excel_epoch = datetime(1899, 12, 30)
+
+            for row in root.findall(".//m:sheetData/m:row", ns):
+                hucreler = {}
+                for cell in row.findall("m:c", ns):
+                    ref = cell.attrib.get("r", "")
+                    col_match = re.match(r"([A-Z]+)", ref)
+                    if not col_match:
+                        continue
+                    col = col_match.group(1)
+                    value_node = cell.find("m:v", ns)
+                    value = value_node.text if value_node is not None else ""
+
+                    if cell.attrib.get("t") == "s" and value:
+                        value = shared[int(value)]
+                    elif cell.attrib.get("t") == "inlineStr":
+                        value = "".join(
+                            node.text or ""
+                            for node in cell.findall(".//m:t", ns)
+                        )
+                    hucreler[col] = value
+
+                try:
+                    tarih_sayi = float(hucreler.get("A", ""))
+                    tarih = (excel_epoch + timedelta(
+                        days=tarih_sayi
+                    )).date()
+                    saat_ham = hucreler.get("E")
+                    if saat_ham is None or not str(saat_ham).strip():
+                        continue
+                    saat_sayi = float(saat_ham)
+                    if not 0 <= saat_sayi < 1:
+                        continue
+                    toplam_saniye = round(saat_sayi * 86400) % 86400
+                    saat = (
+                        f"{toplam_saniye // 3600:02d}:"
+                        f"{(toplam_saniye % 3600) // 60:02d}"
+                    )
+                except (ValueError, TypeError, OverflowError):
+                    continue
+
+                ev = str(hucreler.get("F", "")).strip()
+                dep = str(hucreler.get("G", "")).strip()
+                if not ev or not dep:
+                    continue
+
+                tarih_metni = tarih.strftime("%d.%m.%Y")
+                yer = " / ".join(
+                    str(hucreler.get(c, "")).strip()
+                    for c in ("C", "D")
+                    if str(hucreler.get(c, "")).strip()
+                )
+                bulunan.append({
+                    "ev_sahibi": ev,
+                    "deplasman": dep,
+                    "tarih": tarih_metni,
+                    "saat": saat,
+                    "yer": yer or "TVF fikstüründe belirtilmemiş",
+                    "lig": str(hucreler.get("J", "")).strip(),
+                })
+
+        print(
+            f"🏐 TVF Excel ayrıştırılan maç: {len(bulunan)}",
+            flush=True
+        )
+        return bulunan
+
+    try:
+        try:
+            bulunan = html_fiksturunu_oku()
+        except Exception as exc:
+            print(
+                f"⚠️ TVF HTML kaynağı başarısız: {exc}",
+                flush=True
+            )
+            bulunan = []
+
+        kaynak_url = html_url
         if not bulunan:
-            return []
+            print("🏐 TVF resmî Excel yedeği deneniyor.", flush=True)
+            try:
+                bulunan = excel_fiksturunu_oku()
+                kaynak_url = excel_url
+            except Exception as exc:
+                print(
+                    f"⚠️ TVF Excel yedeği başarısız: {exc}",
+                    flush=True
+                )
+                return []
 
         benzersiz = []
         gorulen = set()
-
         for mac in bulunan:
             anahtar = (
-                mac["ev_sahibi"],
-                mac["deplasman"],
-                mac["tarih"],
-                mac["saat"]
+                mac["ev_sahibi"], mac["deplasman"],
+                mac["tarih"], mac["saat"]
             )
-
             if anahtar not in gorulen:
                 gorulen.add(anahtar)
                 benzersiz.append(mac)
@@ -4359,71 +4501,53 @@ def tvf_voleybol_getir(hedef_tarih=None, hafta=False):
             hedef = datetime.strptime(
                 hedef_tarih, "%d.%m.%Y"
             ).date()
-
             secilen = [
                 m for m in benzersiz
                 if tarih_cevir(m["tarih"]) == hedef
             ]
-
         elif hafta:
             haftanin_basi = bugun - timedelta(days=bugun.weekday())
             haftanin_sonu = haftanin_basi + timedelta(days=6)
-
             secilen = [
                 m for m in benzersiz
                 if haftanin_basi <= tarih_cevir(m["tarih"]) <= haftanin_sonu
             ]
-
         else:
             secilen = [
                 m for m in benzersiz
                 if tarih_cevir(m["tarih"]) >= bugun
             ]
 
-            secilen.sort(
-                key=lambda m: (
-                    tarih_cevir(m["tarih"]),
-                    m["saat"]
-                )
-            )
+        secilen.sort(key=lambda m: (
+            tarih_cevir(m["tarih"]), m["saat"],
+            m["ev_sahibi"], m["deplasman"]
+        ))
 
         sonuclar = []
-
         for m in secilen[:8]:
+            lig = f" — Lig: {m['lig']}" if m.get("lig") else ""
             sonuclar.append({
-                "title": (
-                    f"{m['ev_sahibi']} - {m['deplasman']}"
-                ),
-                "url": url,
+                "title": f"{m['ev_sahibi']} - {m['deplasman']}",
+                "url": kaynak_url,
                 "snippet": (
                     f"{m['tarih']} - {m['saat']} — "
-                    f"Yer: {m['yer']} — TVF resmi fikstürü."
-                )
+                    f"Yer: {m['yer']}{lig} — TVF resmî fikstürü."
+                ),
             })
 
         if hedef_tarih:
-            print(
-                f"🏐 TVF: {hedef_tarih} için "
-                f"{len(sonuclar)} maç bulundu",
-                flush=True
-            )
+            mesaj = f"{hedef_tarih} için {len(sonuclar)} maç"
         elif hafta:
-            print(
-                f"🏐 TVF: Bu hafta {len(sonuclar)} maç bulundu",
-                flush=True
-            )
+            mesaj = f"Bu hafta {len(sonuclar)} maç"
         else:
-            print(
-                f"🏐 TVF: Bugün/yaklaşan {len(sonuclar)} maç bulundu",
-                flush=True
-            )
+            mesaj = f"Bugün/yaklaşan {len(sonuclar)} maç"
 
+        print(f"🏐 TVF: {mesaj} bulundu.", flush=True)
         return sonuclar
 
-    except Exception as e:
-        print(f"⚠️ TVF arama hatası: {e}", flush=True)
+    except Exception as exc:
+        print(f"⚠️ TVF fikstür hatası: {exc}", flush=True)
         return []
-
 def tvf_voleybol_sonuclari_getir(limit=8):
     """TVF resmî sonuç kartlarından maç ve set skorlarını çıkarır."""
     import re
@@ -4537,7 +4661,7 @@ def tvf_voleybol_sonuclari_getir(limit=8):
 
             def takim_anahtari(ad):
                 import unicodedata
-                ad = unicodedata.normalize("NFKD", ad.casefold())
+                ad = unicodedata.normalize("NFKD", ad.casefold().replace("ı", "i"))
                 ad = "".join(c for c in ad if not unicodedata.combining(c))
                 return re.sub(r"\s+", " ", ad).strip()
 
@@ -4550,6 +4674,7 @@ def tvf_voleybol_sonuclari_getir(limit=8):
             ))
 
             tarihli_maclar = {}
+            fikstur_sonuclari = []
             for lig_yolu in lig_urlleri:
                 try:
                     cevap = requests.get(
@@ -4580,6 +4705,7 @@ def tvf_voleybol_sonuclari_getir(limit=8):
                         ):
                             continue
 
+                        # Fikstür yalnızca tarih/saat eşleştirmesinde kullanılır.
                         anahtar = (
                             takim_anahtari(ev), int(ev_skor),
                             takim_anahtari(deplasman), int(dep_skor)
@@ -4602,12 +4728,116 @@ def tvf_voleybol_sonuclari_getir(limit=8):
         except Exception as hata:
             print(f"TVF tarih eşleştirme hatası: {hata}", flush=True)
 
-        print(f"TVF: {len(sonuclar)} sonuç kartı okundu.", flush=True)
+        # Resmî sonuç kayıtlarındaki tekrarları önle.
+        birlesik = []
+        gorulen = set()
+
+        for mac in sonuclar:
+            anahtar_mac = (
+                str(mac["ev"]).casefold(),
+                int(mac["ev_skor"]),
+                str(mac["deplasman"]).casefold(),
+                int(mac["deplasman_skor"]),
+            )
+            if anahtar_mac in gorulen:
+                continue
+            gorulen.add(anahtar_mac)
+            birlesik.append(mac)
+
+        sonuclar = birlesik[:max(1, min(int(limit), 20))]
+        print(f"TVF: {len(sonuclar)} sonuç kaydı hazırlandı.", flush=True)
         return sonuclar
 
     except Exception as e:
         print(f"TVF sonuç okuma hatası: {e}", flush=True)
         return []
+
+
+def _gerekli_web_eslesme_sayisi(kelime_sayisi):
+    """Arama sonucunda eşleşmesi gereken en az anlamlı kelime sayısı."""
+    if kelime_sayisi <= 1:
+        return 1
+    return (kelime_sayisi + 1) // 2
+
+
+def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
+    """Sorgu terimlerini ve başlığı birlikte kullanarak arama sonucunu süzer."""
+    durak = {
+        "nerede", "nerelerde", "nereye", "nereden", "bulunur",
+        "nasıl", "nasil", "neden", "niçin", "ne", "nedir",
+        "kim", "hangi", "hangileri", "ülkelerde", "ülkeler",
+        "hakkında", "hakkinda", "bilgi", "ver", "bana",
+        "kaç", "kac", "zaman", "ne zaman", "ile", "için",
+        "icin", "olan", "olarak", "nedeniyle", "mıdır", "midir",
+        "nerededir", "kıtadadır", "yaptı", "yapti",
+    }
+    kelimeler = {
+        k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
+        if len(k) >= 4 and k not in durak
+    }
+    if not kelimeler:
+        kelimeler = {
+            k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
+            if len(k) >= 4
+        }
+
+    baslik = str(sonuc.get("title", "") or "").casefold()
+    metin = (baslik + " " + str(sonuc.get("snippet", "") or "")).casefold()
+
+    def eslesiyor(kelime, hedef):
+        if kelime in hedef:
+            return True
+        for parca in re.findall(r"[a-z0-9çğıöşü]+", hedef):
+            ortak = 0
+            for x, y in zip(kelime, parca):
+                if x != y:
+                    break
+                ortak += 1
+            if ortak >= 5:
+                return True
+        return False
+
+    baslik_eslesmesi = sum(1 for k in kelimeler if eslesiyor(k, baslik))
+    toplam_eslesme = sum(1 for k in kelimeler if eslesiyor(k, metin))
+    gerekli = _gerekli_web_eslesme_sayisi(len(kelimeler))
+
+    # Konum sorularında tek kelimelik yer adını doğrudan başlıkta doğrula.
+    sorgu_metni = str(sorgu).casefold()
+    konum_sorusu = bool(
+        re.search(r"\b(?:nerede|nerededir|nerelerde|nereye|nereden)\b", sorgu_metni)
+    )
+    if konum_sorusu and len(kelimeler) == 1:
+        baslik_kelimeleri = re.findall(r"[a-z0-9çğıöşü]+", baslik)
+        if baslik_kelimeleri != [next(iter(kelimeler))]:
+            return False
+
+    # Yağmur ormanı kavramı başlıkta veya açıklamada bulunabilir.
+    if re.search(r"yağmur\s+orman", sorgu_metni):
+        if not re.search(r"orman\w*|rainforests?", metin):
+            return False
+        # Hayvan gibi ikincil konular, yalnızca açıklamada orman geçiyor diye
+        # kabul edilmemeli; başlık da yağmur ormanı konusuyla ilişkili olmalı.
+        if not any(eslesiyor(k, baslik) for k in kelimeler):
+            return False
+
+    # Birden fazla konu terimi varsa, yalnızca snippet eşleşmesi yeterli değil:
+    # başlık da sorunun konusuyla ilişkili olmalı.
+    if len(kelimeler) >= 2:
+        # Birden fazla konu teriminde, yalnızca ikincil
+        # bir kelimenin başlıkta geçmesi yeterli değildir.
+        ilk_konu = next(
+            (k for k in re.findall(
+                r"[a-z0-9çğıöşü]+",
+                str(sorgu).casefold()
+            ) if len(k) >= 4 and k not in durak),
+            None,
+        )
+        yagmur_ormani_sorgusu = bool(
+            re.search(r"yağmur\s+orman", sorgu_metni)
+        )
+        if not yagmur_ormani_sorgusu and baslik_eslesmesi == 0:
+            return False
+    return toplam_eslesme >= gerekli
 
 
 def web_arastir(sorgu, limit=6):
@@ -4739,7 +4969,13 @@ def web_arastir(sorgu, limit=6):
         # ========================================================
         # EKONOMİ ARAMA BAĞLAMI
         # ========================================================
-        arama_sorgusu = sorgu
+        arama_sorgusu = re.sub(
+            r"\b(nerelerde\s+bulunur|nerede\s+bulunur|nerededir|nerede|nedir|kimdir|kaçtır|kactir|nasıl|nasil|ne\s+zaman|hangi\s+ülkelerdedir|hangi\s+ülkelerde|hakkında|hakkinda|bilgi ver(\s+bana)?|bana bilgi ver)\b",
+            " ",
+            str(sorgu),
+            flags=re.IGNORECASE,
+        )
+        arama_sorgusu = re.sub(r"\s+", " ", arama_sorgusu).strip() or sorgu
         ekonomi_arama = bool(
             re.search(
                 r"\b("
@@ -5113,6 +5349,7 @@ def web_arastir(sorgu, limit=6):
             }
 
             ilgili_sonuclar = []
+            gorulen_url_anahtarlari = set()
             for sonuc in tum_sonuclar:
                 metin = (
                     f"{sonuc.get('title', '')} "
@@ -5137,61 +5374,44 @@ def web_arastir(sorgu, limit=6):
                     ):
                         continue
 
-                # Tek bir sorgu kelimesinin geçmesi sonucu ilgili
-                # kabul etmek için yeterli değildir.
-                # Önce anlam taşıyan sorgu kelimelerini ayır.
-                soru_kelimeleri = {
-                    "nerede", "nereye", "nereden",
-                    "nasıl", "nasil", "neden", "niçin",
-                    "ne", "nedir", "kim", "hangi",
-                    "kaç", "kac", "ne zaman", "zaman"
-                }
-
-                anlam_kelimeleri = {
-                    kelime for kelime in sorgu_kelime
-                    if kelime not in soru_kelimeleri
-                }
-
-                if not anlam_kelimeleri:
-                    anlam_kelimeleri = sorgu_kelime
-
-                def kelime_eslesiyor_mu(kelime, metin):
-                    if kelime in metin:
-                        return True
-
-                    for metin_kelime in re.findall(
-                        r"[a-z0-9çğıöşü]+",
-                        metin
-                    ):
-                        ortak = 0
-                        for a, b in zip(kelime, metin_kelime):
-                            if a != b:
-                                break
-                            ortak += 1
-
-                        if ortak >= 5:
-                            return True
-
-                    return False
-
-                eslesen = sum(
-                    1
-                    for kelime in anlam_kelimeleri
-                    if kelime_eslesiyor_mu(kelime, metin)
-                )
-
-                # Tek ortak kelime nedeniyle alakasız sonuçları kabul etme.
-                # İki veya daha fazla anlam kelimesi varsa hepsinin
-                # sonuçta bulunmasını bekle; tek anlam kelimesi varsa
-                # mevcut davranışı koru.
-                gerekli_eslesme = (
-                    len(anlam_kelimeleri)
-                    if len(anlam_kelimeleri) >= 2
-                    else 1
-                )
-
-                if eslesen >= gerekli_eslesme:
+                if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
+                    kaynak_url = web_url_tekillestirme_anahtari(
+                        sonuc.get("url", "")
+                    )
+                    if kaynak_url and kaynak_url in gorulen_url_anahtarlari:
+                        continue
+                    if kaynak_url:
+                        gorulen_url_anahtarlari.add(kaynak_url)
                     ilgili_sonuclar.append(sonuc)
+
+            # Genel aramada başlık eşleşmesini öne çıkar.
+            anlamli = {
+                k for k in re.findall(r"[a-z0-9çğıöşü]+", soru)
+                if len(k) >= 4 and k not in {
+                    "nerede", "nerededir", "nedir", "nasıl", "nasil",
+                    "hangi", "hakkında", "hakkinda", "bilgi", "son",
+                    "gelişmeler", "gelismeler", "bulunur", "ülkelerde",
+                    "ülkeler", "olan", "olarak", "için", "icin",
+                }
+            }
+
+            def baslik_puani(sonuc):
+                baslik = str(sonuc.get("title", "")).casefold()
+                aciklama = str(sonuc.get("snippet", "")).casefold()
+                puan = 0
+                for kelime in anlamli:
+                    if re.search(
+                        r"(?<![a-z0-9çğıöşü])" + re.escape(kelime)
+                        + r"(?![a-z0-9çğıöşü])", baslik
+                    ):
+                        puan += 10
+                    elif kelime in baslik:
+                        puan += 5
+                    elif kelime in aciklama:
+                        puan += 1
+                return puan
+
+            ilgili_sonuclar.sort(key=baslik_puani, reverse=True)
 
             # Hiçbir sonuç sorguyla eşleşmiyorsa alakasız sonuçları
             # cevap motoruna aktarma.
@@ -5392,11 +5612,17 @@ def web_arastir(sorgu, limit=6):
                     )
 
                     if ikinci:
+                        ikinci_ilgili = [
+                            sonuc for sonuc in ikinci
+                            if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc)
+                        ]
                         print(
-                            f"🧠 Kısa sorgu sonucu: {len(ikinci)}",
+                            f"🧠 Kısa sorgu: {len(ikinci)} sonuç, "
+                            f"özgün soruyla ilgili: {len(ikinci_ilgili)}",
                             flush=True
                         )
-                        return ikinci
+                        if ikinci_ilgili:
+                            return ikinci_ilgili
 
             print(
                 f"🧠 Web toplam: {len(ilk_sonuclar)} sonuç (çoklu kaynak)",
@@ -5469,7 +5695,15 @@ def web_sayfa_oku(url, limit=7000):
                     break
 
         kaynak = icerik if icerik is not None else soup
-        metin = " ".join(kaynak.stripped_strings)
+        paragraflar = [
+            p.get_text(" ", strip=True)
+            for p in kaynak.find_all("p")
+            if len(p.get_text(" ", strip=True)) >= 45
+        ]
+        if sum(len(x) for x in paragraflar) >= 300:
+            metin = " ".join(paragraflar)
+        else:
+            metin = " ".join(kaynak.stripped_strings)
         metin = re.sub(r"\s+", " ", metin).strip()
 
         if len(metin) > limit:
@@ -6029,6 +6263,8 @@ def fotmob_iki_takim_skoru_getir(mesaj, takimlar):
 
 
 def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
+    import re
+    import re
     # İki takım arasındaki doğal sonuç sorgusu → doğrudan SofaScore.
     # Genel web aramasının ülke/haber sayfalarına kaymasını engeller.
     sonuc_istegi = any(k in mesaj.casefold() for k in (
@@ -6038,6 +6274,116 @@ def spor_skoru_direkt_cevapla(mesaj, metin="", web_verisi=None):
     ))
 
     if sonuc_istegi:
+        ilk_yari_istegi = any(k in mesaj.casefold() for k in (
+            "ilk yarı", "ilk yari", "devre sonucu", "devre skoru"
+        ))
+        import datetime
+        import unicodedata
+        import requests
+
+        def _fm_norm(v):
+            v = unicodedata.normalize("NFKD", str(v or "").casefold())
+            return "".join(
+                c for c in v if not unicodedata.combining(c)
+            ).replace("ı", "i")
+
+        temiz = re.sub(
+            r"\b(?:ilk|yarı|yari|devre|sonucu|sonuç|sonuc|skoru|skor|"
+            r"maçı|maci|maç|mac|kaç|kac|nedir|ne)\b",
+            " ", _fm_norm(mesaj)
+        )
+        sorgu = " ".join(temiz.split())
+
+        try:
+            rr = requests.get(
+                "https://www.fotmob.com/api/data/search/suggest",
+                params={"term": sorgu},
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=10
+            )
+            mac_adaylari = []
+            if rr.ok:
+                for grup in rr.json():
+                    for x in grup.get("suggestions", []):
+                        if x.get("type") != "match" or not x.get("id"):
+                            continue
+                        ev = x.get("homeTeamName", "")
+                        dep = x.get("awayTeamName", "")
+                        kelimeler = set(sorgu.split())
+                        if _fm_norm(ev) in _fm_norm(sorgu) and _fm_norm(dep) in _fm_norm(sorgu):
+                            try:
+                                tarih = datetime.datetime.fromisoformat(
+                                    x.get("matchDate", "").replace("Z", "+00:00")
+                                )
+                            except (ValueError, TypeError):
+                                continue
+                            mac_adaylari.append((tarih, x))
+
+            if mac_adaylari:
+                simdi = datetime.datetime.now(datetime.timezone.utc)
+                mac_adaylari.sort(
+                    key=lambda z: abs((z[0] - simdi).total_seconds())
+                )
+
+                for kickoff, mac_adayi in mac_adaylari:
+                    detay = requests.get(
+                        "https://www.fotmob.com/api/data/matchDetails",
+                        params={"matchId": mac_adayi["id"]},
+                        headers={"User-Agent": "Mozilla/5.0"},
+                        timeout=10
+                    )
+                    if not detay.ok:
+                        continue
+
+                    veri = detay.json()
+                    baslik = veri.get("header", {})
+                    durum = baslik.get("status", {})
+                    if durum.get("cancelled"):
+                        continue
+
+                    takimlar_fm = baslik.get("teams", [])
+                    if len(takimlar_fm) < 2:
+                        continue
+
+                    ev = takimlar_fm[0].get("name", mac_adayi.get("homeTeamName", ""))
+                    dep = takimlar_fm[1].get("name", mac_adayi.get("awayTeamName", ""))
+
+                    if kickoff > simdi and not durum.get("started"):
+                        return f"{ev} - {dep} maçı henüz başlamadı; sonuç henüz yok."
+
+                    skor_ev = takimlar_fm[0].get("score", 0)
+                    skor_dep = takimlar_fm[1].get("score", 0)
+
+                    if ilk_yari_istegi:
+                        if not durum.get("finished") and not durum.get("started"):
+                            return f"{ev} - {dep} maçı henüz başlamadı; ilk yarı sonucu yok."
+                        olaylar = (
+                            veri.get("content", {}).get("matchFacts", {})
+                            .get("events", {}).get("events", [])
+                        )
+                        yari_ev = yari_dep = 0
+                        for olay in olaylar:
+                            if olay.get("type") != "Goal":
+                                continue
+                            try:
+                                dakika = int(str(
+                                    olay.get("time", olay.get("timeStr", ""))
+                                ).split("+")[0])
+                            except (ValueError, TypeError):
+                                continue
+                            if dakika <= 45:
+                                yari_ev = olay.get("homeScore", yari_ev)
+                                yari_dep = olay.get("awayScore", yari_dep)
+                        return f"İlk yarı sonucu: {ev} {yari_ev} - {yari_dep} {dep}"
+
+                    if durum.get("finished"):
+                        return f"{ev} {skor_ev} - {skor_dep} {dep}"
+                    if durum.get("started"):
+                        return f"Maç devam ediyor: {ev} {skor_ev} - {skor_dep} {dep}"
+
+        except Exception as e:
+            print(f"FotMob maç sonucu sorgusu: {e}", flush=True)
+
         takim_adlari = [
             "Türkiye", "Belçika", "İtalya", "Fransa",
             "Almanya", "İspanya", "İngiltere", "Portekiz",
@@ -8548,19 +8894,6 @@ def sohbet():
         try:
             import tempfile
 
-            calisma_klasoru = Path(
-                tempfile.mkdtemp(
-                    prefix=".eagle_exec_",
-                    dir=str(Path(__file__).resolve().parent)
-                )
-            )
-
-            calisma_dosyasi = calisma_klasoru / "aktif_kod.py"
-            calisma_dosyasi.write_text(
-                aktif_kod,
-                encoding="utf-8"
-            )
-
             guvenlik_sonucu = EagleKodGuvenlikMotoru().kontrol_et(aktif_kod)
             if not guvenlik_sonucu.get("guvenli"):
                 return jsonify({
@@ -8579,6 +8912,21 @@ def sohbet():
                     "security_findings": guvenlik_sonucu.get("bulgular", []),
                     "memory_count": len(hafiza_yukle())
                 })
+
+            calisma_klasoru = Path(
+                tempfile.mkdtemp(
+                    prefix=".eagle_exec_",
+                    dir=str(Path(__file__).resolve().parent)
+                )
+            )
+
+            calisma_dosyasi = calisma_klasoru / "aktif_kod.py"
+            calisma_dosyasi.write_text(
+                aktif_kod,
+                encoding="utf-8"
+            )
+
+
 
             try:
                 calisma_ok, calisma_output = secure_run(
@@ -8781,17 +9129,6 @@ def sohbet():
                 )
             ]
 
-            # Geçici Python dosyası oluştur.
-            gecici_klasor = Path(
-                tempfile.mkdtemp(prefix=".eagle_code_", dir=str(Path(__file__).resolve().parent))
-            )
-
-            gecici_dosya = gecici_klasor / "pasted_code.py"
-            gecici_dosya.write_text(
-                kaynak_kod,
-                encoding="utf-8"
-            )
-
             guvenlik_sonucu = EagleKodGuvenlikMotoru().kontrol_et(kaynak_kod)
             if not guvenlik_sonucu.get("guvenli"):
                 return jsonify({
@@ -8810,6 +9147,19 @@ def sohbet():
                     "security_findings": guvenlik_sonucu.get("bulgular", []),
                     "memory_count": len(hafiza_yukle())
                 })
+
+            # Geçici Python dosyası oluştur.
+            gecici_klasor = Path(
+                tempfile.mkdtemp(prefix=".eagle_code_", dir=str(Path(__file__).resolve().parent))
+            )
+
+            gecici_dosya = gecici_klasor / "pasted_code.py"
+            gecici_dosya.write_text(
+                kaynak_kod,
+                encoding="utf-8"
+            )
+
+
 
             try:
                 # Yapıştırılmış Python kodunun güvenli çalışma çıktısını al.
@@ -8922,7 +9272,7 @@ def sohbet():
                         gecici_dosya.unlink()
 
                     if gecici_klasor.exists():
-                        gecici_klasor.rmdir()
+                        shutil.rmtree(gecici_klasor)
                 except Exception as temizlik_hatasi:
                     print(
                         f"⚠️ Geçici dosya temizleme uyarısı: {temizlik_hatasi}",
@@ -9678,20 +10028,99 @@ def sohbet():
             # 🏟️ Geçmiş/son maç sonucu sorularında çoklu web araması.
             # 🇹🇷 Süper Lig'de resmi TFF verisi varsa onu ezme.
             # TVF resmî son sonuçları; doğrulanmamış tarih iddiasında bulunma.
-            voleybol_tarih_istegi = any(k in mesaj_spor for k in [
-                "bugün", "bugun",
-                "dün", "dünkü", "dunun", "dunku",
-                "geçen hafta", "gecen hafta",
-                "geçen ay", "gecen ay"
+            voleybol_bugun_istegi = any(k in mesaj_spor for k in [
+                "bugün", "bugun", "bugünkü", "bugunku"
             ])
+            voleybol_tarih_istegi = voleybol_bugun_istegi or any(
+                k in mesaj_spor for k in [
+                    "dün", "dünkü", "dunun", "dunku",
+                    "geçen hafta", "gecen hafta",
+                    "geçen ay", "gecen ay"
+                ]
+            )
 
-            if voleybol_mu and gecmis_mac and not voleybol_tarih_istegi:
-                tvf_sonuclari = tvf_voleybol_sonuclari_getir()
+            if (
+                voleybol_mu and gecmis_mac
+                and (not voleybol_tarih_istegi or voleybol_bugun_istegi)
+            ):
+                tvf_sonuclari = tvf_voleybol_sonuclari_getir(limit=20)
+
+                if voleybol_bugun_istegi:
+                    from datetime import datetime, timezone, timedelta
+                    turkiye_saati = timezone(timedelta(hours=3))
+                    bugunun_tarihi = datetime.now(
+                        turkiye_saati
+                    ).strftime("%d.%m.%Y")
+                    tvf_sonuclari = [
+                        mac for mac in tvf_sonuclari
+                        if mac.get("tarih") == bugunun_tarihi
+                    ]
+
+                # Takım adı içeren sorgularda yalnızca ilgili maçları göster.
+                import unicodedata
+
+                def voleybol_anahtar(metin):
+                    metin = unicodedata.normalize("NFKD", metin.casefold().replace("ı", "i"))
+                    metin = "".join(
+                        c for c in metin
+                        if not unicodedata.combining(c)
+                    )
+                    return re.sub(r"[^a-z0-9]+", " ", metin).strip()
+
+                durak_kelimeleri = {
+                    "voleybol", "mac", "maci", "macin", "maclar",
+                    "son", "sonucu", "sonuclari", "skor", "skorlari",
+                    "kac", "bitti", "takim", "takimi", "takimin",
+                    "icin", "ile", "ve", "nedir", "ne", "getir",
+                    "bul", "hangi", "sonuc", "kadin", "kadinlar",
+                    "erkek", "erkekler", "lig", "sultanlar", "efeler",
+                    "bugun", "bugunku", "dun", "dunku"
+                }
+
+                sorgu_kelimeleri = [
+                    kelime for kelime in voleybol_anahtar(mesaj).split()
+                    if len(kelime) >= 3 and kelime not in durak_kelimeleri
+                ]
+
+                if sorgu_kelimeleri:
+                    tvf_sonuclari = [
+                        mac for mac in tvf_sonuclari
+                        if all(
+                            kelime in voleybol_anahtar(
+                                mac["ev"] + " " + mac["deplasman"]
+                            ).split()
+                            for kelime in sorgu_kelimeleri
+                        )
+                    ]
+
+                if voleybol_bugun_istegi and not tvf_sonuclari:
+                    return jsonify({
+                        "ok": True,
+                        "answer": (
+                            "🏐 Bugün için istenen takımlara uygun, "
+                            "TVF verisiyle doğrulanmış tamamlanmış bir "
+                            "maç sonucu bulamadım. Başka günlerin "
+                            "skorlarını bugünün sonucu olarak göstermiyorum."
+                        ),
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
 
                 if tvf_sonuclari:
                     satirlar = [
-                        "🏐 TVF RESMÎ SON VOLEYBOL SONUÇLARI",
-                        "_Kaynak: TVF resmî sitesi; tarih filtresi uygulanmamıştır._"
+                        (
+                            "🏐 BUGÜNÜN TVF VOLEYBOL SONUÇLARI"
+                            if voleybol_bugun_istegi
+                            else "🏐 TVF RESMÎ SON VOLEYBOL SONUÇLARI"
+                        ),
+                        (
+                            f"_Kaynak: TVF resmî sitesi; tarih: "
+                            f"{bugunun_tarihi}._"
+                            if voleybol_bugun_istegi
+                            else "_Kaynak: TVF resmî sitesi._"
+                        )
                     ]
 
                     for mac in tvf_sonuclari:
@@ -9716,6 +10145,25 @@ def sohbet():
                         "merkez_motor": False,
                         "memory_count": len(hafiza_yukle())
                     })
+
+            # Takim eslesmesi yoksa alakasiz web skorlarini gosterme.
+            if (
+                voleybol_mu and gecmis_mac
+                and not voleybol_tarih_istegi
+                and sorgu_kelimeleri and not tvf_sonuclari
+            ):
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🏐 Belirtilen takımlar arasında doğrulanmış bir "
+                        "maç sonucu bulamadım. "
+                        "Bu nedenle başka takımların skorlarını göstermiyorum."
+                    ),
+                    "eagle_direct": True,
+                    "web_search": False,
+                    "merkez_motor": False,
+                    "memory_count": len(hafiza_yukle())
+                })
 
             if gecmis_mac and not super_lig_mi:
                 arama_sorgusu = spor_arama_sorgusu(mesaj)
@@ -10004,10 +10452,16 @@ def sohbet():
     # 🌐 Karar motoru basit_sohbet dediği halde mesaj gerçek bir bilgi
     # sorusuysa mevcut web araştırma zincirine geçir.
     # Sosyal sohbet soruları burada web'e gönderilmez.
+    mesaj_yonlendirme = str(mesaj or "").casefold().strip().rstrip(" ?!.")
+    kimlik_sorusu = mesaj_yonlendirme in {
+        "kimsin", "sen kimsin", "senin adın ne", "senin adin ne",
+        "ne yapabiliyorsun", "ne yapabilirsin",
+    }
     if (
         karar.get("intent") in ("basit_sohbet", "sohbet")
         and karar.get("arac") == "eagle_sohbet"
         and not web_verisi
+        and not kimlik_sorusu
         and _soru_gibi_mi(str(mesaj or "").casefold().strip())
         and not any(
             ifade in str(mesaj or "").casefold()
@@ -10052,6 +10506,9 @@ def sohbet():
             "ne dusunuyorsun",
             "sence",
             "fikrin ne",
+            "kimsin", "sen kimsin",
+            "senin adın ne", "senin adin ne",
+            "ne yapabiliyorsun", "ne yapabilirsin",
         )
     )
 

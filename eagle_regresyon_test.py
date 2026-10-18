@@ -93,6 +93,156 @@ def program_uretme_regresyon_test():
     assert "json" in ast_sonuc.get("kod", "").lower()
 
 
+def web_url_tekillestirme_test():
+    from eagle_api import web_url_tekillestirme_anahtari
+
+    a = web_url_tekillestirme_anahtari(
+        "HTTPS://Example.com/bilgi/#bolum"
+    )
+    b = web_url_tekillestirme_anahtari(
+        "https://example.com/bilgi"
+    )
+    assert a == b, f"Aynı sayfa tekilleşmedi: {a!r} != {b!r}"
+
+
+def atlas_okyanusu_sayfa_onceligi_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    kaynaklar = [{
+        "title": "Atlas Okyanusu",
+        "snippet": (
+            "Atlas Okyanusu hakkında bilgi almak için "
+            "sitemizdeki menüleri ve diğer bağlantıları inceleyebilirsiniz."
+        ),
+        "url": "https://test.example/atlas",
+    }]
+    sayfa = (
+        "Ayrıca bakınız değiştir Okyanusların sınırları. "
+        "Atlas Okyanusu, Amerika kıtalarını Avrupa ve Afrika'dan "
+        "ayıran büyük bir okyanustur. Dünya üzerindeki önemli "
+        "deniz ulaşım yollarından bazıları bu okyanustan geçer. "
+        "Genel bilgiler Tür Okyanus Koordinatlar 0 derece "
+        "Ortalama derinlik 3646 m En derin noktası Porto Riko "
+        "Çukuru Yüzölçümü 106 milyon km2 Su hacmi 310 milyon km3."
+    )
+
+    cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+        "Atlas Okyanusu hakkında bilgi",
+        kaynaklar,
+        sayfa_okuyucu=lambda url: sayfa,
+    )
+
+    assert cevap, "EagleAI genel bilgi cevabı üretemedi"
+    assert "Afrika" in cevap and "Amerika" in cevap, (
+        f"Sayfa içeriği yerine alakasız özet seçilmiş: {cevap}"
+    )
+    assert guven >= 0.75, f"Beklenmeyen güven puanı: {guven}"
+
+
+def konum_sorusunda_tamamlayici_cumle_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    testler = [
+        (
+            "Dünyanın en derin çukuru nerededir?",
+            "Mariana Çukuru, Pasifik Okyanusu'nun batısında ve "
+            "Guam Adası'nın güneybatısında yer alır. "
+            "Dünyanın en derin noktası, Mariana Çukuru içindeki "
+            "Challenger Derinliği olarak kabul edilir.",
+            ["Pasifik", "Guam"],
+        ),
+        (
+            "Everest Dağı nerede bulunur?",
+            "Everest Dağı, Himalayalar'da Nepal ile Tibet sınırında "
+            "yer alır. Dağın kuzey yamacı Çin'in Tibet bölgesindedir.",
+            ["Himalayalar", "Nepal", "Tibet"],
+        ),
+        (
+            "Büyük Set Resifi nerede bulunur?",
+            "Büyük Set Resifi, Avustralya'nın kuzeydoğu kıyısı "
+            "açıklarında Mercan Denizi'nde bulunur. "
+            "Queensland kıyısı boyunca uzanır.",
+            ["Avustralya", "Mercan Denizi", "Queensland"],
+        ),
+        (
+            "Sahra Çölü nerede bulunur?",
+            "Sahra Çölü, Kuzey Afrika'da yer alır. "
+            "Çöl, Cezayir ve Libya gibi birçok ülkeye yayılır.",
+            ["Kuzey Afrika", "Cezayir", "Libya"],
+        ),
+    ]
+
+    for soru, sayfa, beklenen in testler:
+        kaynaklar = [{
+            "title": soru,
+            "snippet": "",
+            "url": "https://test.example/konum",
+        }]
+        cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+            soru,
+            kaynaklar,
+            sayfa_okuyucu=lambda url, icerik=sayfa: icerik,
+        )
+
+        eksik = [
+            bilgi for bilgi in beklenen
+            if bilgi.casefold() not in cevap.casefold()
+        ]
+        assert not eksik, (
+            f"{soru}: eksik konum bilgileri {eksik}; cevap: {cevap}"
+        )
+        assert guven >= 0.75, (
+            f"{soru}: beklenmeyen güven puanı {guven}"
+        )
+
+
+def web_sonuc_ilgililik_test():
+    import eagle_api
+
+    ilgili = {
+        "title": "Amazon Ormanları",
+        "snippet": "Amazon yağmur ormanları Güney Amerika'da bulunur.",
+    }
+    alakasiz = {
+        "title": "Kaplan kedisi",
+        "snippet": "Amerika'nın tropik yağmur ormanlarında yaşar.",
+    }
+
+    assert eagle_api._web_sonucu_sorguyla_ilgili_mi(
+        "yağmur ormanları nerelerde bulunur", ilgili
+    ), "İlgili Amazon Ormanları sonucu elendi"
+
+    assert not eagle_api._web_sonucu_sorguyla_ilgili_mi(
+        "yağmur ormanları nerelerde bulunur", alakasiz
+    ), "Başlığı ilgisiz hayvan sonucu kabul edildi"
+
+    radar = {
+        "title": "Yağmur radarı Türkiye",
+        "snippet": "Güncel yağış ve sağanak yağış tahminleri.",
+    }
+    assert not eagle_api._web_sonucu_sorguyla_ilgili_mi(
+        "yağmur ormanları nerelerde bulunur", radar
+    ), "Yağmur radarı sonucu yanlışlıkla kabul edildi"
+
+
+def web_eslesme_esigi_test():
+    import eagle_api
+
+    beklenenler = {
+        1: 1,
+        2: 1,
+        3: 2,
+        4: 2,
+        5: 3,
+        6: 3,
+    }
+    for kelime_sayisi, beklenen in beklenenler.items():
+        sonuc = eagle_api._gerekli_web_eslesme_sayisi(kelime_sayisi)
+        assert sonuc == beklenen, (
+            f"{kelime_sayisi} kelime için {beklenen} bekleniyordu, {sonuc} bulundu"
+        )
+
+
 def konu_eslesme_test():
     import eagle_api
 
@@ -246,6 +396,59 @@ def boolean_autofix_test():
             test_file.unlink()
 
 
+
+def voleybol_takim_eslesme_regresyon_test():
+    import eagle_api
+
+    orijinal = eagle_api.tvf_voleybol_sonuclari_getir
+    sahte = [
+        {
+            "ev": "Yeşilyurt", "ev_skor": "0",
+            "deplasman": "Bahçelievler", "deplasman_skor": "3",
+            "lig": "Test Ligi", "setler": [], "kaynak": "TVF"
+        },
+        {
+            "ev": "Fenerbahçe", "ev_skor": "3",
+            "deplasman": "Eczacıbaşı", "deplasman_skor": "1",
+            "lig": "Test Ligi", "setler": [], "kaynak": "TVF"
+        }
+    ]
+
+    try:
+        eagle_api.tvf_voleybol_sonuclari_getir = lambda *a, **k: sahte
+        istemci = eagle_api.app.test_client()
+
+        r1 = istemci.post("/api/sohbet", json={
+            "message": "Bodrum Fenerbahçe voleybol maç sonucu"
+        })
+        assert r1.status_code == 200, f"Takım sorgusu HTTP {r1.status_code}"
+        cevap1 = str((r1.get_json() or {}).get("answer", ""))
+        assert "Yeşilyurt" not in cevap1, "Alakasız maç gösterildi"
+        assert "doğrulanmış bir maç sonucu bulamadım" in cevap1, (
+            "Eşleşme yok mesajı verilmedi"
+        )
+
+        r2 = istemci.post("/api/sohbet", json={
+            "message": "voleybol maç sonucu"
+        })
+        assert r2.status_code == 200, f"Genel sorgu HTTP {r2.status_code}"
+        cevap2 = str((r2.get_json() or {}).get("answer", ""))
+        assert "Yeşilyurt" in cevap2, "Genel sonuçlar korunmadı"
+
+        r3 = istemci.post("/api/sohbet", json={
+            "message": "Fenerbahçe kadın voleybol sonucu"
+        })
+        assert r3.status_code == 200, f"Kadın voleybol sorgusu HTTP {r3.status_code}"
+        cevap3 = str((r3.get_json() or {}).get("answer", ""))
+        assert "Fenerbahçe" in cevap3, (
+            "Kadın voleybolu niteleyicisi geçerli takım eşleşmesini engelledi"
+        )
+        assert "Yeşilyurt" not in cevap3, (
+            "Kadın voleybolu takım sorgusunda alakasız maç gösterildi"
+        )
+    finally:
+        eagle_api.tvf_voleybol_sonuclari_getir = orijinal
+
 def api_fonksiyon_test():
     import eagle_api
 
@@ -259,6 +462,11 @@ print()
 test("Bilgi bankası JSON ve 49 yeni Python kaydı", bilgi_bankasi_test)
 test("Python syntax temel testleri", python_syntax_test)
 test("Program üretme regresyonu", program_uretme_regresyon_test)
+test("Web URL tekilleştirme", web_url_tekillestirme_test)
+test("Atlas Okyanusu sayfa içeriği önceliği", atlas_okyanusu_sayfa_onceligi_test)
+test("Konum sorusunda tamamlayıcı cümle", konum_sorusunda_tamamlayici_cumle_test)
+test("Web sonucu konu ilgililiği", web_sonuc_ilgililik_test)
+test("Web araması kelime eşleşme eşiği", web_eslesme_esigi_test)
 test("Python konu eşleşmesi", konu_eslesme_test)
 test("Temel Python soru-cevap kalitesi", temel_python_soru_cevap_test)
 test("Matematik bilgi bankası", matematik_test)
@@ -266,6 +474,7 @@ test("Karar motoru", karar_motoru_test)
 test("Kod analiz motoru", kod_analiz_import_test)
 test("AutoFix", autofix_import_test)
 test("BooleanComparison AutoFix", boolean_autofix_test)
+test("Voleybol takım eşleşmesi ve genel sonuçlar", voleybol_takim_eslesme_regresyon_test)
 test("API /api/sohbet altyapısı", api_fonksiyon_test)
 
 print()

@@ -98,14 +98,14 @@ public class MainActivity extends Activity {
 
         LinearLayout ana = new LinearLayout(this);
         ana.setOrientation(LinearLayout.VERTICAL);
-        ana.setBackgroundColor(Color.rgb(230, 230, 232));
+        ana.setBackgroundColor(Color.rgb(11, 16, 32));
 
           // ===== ÜST BAR =====
           LinearLayout ustBar = new LinearLayout(this);
           ustBar.setOrientation(LinearLayout.HORIZONTAL);
           ustBar.setGravity(Gravity.CENTER_VERTICAL);
           ustBar.setPadding(6, 8, 12, 8);
-          ustBar.setBackgroundColor(Color.rgb(25, 25, 25));
+          ustBar.setBackgroundColor(Color.rgb(16, 26, 51));
 
           // ☰ SOL HAMBURGER MENÜ
           Button menuBtn = new Button(this);
@@ -172,7 +172,7 @@ public class MainActivity extends Activity {
         alt.setOrientation(LinearLayout.HORIZONTAL);
         alt.setGravity(Gravity.CENTER_VERTICAL);
         alt.setPadding(8, 8, 8, 10);
-        alt.setBackgroundColor(Color.rgb(245, 245, 245));
+        alt.setBackgroundColor(Color.rgb(16, 26, 51));
 
         // 📎 Dosya butonu
           // 📎 DOSYA BUTONU
@@ -200,9 +200,9 @@ public class MainActivity extends Activity {
         mesajKutusu.setMaxLines(30);
         mesajKutusu.setGravity(Gravity.TOP | Gravity.START);
         mesajKutusu.setPadding(18, 12, 18, 12);
-        mesajKutusu.setTextColor(Color.rgb(30, 30, 30));
+        mesajKutusu.setTextColor(Color.WHITE);
         mesajKutusu.setHintTextColor(Color.GRAY);
-        mesajKutusu.setBackgroundColor(Color.WHITE);
+        mesajKutusu.setBackgroundColor(Color.rgb(23, 35, 61));
         mesajKutusu.setVerticalScrollBarEnabled(false);
         mesajKutusu.setHorizontallyScrolling(false);
         mesajKutusu.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET);
@@ -249,7 +249,7 @@ public class MainActivity extends Activity {
         gonder.setAllCaps(false);
         gonder.setGravity(Gravity.CENTER);
         gonder.setPadding(0, 0, 0, 0);
-        gonder.setBackgroundColor(Color.rgb(10, 132, 255));
+        gonder.setBackgroundColor(Color.rgb(0, 194, 215));
 
         LinearLayout.LayoutParams gonderLp =
                 new LinearLayout.LayoutParams(56, 56);

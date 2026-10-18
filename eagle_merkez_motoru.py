@@ -1564,6 +1564,7 @@ class EagleMerkezMotoru:
         }
 
 
+    @classmethod
     def genel_web_cevabi(
         cls,
         mesaj,
@@ -1583,6 +1584,8 @@ class EagleMerkezMotoru:
             "bir", "bu", "şu", "ve", "ile", "için",
             "nasıl", "neden", "ne", "nedir", "mi", "mı",
             "mu", "mü", "kaç", "hangi", "olan", "olarak",
+            "hakkında", "hakkinda", "bilgi", "anlat", "anlatır",
+            "anlatir", "açıkla", "acikla",
             "hangisi", "hangisidir", "hangileri", "hangileridir"
         }
 
@@ -1745,7 +1748,7 @@ class EagleMerkezMotoru:
 
         adaylar = []
 
-        for kaynak_no, veri in enumerate(veriler[:8]):
+        for kaynak_no, veri in enumerate(veriler[:12]):
             if not isinstance(veri, dict):
                 continue
 
@@ -1770,7 +1773,7 @@ class EagleMerkezMotoru:
             # cevap adayı olarak kullanılmaz.
             # Sayfa okunabildiyse asıl bilgi kaynağı sayfa metnidir.
             # Sayfa okunamadıysa snippet kullanılabilir.
-            kaynak = ozet if ozet else sayfa
+            kaynak = sayfa if sayfa else ozet
 
             # Yönlendirme sorularında, ilgili resmi sayfanın
             # asıl içeriğini snippet yerine değerlendirmeye al.
@@ -1818,7 +1821,54 @@ class EagleMerkezMotoru:
             for cumle_no, cumle in enumerate(cumleler):
                 cumle = re.sub(r"\s+", " ", cumle).strip()
 
-                if len(cumle) < 45 or len(cumle) > 500:
+                # Wikipedia gezinme metinlerini bilgi adayı olarak kullanma.
+                gezinme_norm = cls.normalize(cumle)
+                if re.search(
+                    r"\b(ayrica bakiniz|dis baglantilar|"
+                    r"vikipedinin kardes projelerinden|"
+                    r"vikisozluk|commons)\b",
+                    gezinme_norm,
+                ):
+                    continue
+
+                # Birbirine eklenmiş ansiklopedi bilgi tablolarını ele.
+                tablo_etiketleri = (
+                    "koordinatlar", "ortalama derinlik",
+                    "en derin noktasi", "yuzolcumu",
+                    "su hacmi", "kiyi uzunlugu",
+                )
+                if sum(
+                    etiket in gezinme_norm
+                    for etiket in tablo_etiketleri
+                ) >= 3:
+                    continue
+
+                # Sayfa başlığı cevap cümlesine bitişmişse,
+                # soru kelimesinden başlayan gerçek bilgi kısmını ayır.
+                meta = r"\b(soru\w*|cevab\w*|basvuru\w*|guncel|duyuru\w*)\b"
+                norm_cumle = cls.normalize(cumle)
+                if re.search(meta, norm_cumle):
+                    for parca in re.finditer(
+                        r"[a-zA-ZçğıöşüÇĞİÖŞÜ0-9]+", cumle
+                    ):
+                        if parca.start() < 20:
+                            continue
+                        kelime = cls.normalize(parca.group(0))
+                        if kelime not in soru_kelime:
+                            continue
+                        on_ek = cls.normalize(cumle[:parca.start()])
+                        if re.search(meta, on_ek):
+                            cumle = cumle[parca.start():].strip()
+                            break
+
+                if (
+                    len(cumle) < (
+                        25
+                        if re.search(r"\bnerede(?:dir)?\b", soru)
+                        else 45
+                    )
+                    or len(cumle) > 500
+                ):
                     continue
 
                 norm = cls.normalize(cumle)
@@ -1847,6 +1897,7 @@ class EagleMerkezMotoru:
                     if kelime in metin_kelime
                 ]
 
+                konum_tamamlayici = False
                 if not eslesen:
                     # Ekonomi sorularında web kaynakları farklı bir dilde
                     # gelebilir. Soru kalıbına özel tetikleyici eklemek
@@ -1909,7 +1960,23 @@ class EagleMerkezMotoru:
                         )
                     )
 
-                    if not eslesen and not uzmanlik_kaynagi:
+                    konum_tamamlayici = bool(
+                        re.search(r"\bnerede(?:dir)?\b", soru)
+                        and cumle_no > 0
+                        and any(
+                            kelime in set(re.findall(
+                                r"[a-z0-9çğıöşü]+",
+                                cls.normalize(cumleler[cumle_no - 1])
+                            ))
+                            for kelime in soru_kelime
+                        )
+                    )
+
+                    if (
+                        not eslesen
+                        and not uzmanlik_kaynagi
+                        and not konum_tamamlayici
+                    ):
                         continue
 
                 # Mekanizma sorularında soru/başlık cümlelerini
@@ -1922,6 +1989,32 @@ class EagleMerkezMotoru:
                     min(len(kelime), 12)
                     for kelime in eslesen
                 )
+                # Kaynak başlığı soru konusuyla uyuşuyorsa
+                # ilgili bilgi cümlelerini öne çıkar.
+                baslik_kelime = set(re.findall(
+                    r"[a-z0-9çğıöşü]+",
+                    cls.normalize(baslik)
+                ))
+                baslik_eslesme = (
+                    set(soru_kelime) & baslik_kelime
+                )
+                if len(soru_kelime) >= 2:
+                    if len(baslik_eslesme) == len(soru_kelime):
+                        puan += 60
+                    elif baslik_eslesme:
+                        puan += 15
+                    else:
+                        puan -= 20
+                # Superlative sorularda aynı ifadeyi doğrudan
+                # içeren cümleyi öne çıkar.
+                if (
+                    re.search(r"\ben derin\b", soru)
+                    and re.search(
+                        r"\ben derin\b",
+                        cls.normalize(cumle)
+                    )
+                ):
+                    puan += 40
 
                 if yonlendirme_sorusu:
                     uzmanlik_norm = cls.normalize(f"{baslik} {cumle}")
@@ -2140,6 +2233,26 @@ class EagleMerkezMotoru:
                 )
 
 
+        # Soru konusu başlıkta tam eşleşiyorsa, başka bir konudaki
+        # sayfanın yalnızca tesadüfi kelime eşleşmesiyle öne geçmesini önle.
+        if len(soru_kelime) >= 2 and adaylar:
+            konu_kelime = set(soru_kelime)
+            basligi_eslesen_kaynaklar = {
+                kaynak_no
+                for _, kaynak_no, baslik, _ in adaylar
+                if konu_kelime.issubset(
+                    set(re.findall(
+                        r"[a-z0-9çğıöşü]+",
+                        cls.normalize(baslik)
+                    ))
+                )
+            }
+            if basligi_eslesen_kaynaklar:
+                adaylar = [
+                    aday for aday in adaylar
+                    if aday[1] in basligi_eslesen_kaynaklar
+                ]
+
         if not adaylar:
             return "", 0.0
 
@@ -2265,6 +2378,7 @@ class EagleMerkezMotoru:
             # mümkün olduğunca farklı kaynakları kullan.
             if (
                 not islem_sorusu
+                and not re.search(r"\bnerede(?:dir)?\b", soru)
                 and kaynak_no in kullanilan_kaynaklar
                 and len(kullanilan_kaynaklar) < 3
             ):
@@ -2285,7 +2399,9 @@ class EagleMerkezMotoru:
             kullanilan_kaynaklar.add(kaynak_no)
 
             if len(secilen) >= (
-                1
+                2
+                if re.search(r"\bnerede(?:dir)?\b", soru)
+                else 1
                 if (
                     yonlendirme_sorusu
                     or cok_parcali_soru
@@ -2302,6 +2418,7 @@ class EagleMerkezMotoru:
             and not cok_parcali_soru
             and not yonlendirme_sorusu
             and not tanim_sorusu
+            and not re.search(r"\bnerede(?:dir)?\b", soru)
         ):
             for _, _, _, cumle in adaylar:
                 if cumle in secilen:
@@ -2863,47 +2980,6 @@ class EagleMerkezMotoru:
                     veriler = okunmus_veriler
                     kaynak_ozet = sayfa_kaynak_ozeti
 
-        # 5. Metinler birbirine yeterince yakınsa
-        # henüz doğal dil sentezi yapmadan mevcut
-        # kaynaklardan güvenli aday üretmeye çalışır.
-        tekrar_skoru = self.metin_tekrar_skoru(
-            veriler
-        )
-        cok_parcali_soru = bool(
-            re.search(r"\bve\b", self.normalize(mesaj))
-        )
-
-        if (
-            tekrar_skoru >= 0.60
-            and not cok_parcali_soru
-            and not ekonomi_sorusu
-            and karar.get("intent") != "spor"
-            and not bool(
-                re.search(
-                    r"\b(nasıl|nasıl yapılır|nasıl kurulur|değiştiririm)\b",
-                    self.normalize(mesaj),
-                )
-            )
-        ):
-            en_iyi = veriler[0].get("snippet") or \
-                veriler[0].get("title")
-
-            if en_iyi:
-                return EagleMerkezSonuc(
-                    ok=True,
-                    cevap=en_iyi.strip(),
-                    guven=0.68,
-                    kaynak_sayisi=(
-                        kaynak_ozet["kaynak_sayisi"]
-                    ),
-                    gemini_gerekli=False,
-                    kaynak_goster=False,
-                    neden=(
-                        "Birden fazla kaynak benzer "
-                        "bilgi verdi; kısa aday çıkarıldı."
-                    )
-                )
-
         # 6. Hiçbir güvenli çıkarım yok.
         # Gemini burada devreye GİRECEK değil;
         # yalnızca üst katmana son çare sinyali verilecek.
@@ -2936,12 +3012,12 @@ class EagleMerkezMotoru:
             kaynak_sayisi=(
                 kaynak_ozet["kaynak_sayisi"]
             ),
-            gemini_gerekli=True,
+            gemini_gerekli=False,
             kaynak_goster=False,
             neden=(
                 "Web verisi var ancak merkezi motor "
                 "güvenli net cevap çıkaramadı. "
-                "Gemini son çare olarak değerlendirilebilir."
+                "Gemini kullanılmayacak."
             )
         )
 
