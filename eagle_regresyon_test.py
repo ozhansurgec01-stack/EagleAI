@@ -218,6 +218,70 @@ def konum_sorusunda_tamamlayici_cumle_test():
         )
 
 
+def genel_web_cikti_kalitesi_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    vakalar = [
+        (
+            "Atlas Okyanusu hakkında bilgi",
+            "Atlas Okyanusu",
+            "Atlas Okyanusu, Amerika kıtalarını Avrupa ve Afrika'dan ayırır. "
+            "Hayalinizi gerçeğe dönüştürüyor.",
+            ["Amerika", "Afrika"],
+        ),
+        (
+            "Büyük Okyanus hakkında bilgi",
+            "Büyük Okyanus",
+            "Büyük Okyanus, dünyanın en büyük okyanusudur. "
+            "Listemizde derlemeye karar verdik.",
+            ["en büyük okyanus"],
+        ),
+        (
+            "Kanada'nın başkenti neresidir?",
+            "Kanada'nın başkenti",
+            "Ottawa, Kanada'nın başkentidir ve Ontario eyaletinin güneydoğusunda yer alır. "
+            "Ottawa, Kanada'nın başkentidir ve Ontario eyaletinin güneydoğusunda yer alır.",
+            ["Ottawa"],
+        ),
+        (
+            "Mısır piramitleri nerede bulunur?",
+            "Mısır piramitleri",
+            "[3] [4] [5] Bilinen bazı yapılar Sakkara'dadır. "
+            "Gize Piramitleri, Mısır'ın Kahire yakınlarındaki Gize bölgesindedir.",
+            ["Gize", "Kahire"],
+        ),
+    ]
+
+    for i, (soru, baslik, sayfa, beklenen) in enumerate(vakalar):
+        cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+            soru,
+            [{
+                "title": baslik,
+                "snippet": "",
+                "url": f"https://test.example/kalite-{i}",
+            }],
+            sayfa_okuyucu=lambda url, icerik=sayfa: icerik,
+        )
+        norm = cevap.casefold()
+        assert cevap, f"{soru}: cevap boş"
+        for bilgi in beklenen:
+            assert bilgi.casefold() in norm, (
+                f"{soru}: gerekli bilgi eksik ({bilgi}): {cevap}"
+            )
+        for yasak in (
+            "hayalinizi gerçeğe dönüştürüyor",
+            "listemizde derlemeye karar verdik",
+            "[3]", "[4]", "[5]",
+        ):
+            assert yasak not in norm, (
+                f"{soru}: düşük kaliteli metin kaldı ({yasak}): {cevap}"
+            )
+        assert cevap.count("Ottawa, Kanada'nın başkentidir.") <= 1, (
+            f"Tekrarlı cevap: {cevap}"
+        )
+        assert guven >= 0.75, f"{soru}: beklenmeyen güven {guven}"
+
+
 def web_sonuc_ilgililik_test():
     import eagle_api
 
@@ -617,6 +681,7 @@ test("Yağmur ormanı web araması", yagmur_ormani_web_test)
 test("Web URL tekilleştirme", web_url_tekillestirme_test)
 test("Atlas Okyanusu sayfa içeriği önceliği", atlas_okyanusu_sayfa_onceligi_test)
 test("Konum sorusunda tamamlayıcı cümle", konum_sorusunda_tamamlayici_cumle_test)
+test("Genel web cevap kalitesi", genel_web_cikti_kalitesi_test)
 test("Web sonucu konu ilgililiği", web_sonuc_ilgililik_test)
 test("Web araması kelime eşleşme eşiği", web_eslesme_esigi_test)
 test("Python konu eşleşmesi", konu_eslesme_test)

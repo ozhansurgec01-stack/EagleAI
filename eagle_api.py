@@ -4726,6 +4726,7 @@ def tvf_voleybol_sonuclari_getir(limit=8):
             }
 
             lig_urlleri = []
+            lig_url_adlari = {}
             for el in ana_soup.select(
                 'a[href*="/FSM/"], a[href*="/FSW/"]'
             ):
@@ -4737,6 +4738,7 @@ def tvf_voleybol_sonuclari_getir(limit=8):
                     and href not in lig_urlleri
                 ):
                     lig_urlleri.append(href)
+                    lig_url_adlari[href] = lig_adi
 
             tarihli_maclar = {}
 
@@ -4772,11 +4774,31 @@ def tvf_voleybol_sonuclari_getir(limit=8):
                         ):
                             continue
 
+                        ev_sayi, dep_sayi = int(ev_skor), int(dep_skor)
                         anahtar = (
-                            takim_anahtari(ev), int(ev_skor),
-                            takim_anahtari(deplasman), int(dep_skor)
+                            takim_anahtari(ev), ev_sayi,
+                            takim_anahtari(deplasman), dep_sayi
                         )
-                        kayitlar.append((anahtar, tarih, saat))
+                        setler = [
+                            f"{a}-{b}"
+                            for a, b in re.findall(
+                                r"\((\d+)\s*-\s*(\d+)\)", d[8]
+                            )
+                        ]
+                        ek_sonuc = None
+                        if setler and len(setler) == ev_sayi + dep_sayi:
+                            ek_sonuc = {
+                                "ev": ev, "ev_skor": ev_sayi,
+                                "deplasman": deplasman,
+                                "deplasman_skor": dep_sayi,
+                                "lig": lig_url_adlari.get(
+                                    lig_yolu, "TVF Resmî Fikstürü"
+                                ),
+                                "setler": setler,
+                                "kaynak": adres,
+                                "tarih": tarih, "saat": saat,
+                            }
+                        kayitlar.append((anahtar, tarih, saat, ek_sonuc))
 
                 except Exception as hata:
                     print(f"TVF lig tablosu okunamadı: {hata}", flush=True)
@@ -4787,10 +4809,12 @@ def tvf_voleybol_sonuclari_getir(limit=8):
 
             with ThreadPoolExecutor(max_workers=4) as havuz:
                 for kayitlar in havuz.map(lig_tarihlerini_oku, lig_urlleri):
-                    for anahtar, tarih, saat in kayitlar:
+                    for anahtar, tarih, saat, ek_sonuc in kayitlar:
                         tarihli_maclar.setdefault(anahtar, set()).add(
                             (tarih, saat)
                         )
+                        if ek_sonuc is not None:
+                            sonuclar.append(ek_sonuc)
 
             for mac in sonuclar:
                 anahtar = (
@@ -4811,15 +4835,29 @@ def tvf_voleybol_sonuclari_getir(limit=8):
 
         for mac in sonuclar:
             anahtar_mac = (
-                str(mac["ev"]).casefold(),
+                re.sub(r"[^a-z0-9]", "", takim_anahtari(str(mac["ev"]))),
                 int(mac["ev_skor"]),
-                str(mac["deplasman"]).casefold(),
+                re.sub(r"[^a-z0-9]", "", takim_anahtari(str(mac["deplasman"]))),
                 int(mac["deplasman_skor"]),
             )
             if anahtar_mac in gorulen:
                 continue
             gorulen.add(anahtar_mac)
             birlesik.append(mac)
+
+        from datetime import datetime
+
+        birlesik.sort(
+            key=lambda mac: (
+                datetime.strptime(mac["tarih"], "%d.%m.%Y")
+                if re.fullmatch(
+                    r"\d{2}\.\d{2}\.\d{4}",
+                    str(mac.get("tarih", ""))
+                )
+                else datetime.min
+            ),
+            reverse=True
+        )
 
         sonuclar = birlesik[:max(1, min(int(limit), 20))]
         print(f"TVF: {len(sonuclar)} sonuç kaydı hazırlandı.", flush=True)
