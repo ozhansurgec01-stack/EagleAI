@@ -1883,7 +1883,22 @@ class EagleMerkezMotoru:
                 ):
                     continue
 
+                # Kaynak numaralarini temizle; SEO/reklam ve
+                # yapisal metadata cumlelerini cevap adayi yapma.
+                cumle = re.sub(r"\[\s*\d+\s*\]\s*", "", cumle).strip()
                 norm = cls.normalize(cumle)
+                if re.search(
+                    r"\b("
+                    r"hayalinizi gerçeğe dönüştürüyor|"
+                    r"listemizde derlemeye karar verdik|"
+                    r"bu yazımızda|bu yazimizda|"
+                    r"bu rehberimizde|"
+                    r"demonym|saat dilimi|alan telefon kodu|posta kodu|"
+                    r"reklam|sponsorlu içerik"
+                    r")\b",
+                    norm,
+                ):
+                    continue
 
                 metin_kelime = set(
                     re.findall(
