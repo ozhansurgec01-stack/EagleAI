@@ -4713,20 +4713,39 @@ def tvf_voleybol_sonuclari_getir(limit=8):
                 ad = "".join(c for c in ad if not unicodedata.combining(c))
                 return re.sub(r"\s+", " ", ad).strip()
 
-            lig_urlleri = list(dict.fromkeys(
-                el.get("href", "").strip()
-                for el in ana_soup.select(
-                    'a[href*="/FSM/"], a[href*="/FSW/"]'
-                )
-                if el.get("href", "").strip()
-            ))
+            def lig_anahtari(ad):
+                ad = takim_anahtari(ad)
+                ad = re.sub(r"\bvoleybol\b", " ", ad)
+                ad = re.sub(r"\bligi\b", "lig", ad)
+                ad = re.sub(r"[^a-z0-9\s]", " ", ad)
+                return re.sub(r"\s+", " ", ad).strip()
+
+            sonuc_ligleri = {
+                lig_anahtari(mac.get("lig", ""))
+                for mac in sonuclar if mac.get("lig")
+            }
+
+            lig_urlleri = []
+            for el in ana_soup.select(
+                'a[href*="/FSM/"], a[href*="/FSW/"]'
+            ):
+                href = el.get("href", "").strip()
+                lig_adi = el.get_text(" ", strip=True)
+                if (
+                    href
+                    and lig_anahtari(lig_adi) in sonuc_ligleri
+                    and href not in lig_urlleri
+                ):
+                    lig_urlleri.append(href)
 
             tarihli_maclar = {}
-            fikstur_sonuclari = []
-            for lig_yolu in lig_urlleri:
+
+            def lig_tarihlerini_oku(lig_yolu):
+                kayitlar = []
                 try:
+                    adres = requests.compat.urljoin(ana_sayfa, lig_yolu)
                     cevap = requests.get(
-                        requests.compat.urljoin(ana_sayfa, lig_yolu),
+                        adres,
                         headers={"User-Agent": "Mozilla/5.0"},
                         timeout=5
                     )
@@ -4753,15 +4772,25 @@ def tvf_voleybol_sonuclari_getir(limit=8):
                         ):
                             continue
 
-                        # Fikstür yalnızca tarih/saat eşleştirmesinde kullanılır.
                         anahtar = (
                             takim_anahtari(ev), int(ev_skor),
                             takim_anahtari(deplasman), int(dep_skor)
                         )
-                        tarihli_maclar.setdefault(anahtar, set()).add((tarih, saat))
+                        kayitlar.append((anahtar, tarih, saat))
 
                 except Exception as hata:
                     print(f"TVF lig tablosu okunamadı: {hata}", flush=True)
+
+                return kayitlar
+
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=4) as havuz:
+                for kayitlar in havuz.map(lig_tarihlerini_oku, lig_urlleri):
+                    for anahtar, tarih, saat in kayitlar:
+                        tarihli_maclar.setdefault(anahtar, set()).add(
+                            (tarih, saat)
+                        )
 
             for mac in sonuclar:
                 anahtar = (
@@ -9698,8 +9727,12 @@ def sohbet():
         ))
 
         mac_ifadesi = "maç" in mesaj_kf or "mac" in mesaj_kf
+        voleybol_sorgusu = any(k in mesaj_kf for k in (
+            "voleybol", "filenin sultanları",
+            "filenin sultanlari", "filenin efeleri"
+        ))
 
-        if skor_istegi:
+        if skor_istegi and not voleybol_sorgusu:
             # Önce yapılandırılmış direkt spor kaynağını dene.
             # FotMob gerçek sonucu bulursa SofaScore'a geçmeden döndür.
             direkt_skor = spor_skoru_direkt_cevapla(mesaj)
@@ -10238,6 +10271,7 @@ def sohbet():
                         c for c in metin
                         if not unicodedata.combining(c)
                     )
+                    metin = re.sub(r"\bzerenspor\b", "zeren spor", metin)
                     return re.sub(r"[^a-z0-9]+", " ", metin).strip()
 
                 durak_kelimeleri = {
@@ -10319,19 +10353,10 @@ def sohbet():
                         "memory_count": len(hafiza_yukle())
                     })
 
-            # Takim eslesmesi yoksa alakasiz web skorlarini gosterme.
-            if (
-                voleybol_mu and gecmis_mac
-                and not voleybol_tarih_istegi
-                and sorgu_kelimeleri and not tvf_sonuclari
-            ):
+            if (voleybol_mu and gecmis_mac and not voleybol_tarih_istegi and sorgu_kelimeleri and not tvf_sonuclari):
                 return jsonify({
                     "ok": True,
-                    "answer": (
-                        "🏐 Belirtilen takımlar arasında doğrulanmış bir "
-                        "maç sonucu bulamadım. "
-                        "Bu nedenle başka takımların skorlarını göstermiyorum."
-                    ),
+                    "answer": "🏐 Belirtilen takımlar arasında doğrulanmış bir maç sonucu bulamadım. Bu nedenle başka takımların skorlarını göstermiyorum.",
                     "eagle_direct": True,
                     "web_search": False,
                     "merkez_motor": False,

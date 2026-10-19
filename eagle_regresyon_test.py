@@ -446,6 +446,11 @@ def voleybol_takim_eslesme_regresyon_test():
             "ev": "Fenerbahçe", "ev_skor": "3",
             "deplasman": "Eczacıbaşı", "deplasman_skor": "1",
             "lig": "Test Ligi", "setler": [], "kaynak": "TVF"
+        },
+        {
+            "ev": "Zeren Spor", "ev_skor": "3",
+            "deplasman": "Aras Kargo", "deplasman_skor": "0",
+            "lig": "Test Ligi", "setler": [], "kaynak": "TVF"
         }
     ]
 
@@ -481,8 +486,104 @@ def voleybol_takim_eslesme_regresyon_test():
         assert "Yeşilyurt" not in cevap3, (
             "Kadın voleybolu takım sorgusunda alakasız maç gösterildi"
         )
+
+        r4 = istemci.post("/api/sohbet", json={
+            "message": "Zerenspor voleybol maç sonucu"
+        })
+        assert r4.status_code == 200, f"Zerenspor sorgusu HTTP {r4.status_code}"
+        cevap4 = str((r4.get_json() or {}).get("answer", ""))
+        assert "Zeren Spor" in cevap4, (
+            f"Zerenspor ve Zeren Spor eşleşmedi: {cevap4}"
+        )
+        assert "Yeşilyurt" not in cevap4, (
+            "Normalizasyon sorgusunda alakasız maç gösterildi"
+        )
     finally:
         eagle_api.tvf_voleybol_sonuclari_getir = orijinal
+
+
+def tvf_tarih_eslesme_regresyon_test():
+    import requests
+    import eagle_api
+    from types import SimpleNamespace
+
+    sonuc_html = """
+    <section class="tvf-results">
+      <div class="tvf-result">
+        <div class="tvf-result__league">Arabica Coffee House Erkekler Voleybol 1.Ligi</div>
+        <div class="tvf-result__row">
+          <span class="tvf-result__team">Fenerbahçe</span>
+          <span class="tvf-result__score">3</span>
+        </div>
+        <div class="tvf-result__row">
+          <span class="tvf-result__team">Eczacıbaşı</span>
+          <span class="tvf-result__score">0</span>
+        </div>
+        <table class="tvf-result__sets">
+          <tr><th title="Fenerbahçe"></th>
+            <td>25</td><td>25</td><td>25</td>
+            <td class="tvf-result__sets-total">3</td></tr>
+          <tr><th title="Eczacıbaşı"></th>
+            <td>20</td><td>20</td><td>20</td>
+            <td class="tvf-result__sets-total">0</td></tr>
+        </table>
+      </div>
+    </section>
+    """
+    ana_html = '<a href="/FSM/test">Arabica Coffee House Erkekler 1. Lig</a>'
+
+    def lig_html(tarihler):
+        satirlar = ""
+        for tarih, saat in tarihler:
+            hucreler = [
+                tarih, saat, "Erkekler", "Test",
+                "Fenerbahçe", "3", "0", "Eczacıbaşı", "Tamamlandı"
+            ]
+            satirlar += "<tr>" + "".join(
+                f"<td>{h}</td>" for h in hucreler
+            ) + "</tr>"
+        return "<table>" + satirlar + "</table>"
+
+    orijinal_get = requests.get
+
+    def calistir(tarihler):
+        def sahte_get(url, *args, **kwargs):
+            if url == "https://tvf.org.tr/":
+                html = sonuc_html
+            elif url == "https://fikstur.tvf.org.tr/":
+                html = ana_html
+            elif url == "https://fikstur.tvf.org.tr/FSM/test":
+                html = lig_html(tarihler)
+            else:
+                raise AssertionError(f"Beklenmeyen URL: {url}")
+
+            return SimpleNamespace(
+                text=html,
+                raise_for_status=lambda: None
+            )
+
+        requests.get = sahte_get
+        return eagle_api.tvf_voleybol_sonuclari_getir()
+
+    try:
+        tek = calistir([("18.10.2026", "15:30")])
+        assert len(tek) == 1, f"Sonuç ayrıştırılamadı: {tek}"
+        assert tek[0].get("tarih") == "18.10.2026", tek
+        assert tek[0].get("saat") == "15:30", tek
+
+        cakisma = calistir([
+            ("18.10.2026", "15:30"),
+            ("19.10.2026", "16:30")
+        ])
+        assert len(cakisma) == 1, cakisma
+        assert "tarih" not in cakisma[0], (
+            f"Çakışmada yanlış tarih atandı: {cakisma[0]}"
+        )
+        assert "saat" not in cakisma[0], (
+            f"Çakışmada yanlış saat atandı: {cakisma[0]}"
+        )
+    finally:
+        requests.get = orijinal_get
 
 def api_fonksiyon_test():
     import eagle_api
@@ -526,6 +627,7 @@ test("Kod analiz motoru", kod_analiz_import_test)
 test("AutoFix", autofix_import_test)
 test("BooleanComparison AutoFix", boolean_autofix_test)
 test("Voleybol takım eşleşmesi ve genel sonuçlar", voleybol_takim_eslesme_regresyon_test)
+test("TVF tarih eşleşmesi ve çakışma kontrolü", tvf_tarih_eslesme_regresyon_test)
 test("API /api/sohbet altyapısı", api_fonksiyon_test)
 test("Genel bilgi soru algılama", genel_soru_algilama_test)
 
