@@ -1586,7 +1586,10 @@ class EagleMerkezMotoru:
             "mu", "mü", "kaç", "hangi", "olan", "olarak",
             "hakkında", "hakkinda", "bilgi", "anlat", "anlatır",
             "anlatir", "açıkla", "acikla",
-            "hangisi", "hangisidir", "hangileri", "hangileridir"
+            "hangisi", "hangisidir", "hangileri", "hangileridir",
+            "verir", "misin", "mısın", "musun", "müsün",
+            "misiniz", "mısınız", "musunuz", "müsünüz",
+            "lütfen", "lutfen"
         }
 
         soru_kelime = [
@@ -1604,6 +1607,14 @@ class EagleMerkezMotoru:
         tanim_sorusu = bool(
             re.search(
                 r"\b(nedir|ne demek|ne anlama gelir)\b",
+                soru
+            )
+        )
+
+        genel_bilgi_sorusu = bool(
+            re.search(
+                r"\b(hakkında bilgi ver|hakkinda bilgi ver|"
+                r"bilgi verir misin|bilgi verir)\b",
                 soru
             )
         )
@@ -1825,10 +1836,25 @@ class EagleMerkezMotoru:
             kaynak = re.sub(r"[ \t]+", " ", kaynak)
             kaynak = re.sub(r"\n{2,}", "\n", kaynak).strip()
 
+            # Yaygın kısaltmalardaki noktalar cümle sonu değildir.
+            kisaltma_isaret = "\uE000"
+            kisaltmalar = re.compile(
+                r"\b(?:St|Dr|Prof|Doç|Doc|Av|No| vb|vs|Prof|"
+                r"Assoc|Inc|Ltd|Mr|Mrs|Ms|Jr|Sr)\.",
+                re.IGNORECASE
+            )
+            kaynak = kisaltmalar.sub(
+                lambda m: m.group(0)[:-1] + kisaltma_isaret,
+                kaynak
+            )
             cumleler = re.split(
                 r"(?<=[.!?])\s+|\n+",
                 kaynak
             )
+            cumleler = [
+                cumle.replace(kisaltma_isaret, ".")
+                for cumle in cumleler
+            ]
 
             for cumle_no, cumle in enumerate(cumleler):
                 cumle = re.sub(r"\s+", " ", cumle).strip()
@@ -1887,6 +1913,28 @@ class EagleMerkezMotoru:
                 # yapisal metadata cumlelerini cevap adayi yapma.
                 cumle = re.sub(r"\[\s*\d+\s*\]\s*", "", cumle).strip()
                 norm = cls.normalize(cumle)
+
+                # İki nokta sonrasına yapışmış başlık/listeleri ele:
+                # art arda gelen çok sayıda büyük harfli etiket, tek başına
+                # anlamlı bir cümle oluşturmuyorsa cevap adayı olmasın.
+                if ":" in cumle:
+                    iki_nokta_sonrasi = cumle.split(":", 1)[1]
+                    etiketler = re.findall(
+                        r"\b[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}\b",
+                        iki_nokta_sonrasi,
+                    )
+                    liste_fiili = re.search(
+                        r"\b("
+                        r"bulunur|bulunmaktadır|oluşur|oluşmaktadır|"
+                        r"geçer|geçmektedir|ayırır|ayırmaktadır|"
+                        r"sağlar|sağlamaktadır|kabul edilir|"
+                        r"yer alır|yer almaktadır|"
+                        r"dır|dir|dur|dür"
+                        r")\b",
+                        cls.normalize(iki_nokta_sonrasi),
+                    )
+                    if len(etiketler) >= 5 and not liste_fiili:
+                        continue
                 if re.search(
                     r"\b("
                     r"hayalinizi gerçeğe dönüştürüyor|"
@@ -2025,9 +2073,14 @@ class EagleMerkezMotoru:
                 baslik_eslesme = (
                     set(soru_kelime) & baslik_kelime
                 )
-                if len(soru_kelime) >= 2:
+                if soru_kelime:
                     if len(baslik_eslesme) == len(soru_kelime):
-                        puan += 60
+                        puan += max(
+                            30,
+                            60 - 5 * max(
+                                0, len(baslik_kelime) - len(soru_kelime)
+                            )
+                        )
                     elif baslik_eslesme:
                         puan += 15
                     else:
@@ -2251,6 +2304,32 @@ class EagleMerkezMotoru:
                 ):
                     puan += 20
 
+                # Genel bilgi sorularında doğrudan tanımları öne çıkar.
+                if (tanim_sorusu or genel_bilgi_sorusu) and re.search(
+                    r"\b(olarak tanımlanır|olarak tanimlanir|"
+                    r"olarak bilinir|olarak adlandırılır|"
+                    r"olarak adlandirilir|anlamına gelir|"
+                    r"ifade eder|en ünlü|en unlu|en bilinen|başlıca|baslica|dünyanın en büyük|dunyanin en buyuk|"
+                    r"dünya'nın en büyük|dunya'nin en buyuk)\b",
+                    norm
+                ):
+                    puan += 55
+
+                # Geçiş ifadeleri tek başına iyi bir cevap başlangıcı değildir.
+                if (tanim_sorusu or genel_bilgi_sorusu) and re.match(
+                    r"^(ayrıca|bunun yanı sıra|bununla birlikte|"
+                    r"öte yandan|ancak|örneğin)\b",
+                    norm
+                ):
+                    puan -= 20
+
+                # Genel bilgi cevaplarında aşırı ayrıntılı cümleleri geri plana al.
+                if (tanim_sorusu or genel_bilgi_sorusu):
+                    if len(cumle) > 220:
+                        puan -= 25
+                    if ":" in cumle:
+                        puan -= 20
+
                 # Kaynağın ilk cümlesi çoğunlukla giriş/SEO metnidir.
                 if cumle_no == 0:
                     puan -= 25
@@ -2399,6 +2478,29 @@ class EagleMerkezMotoru:
                 aday for aday in adaylar if aday[1] == en_iyi_kaynak
             ]
 
+        # Kısa genel bilgi sorularında önce en güçlü tek kaynağa
+        # bağlı kal; farklı anlamdaki sayfaları cevaba karıştırma.
+        if (
+            adaylar
+            and len(soru_kelime) <= 3
+            and not cok_parcali_soru
+            and not yonlendirme_sorusu
+        ):
+            kaynak_puanlari = {}
+            for puan, kaynak_no, baslik, cumle in adaylar:
+                kaynak_puanlari[kaynak_no] = max(
+                    puan,
+                    kaynak_puanlari.get(kaynak_no, puan)
+                )
+            en_iyi_kaynak = max(
+                kaynak_puanlari,
+                key=lambda no: (kaynak_puanlari[no], -no)
+            )
+            adaylar = [
+                aday for aday in adaylar
+                if aday[1] == en_iyi_kaynak
+            ]
+
         adaylar.sort(
             key=lambda x: (-x[0], len(x[2]))
         )
@@ -2406,36 +2508,50 @@ class EagleMerkezMotoru:
         secilen = []
         kullanilan_kaynaklar = set()
 
-        for _, kaynak_no, baslik, cumle in adaylar:
-            norm = cls.normalize(cumle)
-            yeni_kelime = set(
-                re.findall(
-                    r"[a-z0-9çğıöşü]+",
-                    norm
-                )
-            )
+        def ayni_bilgi_tekrari_mi(yeni_cumle, onceki_cumleler):
+            durak = {
+                "ve", "veya", "ile", "icin", "olarak", "bir",
+                "bu", "da", "de", "tum", "cogu", "neredeyse",
+                "ise", "olan", "olarak", "edildi", "edilir",
+                "bulunur", "yer", "alir", "insaa", "inşa",
+                "the", "and", "of", "in", "on", "at", "are",
+            }
 
-            tekrar = False
-
-            for eski in secilen:
-                eski_kelime = set(
-                    re.findall(
+            def kelimeler(metin):
+                return [
+                    x for x in re.findall(
                         r"[a-z0-9çğıöşü]+",
-                        cls.normalize(eski)
+                        cls.normalize(metin)
                     )
-                )
+                    if len(x) > 2 and x not in durak
+                ]
 
-                birlesim = eski_kelime | yeni_kelime
-                ortak = eski_kelime & yeni_kelime
+            yeni = kelimeler(yeni_cumle)
+            yeni_dortluler = {
+                tuple(yeni[i:i + 3])
+                for i in range(max(0, len(yeni) - 2))
+            }
 
-                if (
-                    birlesim
-                    and len(ortak) / len(birlesim) >= 0.65
-                ):
-                    tekrar = True
-                    break
+            for eski_cumle in onceki_cumleler:
+                eski = kelimeler(eski_cumle)
+                eski_dortluler = {
+                    tuple(eski[i:i + 3])
+                    for i in range(max(0, len(eski) - 2))
+                }
 
-            if tekrar:
+                if yeni_dortluler & eski_dortluler:
+                    return True
+
+                yeni_set, eski_set = set(yeni), set(eski)
+                birlesim = yeni_set | eski_set
+                ortak = yeni_set & eski_set
+                if birlesim and len(ortak) / len(birlesim) >= 0.65:
+                    return True
+
+            return False
+
+        for _, kaynak_no, baslik, cumle in adaylar:
+            if ayni_bilgi_tekrari_mi(cumle, secilen):
                 continue
 
             # Aynı kaynaktan arka arkaya metin doldurmak yerine
@@ -2485,7 +2601,7 @@ class EagleMerkezMotoru:
             and not re.search(r"\bnerede(?:dir)?\b", soru)
         ):
             for _, _, _, cumle in adaylar:
-                if cumle in secilen:
+                if cumle in secilen or ayni_bilgi_tekrari_mi(cumle, secilen):
                     continue
                 secilen.append(cumle)
                 if len(secilen) >= 3:
