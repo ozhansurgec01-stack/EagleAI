@@ -1862,9 +1862,9 @@ class EagleMerkezMotoru:
                 # Wikipedia gezinme metinlerini bilgi adayı olarak kullanma.
                 gezinme_norm = cls.normalize(cumle)
                 if re.search(
-                    r"\b(ayrica bakiniz|dis baglantilar|"
-                    r"vikipedinin kardes projelerinden|"
-                    r"vikisozluk|commons)\b",
+                    r"\b(ayrıca bakınız|ayrica bakiniz|dış bağlantılar|dis baglantilar|"
+                    r"vikipedinin kardeş projelerinden|vikipedinin kardes projelerinden|"
+                    r"vikisözlük|vikisozluk|commons)\b",
                     gezinme_norm,
                 ):
                     continue
@@ -2339,9 +2339,39 @@ class EagleMerkezMotoru:
                 )
 
 
-        # Soru konusu başlıkta tam eşleşiyorsa, başka bir konudaki
-        # sayfanın yalnızca tesadüfi kelime eşleşmesiyle öne geçmesini önle.
-        if len(soru_kelime) >= 2 and adaylar:
+        # Genel bilgi sorularında alakasız kaynakların cevap seçilmesini önle.
+        if genel_bilgi_sorusu and adaylar:
+            konu_kelime = set(soru_kelime)
+            basligi_eslesen_kaynaklar = {
+                kaynak_no
+                for _, kaynak_no, baslik, _ in adaylar
+                if konu_kelime and konu_kelime.issubset(
+                    set(re.findall(
+                        r"[a-z0-9çğıöşü]+",
+                        cls.normalize(baslik)
+                    ))
+                )
+            }
+            if basligi_eslesen_kaynaklar:
+                adaylar = [
+                    aday for aday in adaylar
+                    if aday[1] in basligi_eslesen_kaynaklar
+                ]
+            elif len(konu_kelime) == 1:
+                return "", 0.0
+            else:
+                # Başlık farklı yazılmışsa, cümlede konunun tüm
+                # anahtar kelimeleri geçmeden cevap üretme.
+                adaylar = [
+                    aday for aday in adaylar
+                    if konu_kelime.issubset(
+                        set(re.findall(
+                            r"[a-z0-9çğıöşü]+",
+                            cls.normalize(aday[3])
+                        ))
+                    )
+                ]
+        elif len(soru_kelime) >= 2 and adaylar:
             konu_kelime = set(soru_kelime)
             basligi_eslesen_kaynaklar = {
                 kaynak_no

@@ -680,9 +680,19 @@ def bilgi_bankasi_ara(mesaj):
             anahtarlar = kayit.get("anahtarlar", [])
             if not cevap or not isinstance(anahtarlar, list):
                 continue
+            genel_sozcukler = {
+                "hakkında", "bilgi", "ver", "verir", "misin", "misiniz",
+                "lütfen", "anlat", "nedir", "acaba", "bana", "ile",
+                "ilgili", "kimdir", "neresidir"
+            }
             for anahtar in anahtarlar:
                 ifade = genel_norm(anahtar)
-                if ifade and (" " + ifade + " ") in soru_norm:
+                if not ifade:
+                    continue
+                sozcukler = ifade.split()
+                if all(sozcuk in genel_sozcukler for sozcuk in sozcukler):
+                    continue
+                if (" " + ifade + " ") in soru_norm:
                     return [cevap]
     except (OSError, ValueError, TypeError) as hata:
         print("Genel bilgi dosyası okunamadı:", hata, flush=True)
@@ -11202,7 +11212,8 @@ def sohbet():
                     })
 
                 # 🧠 Eagle cevap çıkaramadıysa Gemini yalnızca son çare.
-                if merkez_sonuc.get("gemini_gerekli"):
+                # Normal sohbet Gemini'ye devredilmez; Eagle kendi cevabını üretir.
+                if False and merkez_sonuc.get("gemini_gerekli"):
                     try:
                         import os
                         import requests
