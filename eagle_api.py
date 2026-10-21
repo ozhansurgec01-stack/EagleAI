@@ -680,9 +680,19 @@ def bilgi_bankasi_ara(mesaj):
             anahtarlar = kayit.get("anahtarlar", [])
             if not cevap or not isinstance(anahtarlar, list):
                 continue
+            genel_sozcukler = {
+                "hakkında", "bilgi", "ver", "verir", "misin", "misiniz",
+                "lütfen", "anlat", "nedir", "acaba", "bana", "ile",
+                "ilgili", "kimdir", "neresidir"
+            }
             for anahtar in anahtarlar:
                 ifade = genel_norm(anahtar)
-                if ifade and (" " + ifade + " ") in soru_norm:
+                if not ifade:
+                    continue
+                sozcukler = ifade.split()
+                if all(sozcuk in genel_sozcukler for sozcuk in sozcukler):
+                    continue
+                if (" " + ifade + " ") in soru_norm:
                     return [cevap]
     except (OSError, ValueError, TypeError) as hata:
         print("Genel bilgi dosyası okunamadı:", hata, flush=True)
@@ -4869,14 +4879,25 @@ def tvf_voleybol_sonuclari_getir(limit=8):
 
 
 def _web_arama_sorgusunu_sadelestir(sorgu):
-    kalip = (
-        r"\b(nerelerde\s+bulunur|nerede\s+bulunur|"
-        r"hangi\s+ülkelerdedir|hangi\s+ülkelerde|"
-        r"hakkında|hakkinda|bilgi ver(\s+bana)?|bana bilgi ver)\b"
+    """Doğal dildeki bilgi isteğini genel arama sorgusuna dönüştürür."""
+    temiz = str(sorgu or "")[:400]
+    temiz = re.sub(
+        r"\b(?:hakkında|hakkinda|bilgi|bana|lütfen|lutfen)\b",
+        " ", temiz, flags=re.IGNORECASE
     )
-    temiz = re.sub(kalip, " ", str(sorgu), flags=re.IGNORECASE)
-    return re.sub(r"\s+", " ", temiz).strip() or str(sorgu)
-
+    temiz = re.sub(
+        r"\b(?:ver(?:ir|ebilir)?|anlat(?:ır|ir)?|açıkla(?:r|yabilir)?)"
+        r"\s+(?:misin|mısın|misiniz|mısınız|mi|mı|musun|musun|musunuz|"
+        r"musunuz|midir|mıdır)\b",
+        " ", temiz, flags=re.IGNORECASE
+    )
+    temiz = re.sub(
+        r"\b(?:nerelerde\s+bulunur|nerede\s+bulunur|"
+        r"hangi\s+ülkelerdedir|hangi\s+ülkelerde)\b",
+        " ", temiz, flags=re.IGNORECASE
+    )
+    temiz = re.sub(r"\s+", " ", temiz).strip()
+    return temiz or str(sorgu or "")[:400]
 
 def _web_yagmur_ormani_sorgusu_mu(sorgu):
     metin = str(sorgu or "").casefold()
@@ -4920,6 +4941,9 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
         "kaç", "kac", "zaman", "ne zaman", "ile", "için",
         "icin", "olan", "olarak", "nedeniyle", "mıdır", "midir",
         "nerededir", "kıtadadır", "yaptı", "yapti",
+        "verir", "misin", "mısın", "musun", "müsün",
+        "misiniz", "mısınız", "musunuz", "müsünüz",
+        "lütfen", "lutfen",
     }
     kelimeler = {
         k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
@@ -4935,9 +4959,35 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
     metin = (baslik + " " + str(sonuc.get("snippet", "") or "")).casefold()
 
     def eslesiyor(kelime, hedef):
+        # Yaygın ülke adlarının Türkçe ve İngilizce karşılıklarını eşleştir.
+        dil_es_anlamlilari = (
+            ("kanada", "canada"),
+            ("almanya", "germany", "deutschland"),
+            ("mısır", "egypt"),
+            ("yunanistan", "greece"),
+            ("hollanda", "netherlands", "holland"),
+            ("abd", "usa", "united states", "amerika", "america"),
+            ("ingiltere", "england", "united kingdom", "britain"),
+            ("japonya", "japan"),
+            ("çin", "china"),
+            ("ispanya", "spain"),
+            ("italya", "italy"),
+            ("fransa", "france"),
+            ("avustralya", "australia"),
+            ("rusya", "russia"),
+            ("türkiye", "turkey"),
+        )
+        adaylar = {kelime}
+        for grup in dil_es_anlamlilari:
+            if kelime in grup:
+                adaylar.update(grup)
+                break
+        hedef_kelimeler = re.findall(r"[a-z0-9çğıöşü]+", hedef)
+        if any(aday in hedef_kelimeler for aday in adaylar):
+            return True
         if kelime in hedef:
             return True
-        for parca in re.findall(r"[a-z0-9çğıöşü]+", hedef):
+        for parca in hedef_kelimeler:
             ortak = 0
             for x, y in zip(kelime, parca):
                 if x != y:
@@ -11162,7 +11212,8 @@ def sohbet():
                     })
 
                 # 🧠 Eagle cevap çıkaramadıysa Gemini yalnızca son çare.
-                if merkez_sonuc.get("gemini_gerekli"):
+                # Normal sohbet Gemini'ye devredilmez; Eagle kendi cevabını üretir.
+                if False and merkez_sonuc.get("gemini_gerekli"):
                     try:
                         import os
                         import requests

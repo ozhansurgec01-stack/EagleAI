@@ -143,6 +143,8 @@ def atlas_okyanusu_sayfa_onceligi_test():
         "Atlas Okyanusu, Amerika kıtalarını Avrupa ve Afrika'dan "
         "ayıran büyük bir okyanustur. Dünya üzerindeki önemli "
         "deniz ulaşım yollarından bazıları bu okyanustan geçer. "
+        "Okyanusları ayırmıştır: Atlas Okyanusu Hint Okyanusu "
+        "Arktik Okyanusu Pasifik Okyanusu Güney Okyanusu. "
         "Genel bilgiler Tür Okyanus Koordinatlar 0 derece "
         "Ortalama derinlik 3646 m En derin noktası Porto Riko "
         "Çukuru Yüzölçümü 106 milyon km2 Su hacmi 310 milyon km3."
@@ -157,6 +159,9 @@ def atlas_okyanusu_sayfa_onceligi_test():
     assert cevap, "EagleAI genel bilgi cevabı üretemedi"
     assert "Afrika" in cevap and "Amerika" in cevap, (
         f"Sayfa içeriği yerine alakasız özet seçilmiş: {cevap}"
+    )
+    assert "Arktik Okyanusu Pasifik Okyanusu" not in cevap, (
+        f"Liste metni cevaba sızdı: {cevap}"
     )
     assert guven >= 0.75, f"Beklenmeyen güven puanı: {guven}"
 
@@ -247,7 +252,10 @@ def genel_web_cikti_kalitesi_test():
             "Mısır piramitleri nerede bulunur?",
             "Mısır piramitleri",
             "[3] [4] [5] Bilinen bazı yapılar Sakkara'dadır. "
-            "Gize Piramitleri, Mısır'ın Kahire yakınlarındaki Gize bölgesindedir.",
+            "Gize Piramitleri, Mısır'ın Kahire yakınlarındaki Gize bölgesindedir. "
+            "Tüm Mısır piramitleri Nil'in batı kıyısında inşa edildi. "
+            "Mısır'daki piramitlerin büyük çoğunluğu Nil'in batı kıyısında yer alır. "
+            "Piramitler firavunlar için mezar yapıları olarak kullanılmıştır.",
             ["Gize", "Kahire"],
         ),
     ]
@@ -279,7 +287,40 @@ def genel_web_cikti_kalitesi_test():
         assert cevap.count("Ottawa, Kanada'nın başkentidir.") <= 1, (
             f"Tekrarlı cevap: {cevap}"
         )
+        if soru == "Mısır piramitleri nerede bulunur?":
+            assert norm.count("nil") <= 1, (
+                f"Aynı Nil bilgisi tekrarlandı: {cevap}"
+            )
         assert guven >= 0.75, f"{soru}: beklenmeyen güven {guven}"
+
+
+
+def wikipedia_gezinme_metni_temizleme_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    sayfa = (
+        "Ayrıca bakınız değiştir Mısır Piramitleri Büyük Gize Sfenksi. "
+        "Gize Piramitleri, Mısır'ın Kahire yakınlarındaki Gize bölgesindedir."
+    )
+    cevap, _ = EagleMerkezMotoru.genel_web_cevabi(
+        "Mısır piramitleri nerede bulunur?",
+        [{
+            "title": "Mısır piramitleri",
+            "snippet": "",
+            "url": "https://test.example/wikipedia-gezinme",
+        }],
+        sayfa_okuyucu=lambda url: sayfa,
+    )
+    norm = cevap.casefold()
+    assert "gize" in norm and "kahire" in norm, (
+        f"Yararlı bilgi kayboldu: {cevap}"
+    )
+    assert "ayrıca bakınız" not in norm, (
+        f"Gezinme metni cevapta kaldı: {cevap}"
+    )
+    assert "büyük gize sfenksi" not in norm, (
+        f"Gezinme bağlantısı cevapta kaldı: {cevap}"
+    )
 
 
 def web_sonuc_ilgililik_test():
@@ -309,6 +350,22 @@ def web_sonuc_ilgililik_test():
     assert not eagle_api._web_sonucu_sorguyla_ilgili_mi(
         "yağmur ormanları nerelerde bulunur", radar
     ), "Yağmur radarı sonucu yanlışlıkla kabul edildi"
+
+    kanada_tr = {
+        "title": "Kanada - Genel Bilgiler",
+        "snippet": "Kanada, Kuzey Amerika'da bulunan bir ülkedir.",
+    }
+    assert eagle_api._web_sonucu_sorguyla_ilgili_mi(
+        "Kanada hakkında bilgi verir misin", kanada_tr
+    ), "Türkçe Kanada sorgusunda soru ekleri sonucu elememeli"
+
+    kanada_en = {
+        "title": "Canada - Geography",
+        "snippet": "Canada is a country in North America.",
+    }
+    assert eagle_api._web_sonucu_sorguyla_ilgili_mi(
+        "Kanada hakkında bilgi verir misin", kanada_en
+    ), "Kanada sorgusu İngilizce Canada başlığıyla eşleşmeli"
 
 
 def web_eslesme_esigi_test():
@@ -682,6 +739,7 @@ test("Web URL tekilleştirme", web_url_tekillestirme_test)
 test("Atlas Okyanusu sayfa içeriği önceliği", atlas_okyanusu_sayfa_onceligi_test)
 test("Konum sorusunda tamamlayıcı cümle", konum_sorusunda_tamamlayici_cumle_test)
 test("Genel web cevap kalitesi", genel_web_cikti_kalitesi_test)
+test("Wikipedia gezinme metni temizleme", wikipedia_gezinme_metni_temizleme_test)
 test("Web sonucu konu ilgililiği", web_sonuc_ilgililik_test)
 test("Web araması kelime eşleşme eşiği", web_eslesme_esigi_test)
 test("Python konu eşleşmesi", konu_eslesme_test)
