@@ -1619,6 +1619,12 @@ class EagleMerkezMotoru:
             )
         )
 
+        # Başkent sorularına tek ve doğrudan cevap ver.
+        baskent_sorusu = bool(
+            re.search(r"\b(baskent|baskenti)\b", soru)
+            and re.search(r"\b(neresi|neresidir|hangisi)\b", soru)
+        )
+
         # "Nasıl çalışır?" bir kurulum/işlem sorusu değil,
         # mekanizmayı açıklama sorusudur.
         mekanizma_sorusu = bool(
@@ -1911,7 +1917,7 @@ class EagleMerkezMotoru:
 
                 # Kaynak numaralarini temizle; SEO/reklam ve
                 # yapisal metadata cumlelerini cevap adayi yapma.
-                cumle = re.sub(r"\[\s*\d+\s*\]\s*", "", cumle).strip()
+                cumle = re.sub(r"\[\s*(?:\d+|[a-zçğıöşü])\s*\]\s*", "", cumle, flags=re.I).strip()
                 norm = cls.normalize(cumle)
 
                 # İki nokta sonrasına yapışmış başlık/listeleri ele:
@@ -2059,11 +2065,38 @@ class EagleMerkezMotoru:
                 if (mekanizma_sorusu or islem_sorusu) and "?" in cumle:
                     continue
 
+                # Genel bilgi cevaplarında tanıtım/reklam cümlelerini
+                # puanla bastırmak yerine doğrudan aday listesinden çıkar.
+                if genel_bilgi_sorusu and re.search(
+                    r"\\b("
+                    r"hayalinizi gerçeğe|hayalinizi gercege|"
+                    r"büyüleyici bir cennet|buyuleyici bir cennet|"
+                    r"eşsiz bir deneyim|essiz bir deneyim|"
+                    r"unutulmaz bir deneyim|"
+                    r"göz kamaştırıcı|goz kamastirici|"
+                    r"sizleri bekliyor|"
+                    r"keşfetmeye davet|kesfetmeye davet|"
+                    r"rüya gibi bir tatil|ruya gibi bir tatil|"
+                    r"muhteşem bir tatil|muhtesem bir tatil|"
+                    r"tatil cenneti|"
+                    r"doğunun büyüleyici|dogunun buyuleyici"
+                    r")\\b",
+                    norm
+                ):
+                    continue
+
                 puan = len(eslesen) * 10
                 puan += sum(
                     min(len(kelime), 12)
                     for kelime in eslesen
                 )
+
+                # Başkent sorularında doğrudan başkent bilgisini öne çıkar.
+                if baskent_sorusu and re.search(
+                    r"\b(baskent\w*|capital)\b",
+                    cls.normalize(cumle)
+                ):
+                    puan += 200
                 # Kaynak başlığı soru konusuyla uyuşuyorsa
                 # ilgili bilgi cümlelerini öne çıkar.
                 baslik_kelime = set(re.findall(
@@ -2085,6 +2118,22 @@ class EagleMerkezMotoru:
                         puan += 15
                     else:
                         puan -= 20
+                # Genel bilgi cevaplarında temel bilgileri öne çıkar.
+                if genel_bilgi_sorusu and re.search(
+                    r"\b("
+                    r"sınır komşusu|sinir komsusu|"
+                    r"komşudur|komsudur|"
+                    r"çevreler|cevresinde|"
+                    r"resmî dili|resmi dili|"
+                    r"para birimi|"
+                    r"yüzölçümü|yuzolcumu|"
+                    r"nüfusu|nufusu|"
+                    r"başkenti|baskenti"
+                    r")\b",
+                    cls.normalize(cumle)
+                ):
+                    puan += 25
+
                 # Superlative sorularda aynı ifadeyi doğrudan
                 # içeren cümleyi öne çıkar.
                 if (
@@ -2271,7 +2320,7 @@ class EagleMerkezMotoru:
 
                 if tanim_sorusu and re.search(
                     r"\b(denir|sistemidir|anlamına gelir|"
-                    r"ifade eder|oluşur|çeviren|sağlayan)\b",
+                    r"ifade eder|çeviren|sağlayan)\b",
                     norm
                 ):
                     puan += 15
@@ -2304,6 +2353,18 @@ class EagleMerkezMotoru:
                 ):
                     puan += 20
 
+                # Tanım sorularında süreç, olay ve kavram tanımlarını öne çıkar.
+                if tanim_sorusu and re.search(
+                    r"\b(sürecidir|surecidir|süreçtir|surectir|"
+                    r"olayıdır|olayidir|olaydır|olaydir|"
+                    r"yöntemidir|yontemidir|biçimidir|bicimidir|"
+                    r"çeşididir|cesididir|kavramıdır|kavramidir|"
+                    r"olarak adlandırılan|olarak adlandirilan|"
+                    r"olarak tanımlanan|olarak tanimlanan)\b",
+                    norm
+                ):
+                    puan += 35
+
                 # Genel bilgi sorularında doğrudan tanımları öne çıkar.
                 if (tanim_sorusu or genel_bilgi_sorusu) and re.search(
                     r"\b(olarak tanımlanır|olarak tanimlanir|"
@@ -2330,8 +2391,32 @@ class EagleMerkezMotoru:
                     if ":" in cumle:
                         puan -= 20
 
+                # Genel bilgi cevaplarında seyahat/SEO tavsiyelerini geri plana al.
+                if genel_bilgi_sorusu:
+                    if re.search(
+                        r"\b("
+                        r"ideal süre|ideal sure|"
+                        r"keşfetmek için|kesfetmek icin|"
+                        r"gezmek için|gezmek icin|"
+                        r"seyahat planı|seyahat plani|"
+                        r"gezi planı|gezi plani|"
+                        r"tatil planı|tatil plani|"
+                        r"konaklama seçenekleri|konaklama secenekleri|"
+                        r"otel rezervasyonu|uçak bileti|ucak bileti|"
+                        r"tur paketleri|günlük tur|gunluk tur"
+                        r")\b",
+                        norm
+                    ):
+                        puan -= 100
+
+                    # Uzun, virgülle sıralanmış ayrıntı listelerini hafifçe azalt.
+                    if cumle.count(",") >= 4:
+                        puan -= 25
+
                 # Kaynağın ilk cümlesi çoğunlukla giriş/SEO metnidir.
-                if cumle_no == 0:
+                if cumle_no == 0 and not (
+                    tanim_sorusu or genel_bilgi_sorusu
+                ):
                     puan -= 25
 
                 adaylar.append(
@@ -2342,34 +2427,33 @@ class EagleMerkezMotoru:
         # Genel bilgi sorularında alakasız kaynakların cevap seçilmesini önle.
         if genel_bilgi_sorusu and adaylar:
             konu_kelime = set(soru_kelime)
-            basligi_eslesen_kaynaklar = {
-                kaynak_no
-                for _, kaynak_no, baslik, _ in adaylar
-                if konu_kelime and konu_kelime.issubset(
-                    set(re.findall(
-                        r"[a-z0-9çğıöşü]+",
-                        cls.normalize(baslik)
-                    ))
-                )
-            }
-            if basligi_eslesen_kaynaklar:
-                adaylar = [
-                    aday for aday in adaylar
-                    if aday[1] in basligi_eslesen_kaynaklar
-                ]
-            elif len(konu_kelime) == 1:
-                return "", 0.0
-            else:
-                # Başlık farklı yazılmışsa, cümlede konunun tüm
-                # anahtar kelimeleri geçmeden cevap üretme.
-                adaylar = [
-                    aday for aday in adaylar
-                    if konu_kelime.issubset(
-                        set(re.findall(
-                            r"[a-z0-9çğıöşü]+",
-                            cls.normalize(aday[3])
-                        ))
+            baslik_uygunluklari = {}
+
+            for _, kaynak_no, baslik, _ in adaylar:
+                baslik_kelime = set(re.findall(
+                    r"[a-z0-9çğıöşü]+",
+                    cls.normalize(baslik)
+                ))
+                if konu_kelime and konu_kelime.issubset(baslik_kelime):
+                    # Başlıkta konuyla ilgisiz ek sözcük sayısı az olan
+                    # kaynakları öne al; diğer kaynakları hemen silme.
+                    fazlalik = len(baslik_kelime - konu_kelime)
+                    baslik_uygunluklari[kaynak_no] = min(
+                        fazlalik,
+                        baslik_uygunluklari.get(kaynak_no, fazlalik)
                     )
+
+            if baslik_uygunluklari:
+                en_iyi_baslik = min(baslik_uygunluklari.values())
+                ilgili_kaynaklar = {
+                    no for no, puan in baslik_uygunluklari.items()
+                    if puan <= en_iyi_baslik + 1
+                }
+                # Genel bilgi cevabinda alakasiz kaynaklari
+                # sadece geriye atma; aday listesinden cikar.
+                adaylar = [
+                    aday for aday in adaylar
+                    if aday[1] in ilgili_kaynaklar
                 ]
         elif len(soru_kelime) >= 2 and adaylar:
             konu_kelime = set(soru_kelime)
@@ -2513,6 +2597,7 @@ class EagleMerkezMotoru:
         if (
             adaylar
             and len(soru_kelime) <= 3
+            and not genel_bilgi_sorusu
             and not cok_parcali_soru
             and not yonlendirme_sorusu
         ):
@@ -2531,9 +2616,87 @@ class EagleMerkezMotoru:
                 if aday[1] == en_iyi_kaynak
             ]
 
-        adaylar.sort(
-            key=lambda x: (-x[0], len(x[2]))
-        )
+        if genel_bilgi_sorusu:
+            def genel_bilgi_cumle_skoru(cumle):
+                metin = cls.normalize(cumle)
+                puan = 0
+
+                # Önce konuyu tanımlayan ve temel özelliğini açıklayan
+                # cümleleri öne çıkar.
+                if re.search(
+                    r"\\b("
+                    r"olarak tanimlanir|olarak bilinir|"
+                    r"yer alan|bulunan|"
+                    r"bir .*? ulkesidir|bir .*? okyanusudur|"
+                    r"bir .*? kitasidir|bir .*? nehirdir|"
+                    r"bir .*? dagidir"
+                    r")\\b",
+                    metin
+                ):
+                    puan += 18
+
+                # Ölçü, tarih ve sayısal veriler somut bilgi sağlayabilir.
+                if re.search(r"\\d", metin):
+                    puan += 5
+
+                # Temel özellik veya konum bildiren ifadeler.
+                if re.search(
+                    r"\\b("
+                    r"yuzolcumu|nufus|konum|sinir|"
+                    r"yukseklik|uzunluk|derinlik|"
+                    r"bulunur|yer alir|olusur|"
+                    r"baskent|en buyuk|en uzun"
+                    r")\\b",
+                    metin
+                ):
+                    puan += 6
+
+                # Genel tanıtım cevabında yazılış/telaffuz gibi
+                # ayrıntılar temel bilgilerden sonra gelmeli.
+                if re.search(
+                    r"\\b("
+                    r"telaffuz edilir|"
+                    r"kanji ile|"
+                    r"adi .*? olarak yazilir|"
+                    r"ismi .*? olarak bilinir"
+                    r")\\b",
+                    metin
+                ):
+                    puan -= 12
+
+                if len(cumle) > 220:
+                    puan -= 8
+
+                return puan
+
+            def genel_bilgi_siralama(aday):
+                puan, kaynak_no, baslik, cumle = aday
+                baslik_kelime = set(re.findall(
+                    r"[a-z0-9çğıöşü]+",
+                    cls.normalize(baslik)
+                ))
+                soru_kelimeleri = set(soru_kelime)
+                ortak = soru_kelimeleri & baslik_kelime
+
+                if soru_kelimeleri and soru_kelimeleri.issubset(baslik_kelime):
+                    baslik_sinifi = 0
+                elif ortak:
+                    baslik_sinifi = 1
+                else:
+                    baslik_sinifi = 2
+
+                return (
+                    baslik_sinifi,
+                    -genel_bilgi_cumle_skoru(cumle),
+                    -puan,
+                    len(cumle),
+                )
+
+            adaylar.sort(key=genel_bilgi_siralama)
+        else:
+            adaylar.sort(
+                key=lambda x: (-x[0], len(x[2]))
+            )
 
         secilen = []
         kullanilan_kaynaklar = set()
@@ -2580,7 +2743,37 @@ class EagleMerkezMotoru:
 
             return False
 
+        def tanitim_cumlesi_mi(cumle):
+            norm_cumle = cls.normalize(cumle)
+            return bool(re.search(
+                r"\b("
+                r"hayalinizi gercege|"
+                r"buyuleyici bir cennet|"
+                r"dogunun buyuleyici|"
+                r"essiz bir deneyim|"
+                r"unutulmaz bir deneyim|"
+                r"goz kamastirici|"
+                r"sizleri bekliyor|"
+                r"kesfetmeye davet|"
+                r"ruya gibi bir tatil|"
+                r"muhtesem bir tatil|"
+                r"tatil cenneti|"
+                r"kusursuz bir uyum|"
+                r"buyuleyici bir ulke"
+                r")\b",
+                norm_cumle
+            ))
+
         for _, kaynak_no, baslik, cumle in adaylar:
+            if genel_bilgi_sorusu and tanitim_cumlesi_mi(cumle):
+                continue
+
+            if baskent_sorusu and not re.search(
+                r"\b(baskent\w*|capital)\b",
+                cls.normalize(cumle)
+            ):
+                continue
+
             if ayni_bilgi_tekrari_mi(cumle, secilen):
                 continue
 
@@ -2588,6 +2781,7 @@ class EagleMerkezMotoru:
             # mümkün olduğunca farklı kaynakları kullan.
             if (
                 not islem_sorusu
+                and not genel_bilgi_sorusu
                 and not re.search(r"\bnerede(?:dir)?\b", soru)
                 and kaynak_no in kullanilan_kaynaklar
                 and len(kullanilan_kaynaklar) < 3
@@ -2609,13 +2803,14 @@ class EagleMerkezMotoru:
             kullanilan_kaynaklar.add(kaynak_no)
 
             if len(secilen) >= (
-                2
+                1
+                if baskent_sorusu
+                else 2
                 if re.search(r"\bnerede(?:dir)?\b", soru)
                 else 1
                 if (
                     yonlendirme_sorusu
                     or cok_parcali_soru
-                    or tanim_sorusu
                 )
                 else 3
             ):
@@ -2627,10 +2822,12 @@ class EagleMerkezMotoru:
             len(secilen) < 2
             and not cok_parcali_soru
             and not yonlendirme_sorusu
-            and not tanim_sorusu
+            and not baskent_sorusu
             and not re.search(r"\bnerede(?:dir)?\b", soru)
         ):
             for _, _, _, cumle in adaylar:
+                if genel_bilgi_sorusu and tanitim_cumlesi_mi(cumle):
+                    continue
                 if cumle in secilen or ayni_bilgi_tekrari_mi(cumle, secilen):
                     continue
                 secilen.append(cumle)
@@ -2647,9 +2844,36 @@ class EagleMerkezMotoru:
         if ekonomi_sorusu:
             return "", 0.0
 
-        return " ".join(secilen).strip(), (
-            0.86 if sayfa_okuyucu else 0.76
+        cevap = " ".join(secilen).strip()
+        # Türkçe metinlerde noktalama ve ek yazımını düzelt.
+        cevap = re.sub(r"\s+([,.;:!?])", r"\1", cevap)
+        cevap = re.sub(r"\s+([\'’])\s*", r"\1", cevap)
+        cevap = re.sub(
+            r"\b(km|cm|mm|m)\s+2\b",
+            lambda m: m.group(1) + "²",
+            cevap,
+            flags=re.IGNORECASE,
         )
+        cevap = re.sub(r"\s+", " ", cevap).strip()
+        # Güven puanı: konu uyumu ve bağımsız kaynak çeşitliliği.
+        cevap_kelime = set(re.findall(
+            r"[a-z0-9çğıöşü]+",
+            cls.normalize(cevap)
+        ))
+        konu_kelime = set(soru_kelime)
+        konu_uyumu = (
+            len(konu_kelime & cevap_kelime) / len(konu_kelime)
+            if konu_kelime else 0.0
+        )
+        kaynak_destegi = min(
+            0.08,
+            max(0, len(kullanilan_kaynaklar) - 1) * 0.04
+        )
+        guven = 0.70 + 0.20 * konu_uyumu + kaynak_destegi
+        if sayfa_okuyucu:
+            guven += 0.04
+        guven = max(0.40, min(0.88, guven))
+        return cevap, round(guven, 2)
 
 
     def genel_altin_cevabi(cls, mesaj, veriler, web_arayici=None, sayfa_okuyucu=None):
