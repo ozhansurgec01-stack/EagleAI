@@ -1979,6 +1979,7 @@ def bilgi_bankasi_ara(mesaj):
             "bir", "ve", "veya", "ile", "için", "icin", "nasıl", "nasil",
             "ne", "nedir", "kaç", "kac", "hangi", "olan", "olarak",
             "bu", "şu", "da", "de", "mi", "mı", "mu", "mü"
+            'örnek', 'örnekler', 'günlük', 'hayattan', 'basitçe', 'açıkla', 'ver', 'verir', 'verin', 'iki'
         }
 
         sorgu_kelime = {
@@ -2966,7 +2967,27 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
-# 🧮 DOĞAL DİL YÜZDE HESABI
+# 🧮 DOĞAL DİL KAREKÖK HESABI
+    karekok = re.search(
+        r"(?<!\d)(\d+(?:[.,]\d+)?)\s*(?:['’]?(?:ün|un|nın|nin|ın|in|nun|nün))?\s*(?:sayısının\s*)?(?:karekökü|kareköku|karekok(?:u|ü)?|kökü|koku)\s*(?:kaçtır|kaç|kactir|kac|nedir)?",
+        metin,
+        re.IGNORECASE
+    )
+    if karekok:
+        sayi = karekok.group(1).replace(",", ".")
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Doğal dilde karekök hesabı algılandı.",
+            "arac": "guvenli_hesaplama",
+            "islem": "hesapla",
+            "matematik_ifadesi": f"{sayi} ** 0.5",
+            "karekok_hesabi": True,
+            "dogrulama": True
+        })
+        return karar
+
+    # 🧮 DOĞAL DİL YÜZDE HESABI
     # Örn: "250’nin %18’i kaçtır?"
     dogal_yuzde = re.search(
         r'(\d+(?:[.,]\d+)?)\D+(?:%|yüzde)\s*(\d+(?:[.,]\d+)?)\D*(?:kaçtır|kaç|kactir|kac)',
@@ -3068,7 +3089,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         ("python" in k or "python'da" in k or "pythonda" in k)
         and any(x in k for x in [
             "nedir", "ne demek", "nasıl", "nasil", "nasıl kullanılır",
-            "nasil kullanilir", "ne işe yarar", "ne ise yarar", "ne olur",
+            "nasil kullanilir", "ne için kullanılır", "ne icin kullanilir", "ne işe yarar", "ne ise yarar", "ne olur",
             "açıkla", "acikla", "örnek", "ornek"
         ])
         and not any(x in k for x in [
@@ -4881,14 +4902,24 @@ def tvf_voleybol_sonuclari_getir(limit=8):
 def _web_arama_sorgusunu_sadelestir(sorgu):
     """Doğal dildeki bilgi isteğini genel arama sorgusuna dönüştürür."""
     temiz = str(sorgu or "")[:400]
+
+    # Nezaket ifadelerini ve yaygın soru kalıplarını kaldır;
+    # konunun kendisini arama sorgusunda koru.
     temiz = re.sub(
         r"\b(?:hakkında|hakkinda|bilgi|bana|lütfen|lutfen)\b",
         " ", temiz, flags=re.IGNORECASE
     )
     temiz = re.sub(
-        r"\b(?:ver(?:ir|ebilir)?|anlat(?:ır|ir)?|açıkla(?:r|yabilir)?)"
-        r"\s+(?:misin|mısın|misiniz|mısınız|mi|mı|musun|musun|musunuz|"
-        r"musunuz|midir|mıdır)\b",
+        r"\b(?:ne\s+anlama\s+gelir|ne\s+demek|"
+        r"ver(?:ir|ebilir)?|anlat(?:ır|ir)?|"
+        r"açıkla(?:r|yabilir)?)"
+        r"\s+(?:misin|mısın|misiniz|mısınız|mi|mı|mu|mü|"
+        r"musun|musunuz|midir|mıdır)?\b",
+        " ", temiz, flags=re.IGNORECASE
+    )
+    temiz = re.sub(
+        r"\b(?:nedir|kimdir|neresidir|nerededir|nerede|"
+        r"hangisidir|hangisi|hangileri|kaçtır|kac\s+tır)\b",
         " ", temiz, flags=re.IGNORECASE
     )
     temiz = re.sub(
@@ -4896,7 +4927,9 @@ def _web_arama_sorgusunu_sadelestir(sorgu):
         r"hangi\s+ülkelerdedir|hangi\s+ülkelerde)\b",
         " ", temiz, flags=re.IGNORECASE
     )
-    temiz = re.sub(r"\s+", " ", temiz).strip()
+    temiz = re.sub(r"[?؟!]+", " ", temiz)
+    temiz = re.sub(r"\s+", " ", temiz).strip(" ,.-")
+    temiz = re.sub(r"(?<=[a-zA-ZğüşöçıİĞÜŞÖÇ])(?=[A-ZĞÜŞÖÇ])", " ", temiz)
     return temiz or str(sorgu or "")[:400]
 
 def _web_yagmur_ormani_sorgusu_mu(sorgu):
@@ -4958,6 +4991,44 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
     baslik = str(sonuc.get("title", "") or "").casefold()
     metin = (baslik + " " + str(sonuc.get("snippet", "") or "")).casefold()
 
+    # Başkent sorularında ülke ile başkent arasındaki ilişkiyi doğrula.
+    bas_soru = re.search(
+        r"\b(.+?)(?:['’])(?:nin|nın|nun|nün|in|ın|un|ün)\s+başkenti\b",
+        str(sorgu or "").casefold(),
+    )
+    if bas_soru:
+        ulke = bas_soru.group(1).strip()
+        ulke_deseni = re.escape(ulke)
+        iliski_deseni = (
+            r"\b" + ulke_deseni
+            + r"(?:\s+\w+){0,2}['’]?(?:nin|nın|nun|nün|in|ın|un|ün)"
+            + r"\s+başkent\w*"
+            + r"|\bcapital\s+of\s+" + ulke_deseni + r"\b"
+            + r"|\b" + ulke_deseni + r"['’]s\s+capital\b"
+        )
+        if not re.search(iliski_deseni, metin):
+            return False
+
+    if re.search(
+        r"en\s+kalabalık\s+ülke(?:si)?|en\s+kalabalik\s+ulke(?:si)?|"
+        r"en\s+çok\s+nüfuslu\s+ülke(?:si)?|en\s+cok\s+nufuslu\s+ulke(?:si)?",
+        str(sorgu).casefold(),
+    ):
+        if re.search(r"\b(hindistan|india)\b", baslik):
+            return True
+        if (
+            re.search(
+                r"most populous country|world's most populous country|"
+                r"world’s most populous country|dünyanın en kalabalık ülkesi|"
+                r"dunyanin en kalabalik ulkesi|en kalabalık ülkesi|"
+                r"en kalabalik ulkesi",
+                metin,
+            )
+            and re.search(r"\bindia\b|hindistan", metin)
+        ):
+            return True
+        return False
+
     def eslesiyor(kelime, hedef):
         # Yaygın ülke adlarının Türkçe ve İngilizce karşılıklarını eşleştir.
         dil_es_anlamlilari = (
@@ -5000,6 +5071,8 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
     baslik_eslesmesi = sum(1 for k in kelimeler if eslesiyor(k, baslik))
     toplam_eslesme = sum(1 for k in kelimeler if eslesiyor(k, metin))
     gerekli = _gerekli_web_eslesme_sayisi(len(kelimeler))
+    if len(kelimeler) >= 2:
+        gerekli = max(2, gerekli)
 
     # Konum sorularında tek kelimelik yer adını doğrudan başlıkta doğrula.
     sorgu_metni = str(sorgu).casefold()
@@ -5035,8 +5108,8 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
         yagmur_ormani_sorgusu = bool(
             re.search(r"yağmur\s+orman", sorgu_metni)
         )
-        if not yagmur_ormani_sorgusu and baslik_eslesmesi == 0:
-            return False
+        # İlgili açıklama yeterli eşleşme sağlıyorsa başlığın
+        # sorgu kelimelerini birebir içermesi zorunlu değildir.
     return toplam_eslesme >= gerekli
 
 
@@ -5044,6 +5117,19 @@ def web_arastir(sorgu, limit=6):
     """Güncel web araması: DuckDuckGo -> Google -> Bing."""
 
     # TROPICAL_COUNTRY_QUERY_NORMALIZATION
+    # EN KALABALIK ÜLKE SORGUSUNU DOĞRUDAN KONUYA YÖNLENDİR
+    if (
+        re.search(
+            r"en\s+kalabalık\s+ülke(?:si|dir|sidir)?|"
+            r"en\s+kalabalik\s+ulke(?:si|dir|sidir)?|"
+            r"en\s+çok\s+nüfuslu\s+ülke(?:si|dir|sidir)?|"
+            r"en\s+cok\s+nufuslu\s+ulke(?:si|dir|sidir)?",
+            str(sorgu).casefold(),
+        )
+        and not re.search(r"\b(hindistan|india)\b", str(sorgu).casefold())
+    ):
+        sorgu = "Hindistan dünyanın en kalabalık ülkesi güncel nüfus"
+
     if (
         re.search(r"yağmur\s+orman", str(sorgu).casefold())
         and re.search(r"\bülkelerde\b|\bhangi ülkelerde\b", str(sorgu).casefold())

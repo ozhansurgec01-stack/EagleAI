@@ -163,6 +163,9 @@ def atlas_okyanusu_sayfa_onceligi_test():
     assert "Arktik Okyanusu Pasifik Okyanusu" not in cevap, (
         f"Liste metni cevaba sızdı: {cevap}"
     )
+    assert "neredeyse" not in cevap.casefold(), (
+        f"Muğlak yüzölçümü karşılaştırması cevaba sızdı: {cevap}"
+    )
     assert guven >= 0.75, f"Beklenmeyen güven puanı: {guven}"
 
 
@@ -293,6 +296,208 @@ def genel_web_cikti_kalitesi_test():
             )
         assert guven >= 0.75, f"{soru}: beklenmeyen güven {guven}"
 
+
+
+def genel_bilgi_konu_alakasi_ve_guven_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    vakalar = [
+        (
+            "Atlas Okyanusu hakkında bilgi verir misin?",
+            "Atlas Okyanusu",
+            (
+                "Ayrıca dünyanın en uzun okyanus sıradağı olan Orta Atlas "
+                "Sırtı bu okyanusta bulunur. "
+                "Atlas Okyanusu, Amerika kıtalarını Avrupa ve Afrika'dan "
+                "ayıran büyük bir okyanustur. "
+                "Atlas Okyanusu veya Atlantik Okyanusu, 106.460.000 km² "
+                "yüzölçümü ile Dünya'nın en büyük ikinci okyanusudur. "
+                "Atlantik köle ticareti veya trans-atlantik köle ticareti, "
+                "Afrikalı kölelerin Avrupalılar tarafından esir edilmelerini "
+                "ve satılmalarını içeren Atlas Okyanusu ve kıyılarında "
+                "gerçekleşen faaliyetler dönemi."
+            ),
+            ("Avrupa", "Afrika", "ikinci büyük okyanusudur"),
+            ("köle ticareti", "Orta Atlas Sırtı", "92 milyon km²"),
+        ),
+        (
+            "Fotosentez nedir?",
+            "Fotosentez",
+            (
+                "Çoğu bitki, çoğu alg ve siyanobakteri fotosentez yapar; "
+                "bu tür canlılara fotoototroflar denir. "
+                "Fotosentez, bitkilerin ışık enerjisini kimyasal enerjiye "
+                "dönüştürdüğü süreçtir. "
+                "İç katman fotosentez pigmentleri enzimleriyle klorofil "
+                "içeren yassı keseciklere dönüşmüştür. "
+                "Fotosentez sırasında bitkiler karbondioksit ve su kullanarak "
+                "glikoz üretir ve oksijen açığa çıkar."
+            ),
+            ("süreçtir", "ışık enerjisini kimyasal enerjiye"),
+            ("İç katman fotosentez pigmentleri",),
+        ),
+        (
+            "Türkiye hakkında bilgi verir misin?",
+            "Türkiye",
+            (
+                "Avrupa ve Asya kıtalarının kavşak noktalarında yer alan "
+                "Türkiye, bu benzersiz coğrafi konumu sayesinde önemli bir "
+                "jeostratejik güç olarak kabul edilir. "
+                "Türkiye, Ekonomik İşbirliği ve Kalkınma Örgütü (OECD), "
+                "G20 ve Türk Devletleri Teşkilatı'nın kurucu üyeleri "
+                "arasında yer almaktadır. "
+                "Aralık 2021'de cumhurbaşkanı Recep Tayyip Erdoğan, "
+                "ihracatta Made in Türkiye ibaresinin kullanılmasına "
+                "ilişkin bir genelge yayımladı."
+            ),
+            ("Türkiye", "Avrupa", "Asya"),
+            ("genelge yayımladı",),
+        ),
+    ]
+
+    for i, (soru, baslik, sayfa, gerekli, yasak) in enumerate(vakalar):
+        cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+            soru,
+            [{
+                "title": baslik,
+                "snippet": "",
+                "url": f"https://test.example/konu-alakasi-{i}",
+            }],
+            sayfa_okuyucu=lambda url, icerik=sayfa: icerik,
+        )
+        assert cevap, f"{soru}: cevap boş"
+        if soru == "Fotosentez nedir?":
+            assert cevap.startswith("Fotosentez,"), (
+                f"Tanım sorusunda örnek cümlesi tanımdan önce geldi: {cevap}"
+            )
+        for bilgi in gerekli:
+            assert bilgi.casefold() in cevap.casefold(), (
+                f"{soru}: gerekli bilgi eksik ({bilgi}): {cevap}"
+            )
+        for ifade in yasak:
+            assert ifade.casefold() not in cevap.casefold(), (
+                f"{soru}: konu dışı cümle kaldı ({ifade}): {cevap}"
+            )
+        assert 0.75 <= guven < 0.88, (
+            f"{soru}: güven puanı sabit/esassız görünüyor: {guven}"
+        )
+
+
+def genel_tanitimda_nesnel_bilgi_onceligi_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    sayfa = (
+        "Türkiye, benzersiz coğrafi konumu sayesinde önemli bir "
+        "jeostratejik güç olarak kabul edilir. "
+        "Türkiye'nin başkenti Ankara'dır. "
+        "Türkiye'nin resmi dili Türkçedir. "
+        "Türkiye'nin nüfusu ve yüzölçümü ülke hakkında temel "
+        "demografik ve coğrafi bilgiler sunar. "
+        "Tarafsız ve partisiz cumhurbaşkanlığını savunan Türkiye'deki ilk "
+        "parti, Mustafa Kemal Paşa'nın hem CHP genel başkanı hem de "
+        "cumhurbaşkanı olmasına karşı çıkan Terakkiperver Cumhuriyet "
+        "Fırkası'dır."
+    )
+    cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+        "Türkiye hakkında bilgi verir misin?",
+        [{
+            "title": "Türkiye hakkında temel bilgiler",
+            "snippet": "",
+            "url": "https://test.example/turkiye-temel-bilgi",
+        }],
+        sayfa_okuyucu=lambda url: sayfa,
+    )
+
+    assert cevap, "Türkiye tanıtım sorusu boş cevap verdi"
+    assert "Ankara" in cevap or "Türkçedir" in cevap, (
+        f"Nesnel temel bilgi öne çıkmadı: {cevap}"
+    )
+    assert "jeostratejik güç" not in cevap.casefold(), (
+        f"Editoryal değerlendirme cevaba girdi: {cevap}"
+    )
+    assert "terakkiperver cumhuriyet fırkası" not in cevap.casefold(), (
+        f"Genel tanıtıma ilgisiz tarihî ayrıntı girdi: {cevap}"
+    )
+    assert guven < 0.88, f"Genel web cevabına aşırı güven verildi: {guven}"
+
+
+def tanim_sorusunda_ornek_cumlesi_reddet_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    kaynaklar = [{
+        "title": "Fotosentez",
+        "snippet": "",
+        "url": "https://test.example/fotosentez",
+    }]
+
+    # Kavramın geçtiği ama onu tanımlamayan bir cümle, "nedir?" cevabı olamaz.
+    zayif_sayfa = (
+        "Çoğu bitki, çoğu alg ve siyanobakteri fotosentez yapar; "
+        "bu tür canlılara fotoototroflar denir."
+    )
+    cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+        "Fotosentez nedir?",
+        kaynaklar,
+        sayfa_okuyucu=lambda url: zayif_sayfa,
+    )
+    assert not cevap and guven == 0.0, (
+        f"Tanım bulunmadığı halde örnek cümlesi cevap seçildi: {cevap} ({guven})"
+    )
+
+    # Açık tanım varsa onu seç; aynı sayfadaki örnek cümlesi cevabı bozmasın.
+    iyi_sayfa = (
+        "Çoğu bitki, çoğu alg ve siyanobakteri fotosentez yapar; "
+        "bu tür canlılara fotoototroflar denir. "
+        "Fotosentez, bitkilerin ışık enerjisini kimyasal enerjiye "
+        "dönüştürdüğü süreçtir."
+    )
+    cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+        "Fotosentez nedir?",
+        kaynaklar,
+        sayfa_okuyucu=lambda url: iyi_sayfa,
+    )
+    assert cevap.startswith("Fotosentez,"), (
+        f"Tanım cümlesi seçilmedi: {cevap}"
+    )
+    assert "fotoototroflar" not in cevap.casefold(), (
+        f"Tanım olmayan örnek cevaba karıştı: {cevap}"
+    )
+    assert 0.75 <= guven < 0.88, f"Beklenmeyen güven puanı: {guven}"
+
+    # Konu adıyla başlayan fakat tanım vermeyen ikinci cümle cevaba girmemeli.
+    karisik_sayfa = (
+        "Fotosentez, ışık enerjisini kimyasal bağ enerjisine dönüştüren "
+        "biyolojik bir mekanizmadır. "
+        "Fotosentez yapma yeteneği kazanmış ilkin hücrelerin içine girerek "
+        "simbiyoz yaşamış ve kloroplastları meydana getirmiştir."
+    )
+    cevap, _ = EagleMerkezMotoru.genel_web_cevabi(
+        "Fotosentez nedir?",
+        kaynaklar,
+        sayfa_okuyucu=lambda url: karisik_sayfa,
+    )
+    assert "mekanizmadır" in cevap.casefold(), f"Tanım cümlesi kayboldu: {cevap}"
+    assert "simbiyoz" not in cevap.casefold(), (
+        f"Tanım olmayan yan cümle cevaba karıştı: {cevap}"
+    )
+
+
+def okyanus_konu_disina_cikma_test():
+    kaynaklar = [
+        {"title": "Atlas Okyanusu", "url": "https://example.com/atlas",
+         "snippet": "Atlas Okyanusu Dünya'nın en büyük ikinci okyanusudur."},
+        {"title": "Arktik Okyanusu", "url": "https://example.com/arktik",
+         "snippet": "Arktik Okyanusu Kuzey Kutbu'nu kapsayan buzlarla kaplı bir okyanustur."},
+    ]
+    cevap, _ = EagleMerkezMotoru.genel_web_cevabi(
+        "Atlas Okyanusu hakkında bilgi verir misin?", kaynaklar,
+        sayfa_okuyucu=lambda url: (
+            "Atlas Okyanusu, Dünya'nın en büyük ikinci okyanusudur. "
+            if 'atlas' in url else
+            "Arktik Okyanusu Kuzey Kutbu'nu kapsayan, buzlarla kaplı bir okyanustur."
+        ),
+    )
+    assert "Arktik Okyanusu" not in cevap, f"Konu dışı okyanus cevaba girdi: {cevap}"
 
 
 def wikipedia_gezinme_metni_temizleme_test():
@@ -739,6 +944,9 @@ test("Web URL tekilleştirme", web_url_tekillestirme_test)
 test("Atlas Okyanusu sayfa içeriği önceliği", atlas_okyanusu_sayfa_onceligi_test)
 test("Konum sorusunda tamamlayıcı cümle", konum_sorusunda_tamamlayici_cumle_test)
 test("Genel web cevap kalitesi", genel_web_cikti_kalitesi_test)
+test("Genel tanıtımda nesnel bilgi önceliği", genel_tanitimda_nesnel_bilgi_onceligi_test)
+test("Tanım sorusunda örnek cümlesi reddedilir", tanim_sorusunda_ornek_cumlesi_reddet_test)
+test("Genel bilgi konu alâkası ve güven puanı", genel_bilgi_konu_alakasi_ve_guven_test)
 test("Wikipedia gezinme metni temizleme", wikipedia_gezinme_metni_temizleme_test)
 test("Web sonucu konu ilgililiği", web_sonuc_ilgililik_test)
 test("Web araması kelime eşleşme eşiği", web_eslesme_esigi_test)
