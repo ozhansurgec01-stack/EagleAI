@@ -50,6 +50,15 @@
       "intent": "guncel_bilgi",
       "arac": "web_arastirma",
       "strateji": "web"
+    },
+    {
+      "konu": "Yağmur ormanları neden önemlidir?",
+      "bilgi": "Kolhis Yağmur Ormanları ve Sulak Alanlar: Kolşik Yağmur Ormanları ve Sulak Alanlar, Gürcistan'ın Karadeniz kıyı şeridinin yaklaşık 80 kilometrelik kısmı ve Kolhis Ovası'nın bazı kesimlerini içeren | Tropik yağmur ormanı: alanı yok edilmektedir. Bitki örtüsünün yoğunluğu nedeniyle tropik yağmur ormanları gezegenimizin en önemli oksijen kaynaklarından biri durumdadır. Ayrıca | Kömür ormanları: daha sonra da tüm yağmur ormanlarının eko sistemini çökertmesi neden oldu. Karbonifer devrinin geri kalan büyük kısmında kömür ormanları çoğunlukla Kuzey",
+      "kaynak": "web",
+      "soru": "Yağmur ormanları neden önemlidir?",
+      "intent": "guncel_bilgi",
+      "arac": "web_arastirma",
+      "strateji": "web"
     }
   ],
   "sohbet": [
