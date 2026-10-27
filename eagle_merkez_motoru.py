@@ -1764,7 +1764,9 @@ class EagleMerkezMotoru:
 
                         # Genel tanıtımda öznel/editoryal ifadeleri ele.
                         if re.search(
-                            r"jeostratejik güç|benzersiz .* sayesinde",
+                            r"jeostratejik güç|benzersiz .* sayesinde|"
+                            r"terakkiperver|tarafsız ve partisiz|"
+                            r"tarafsiz ve partisiz",
                             norm,
                             re.IGNORECASE,
                         ):
