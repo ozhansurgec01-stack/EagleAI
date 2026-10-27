@@ -11299,7 +11299,7 @@ def sohbet():
 
                 # 🧠 Eagle cevap çıkaramadıysa Gemini yalnızca son çare.
                 # Normal sohbet Gemini'ye devredilmez; Eagle kendi cevabını üretir.
-                if False and merkez_sonuc.get("gemini_gerekli"):
+                if not merkez_sonuc.get("ok"):
                     try:
                         import os
                         import requests
@@ -11309,7 +11309,7 @@ def sohbet():
                         if gemini_key:
                             kaynaklar = []
 
-                            for kaynak in web_verisi[:6]:
+                            for kaynak in web_verisi[:3]:
                                 if not isinstance(kaynak, dict):
                                     continue
 
@@ -11322,9 +11322,10 @@ def sohbet():
                                 url = str(
                                     kaynak.get("url", "")
                                 ).strip()
+                                tam_metin = web_sayfa_oku(url, limit=3500) if url else ""
 
                                 parca = " ".join(
-                                    x for x in (baslik, ozet)
+                                    x for x in (baslik, ozet, tam_metin)
                                     if x
                                 ).strip()
 
