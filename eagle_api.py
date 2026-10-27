@@ -4222,19 +4222,26 @@ def uefa_sampiyonlar_ligi_getir(mesaj=""):
 
 
 def genel_spor_fiksturu_getir(mesaj=""):
-    """ESPN genel skorboard API'sinden günlük spor maçlarını getirir."""
+    """ESPN skorboard API'sinden fikstür ve tamamlanmış maç sonuçlarını getirir."""
     try:
         from datetime import datetime, timedelta
+        import requests
 
-        mesaj_kucuk = (mesaj or "").lower().replace("\u0307", "")
-
+        mesaj_kucuk = (mesaj or "").lower().replace("\\u0307", "")
         bugun = datetime.now()
-        hedef = bugun
+        sonuc_sorgusu = any(k in mesaj_kucuk for k in (
+            "sonuç", "sonuc", "skor", "bitti", "maç sonucu", "mac sonucu"
+        ))
 
-        if any(k in mesaj_kucuk for k in ["yarın", "yarin"]):
-            hedef = bugun + timedelta(days=1)
-
-        tarih = hedef.strftime("%Y%m%d")
+        if any(k in mesaj_kucuk for k in ("yarın", "yarin")):
+            tarihler = [(bugun + timedelta(days=1)).strftime("%Y%m%d")]
+        elif sonuc_sorgusu:
+            tarihler = [
+                (bugun - timedelta(days=i)).strftime("%Y%m%d")
+                for i in range(7)
+            ]
+        else:
+            tarihler = [bugun.strftime("%Y%m%d")]
 
         kaynaklar = [
             ("⚽", "futbol", "soccer/uefa.champions", "Şampiyonlar Ligi"),
@@ -4246,106 +4253,143 @@ def genel_spor_fiksturu_getir(mesaj=""):
             ("🏀", "basketbol", "basketball/nba", "NBA"),
         ]
 
+        lig_eslestirmeleri = [
+            (("şampiyonlar ligi", "sampiyonlar ligi", "champions league"), "Şampiyonlar Ligi"),
+            (("premier league",), "Premier League"),
+            (("la liga",), "La Liga"),
+            (("bundesliga",), "Bundesliga"),
+            (("serie a",), "Serie A"),
+            (("ligue 1",), "Ligue 1"),
+            (("nba",), "NBA"),
+        ]
+
+        aranan_lig = None
+        for ifadeler, lig_adi in lig_eslestirmeleri:
+            if any(ifade in mesaj_kucuk for ifade in ifadeler):
+                aranan_lig = lig_adi
+                break
+
+        if aranan_lig:
+            kaynaklar = [k for k in kaynaklar if k[3] == aranan_lig]
+
         secilen = []
+        gorulen = set()
 
         for ikon, spor, lig_url, lig_adi in kaynaklar:
-            url = (
-                "https://site.api.espn.com/apis/site/v2/sports/"
-                f"{lig_url}/scoreboard?dates={tarih}"
-            )
-
-            try:
-                cevap = requests.get(
-                    url,
-                    headers={
-                        "User-Agent": "Mozilla/5.0",
-                        "Accept": "application/json"
-                    },
-                    timeout=8
+            for tarih in tarihler:
+                url = (
+                    "https://site.api.espn.com/apis/site/v2/sports/"
+                    f"{lig_url}/scoreboard"
                 )
-
-                if cevap.status_code != 200:
-                    continue
-
-                veri = cevap.json()
-
-                for event in veri.get("events", []):
-                    competitions = event.get("competitions", [])
-                    if not competitions:
+                try:
+                    cevap = requests.get(
+                        url,
+                        params={"dates": tarih, "limit": 500},
+                        headers={
+                            "User-Agent": "Mozilla/5.0",
+                            "Accept": "application/json",
+                        },
+                        timeout=12,
+                    )
+                    if cevap.status_code != 200:
                         continue
 
-                    comp = competitions[0]
-                    competitors = comp.get("competitors", [])
+                    for event in cevap.json().get("events", []):
+                        competitions = event.get("competitions", [])
+                        if not competitions:
+                            continue
 
-                    if len(competitors) < 2:
-                        continue
+                        comp = competitions[0]
+                        takimlar = comp.get("competitors", [])
+                        ev_takim = next(
+                            (t for t in takimlar if t.get("homeAway") == "home"), {}
+                        )
+                        dep_takim = next(
+                            (t for t in takimlar if t.get("homeAway") == "away"), {}
+                        )
 
-                    ev = ""
-                    deplasman = ""
-
-                    for takim in competitors:
-                        isim = (
-                            takim.get("team", {}).get("displayName")
-                            or takim.get("team", {}).get("shortDisplayName")
+                        ev = (
+                            ev_takim.get("team", {}).get("displayName")
+                            or ev_takim.get("team", {}).get("shortDisplayName")
                             or ""
                         )
-
-                        if takim.get("homeAway") == "home":
-                            ev = isim
-                        elif takim.get("homeAway") == "away":
-                            deplasman = isim
-
-                    if not ev or not deplasman:
-                        continue
-
-                    tarih_saat = event.get("date", "")
-                    saat = ""
-
-                    if tarih_saat:
-                        try:
-                            dt = datetime.fromisoformat(
-                                tarih_saat.replace("Z", "+00:00")
-                            )
-
-                            # Türkiye UTC+3
-                            dt_tr = dt + timedelta(hours=3)
-                            saat = dt_tr.strftime("%H:%M")
-                        except Exception:
-                            saat = ""
-
-                    secilen.append({
-                        "spor": spor,
-                        "ikon": ikon,
-                        "lig": lig_adi,
-                        "tarih": tarih,
-                        "saat": saat,
-                        "ev": ev,
-                        "deplasman": deplasman,
-                        "title": f"{ev} - {deplasman}",
-                        "url": url,
-                        "snippet": (
-                            f"{lig_adi} | {ev} - {deplasman}"
-                            + (f" | {saat}" if saat else "")
+                        deplasman = (
+                            dep_takim.get("team", {}).get("displayName")
+                            or dep_takim.get("team", {}).get("shortDisplayName")
+                            or ""
                         )
-                    })
+                        if not ev or not deplasman:
+                            continue
 
-            except Exception as e:
-                print(
-                    f"⚠️ ESPN kaynak hatası ({lig_adi}): {e}",
-                    flush=True
-                )
+                        durum_tipi = (
+                            event.get("status", {}).get("type", {}) or {}
+                        )
+                        tamamlandi = bool(durum_tipi.get("completed"))
+                        if sonuc_sorgusu and not tamamlandi:
+                            continue
 
-        print(
-            f"🏟️ GENEL ESPN FİKSTÜR: {len(secilen)} maç",
-            flush=True
-        )
+                        ev_skor = ev_takim.get("score")
+                        dep_skor = dep_takim.get("score")
+                        etkinlik_id = event.get("id") or (
+                            lig_adi, tarih, ev, deplasman
+                        )
+                        if etkinlik_id in gorulen:
+                            continue
+                        gorulen.add(etkinlik_id)
 
+                        tarih_goster = datetime.strptime(
+                            tarih, "%Y%m%d"
+                        ).strftime("%d.%m.%Y")
+
+                        saat = ""
+                        tarih_saat = event.get("date", "")
+                        if tarih_saat:
+                            try:
+                                dt = datetime.fromisoformat(
+                                    tarih_saat.replace("Z", "+00:00")
+                                )
+                                if dt.utcoffset() is not None:
+                                    dt = dt.astimezone().replace(tzinfo=None)
+                                saat = dt.strftime("%H:%M")
+                            except Exception:
+                                pass
+
+                        skor_metni = (
+                            f"{ev_skor}-{dep_skor}"
+                            if ev_skor is not None and dep_skor is not None
+                            else ""
+                        )
+                        secilen.append({
+                            "spor": spor,
+                            "ikon": ikon,
+                            "lig": lig_adi,
+                            "tarih": tarih_goster,
+                            "saat": saat,
+                            "ev": ev,
+                            "deplasman": deplasman,
+                            "ev_skor": ev_skor,
+                            "deplasman_skor": dep_skor,
+                            "oynandi": tamamlandi,
+                            "durum": durum_tipi.get("detail", ""),
+                            "title": f"{ev} {skor_metni} {deplasman}".strip(),
+                            "url": url,
+                            "snippet": (
+                                f"{lig_adi} | {tarih_goster} | "
+                                f"{ev} {skor_metni} {deplasman}"
+                            ).strip(),
+                        })
+                except Exception as e:
+                    print(
+                        f"ESPN kaynak hatası ({lig_adi}, {tarih}): {e}",
+                        flush=True,
+                    )
+
+        print(f"🏟️ GENEL ESPN FİKSTÜR: {len(secilen)} maç", flush=True)
         return secilen
 
     except Exception as e:
         print(f"⚠️ Genel spor fikstürü hatası: {e}", flush=True)
         return []
-
 
 def tvf_voleybol_getir(hedef_tarih=None, hafta=False):
     """TVF HTML fikstürünü dener; gerekirse resmî Excel fikstürünü kullanır."""
@@ -5692,6 +5736,7 @@ def web_arastir(sorgu, limit=6):
                 baslik = str(sonuc.get("title", "")).casefold()
                 aciklama = str(sonuc.get("snippet", "")).casefold()
                 puan = 0
+
                 for kelime in anlamli:
                     if re.search(
                         r"(?<![a-z0-9çğıöşü])" + re.escape(kelime)
@@ -5702,6 +5747,41 @@ def web_arastir(sorgu, limit=6):
                         puan += 5
                     elif kelime in aciklama:
                         puan += 1
+
+                # Genel tanıtım sorularında rehber/tanıtım sayfalarını öne al.
+                genel_tanitim = bool(re.search(
+                    r"\b(hakkında|hakkinda|tanıt|tanit|"
+                    r"bilgi ver|genel bilgi|anlat|tanıtır mısın|"
+                    r"tanitir misin|overview|introduction|"
+                    r"travel guide|city guide)\b",
+                    soru,
+                ))
+                if genel_tanitim:
+                    tanitim_baslik = (
+                        "hakkında", "hakkinda", "tanıtım", "tanitim",
+                        "gezi rehberi", "şehir rehberi", "sehir rehberi",
+                        "turizm", "gezilecek yerler", "genel bilgiler",
+                        "about", "overview", "travel guide", "city guide",
+                        "tourism", "things to do",
+                    )
+                    tanitim_aciklama = (
+                        "nüfus", "nufus", "coğrafya", "cografya",
+                        "ekonomi", "kültür", "kultur", "tarih",
+                        "gezilecek yerler", "turistik", "population",
+                        "geography", "culture", "tourism", "attractions",
+                    )
+                    olay_baslik = (
+                        "vakası", "vakasi", "olayı", "olayi",
+                        "davası", "davasi", "cinayeti", "savaşı",
+                        "savasi", "patlaması", "patlamasi",
+                    )
+                    if any(x in baslik for x in tanitim_baslik):
+                        puan += 18
+                    if any(x in aciklama for x in tanitim_aciklama):
+                        puan += 3
+                    if any(x in baslik for x in olay_baslik):
+                        puan -= 12
+
                 return puan
 
             ilgili_sonuclar.sort(key=baslik_puani, reverse=True)
@@ -7316,7 +7396,9 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "oynanacak", "oynayacak",
         "kiminle oynayacak", "kimle oynayacak",
         "var mı", "var mi",
-        "hangi maç", "hangi mac"
+        "hangi maç", "hangi mac",
+        "sonuç", "sonuc", "skor",
+        "oynanan"
     ])
 
     if not fikstur_mu:
@@ -7700,8 +7782,9 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             deplasman
         ).strip()
 
-        # Genel maç sorgusunda sayfanın genel lig bilgisini maça taşıma.
-        lig = ""
+        # Yapılandırılmış ESPN kaydının lig bilgisini koru.
+        # Yalnızca lig bilgisi olmayan web kayıtları boş kalır.
+        lig = temiz(sonuc.get("lig", ""))
 
         if any(k in f"{ev} {deplasman}".casefold() for k in (
             "tekrar",
@@ -7842,7 +7925,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             mac = re.search(
                 r"(?:🔴|🔵|🟠|🟡|🟢|🟥|⚫|⚽|🏀|🏐|🎾)\s*(.*?)\s+-\s+(.*?)\n"
                 r"(?:📅\s+.*?—\s+)?(\d{2}\.\d{2}\.\d{4})\n"
-                r"(?:🕐\s+)?(\d{2}:\d{2})",
+                r"(?:🕐\s+(\d{2}:\d{2})|⚽\s+(\d+)\s*-\s*(\d+))",
                 satir,
                 flags=re.DOTALL
             )
@@ -7851,7 +7934,11 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
             ev = temiz(mac.group(1))
             deplasman = temiz(mac.group(2))
-            saat = mac.group(4)
+            saat = mac.group(4) or (
+                f"skor:{mac.group(5)}-{mac.group(6)}"
+                if mac.group(5) is not None and mac.group(6) is not None
+                else ""
+            )
 
             def takim_anahtari(ad):
                 ad = norm(ad)
@@ -8219,6 +8306,7 @@ def web_sonuclari_metni(sonuclar):
                 + sayfa_metni
                 + "\n"
             )
+        else:
             satirlar.append(
                 "GERÇEK SAYFA İÇERİĞİ: Okunamadı. "
                 "Yalnızca arama özeti kullanılabilir.\n"
@@ -10238,6 +10326,28 @@ def sohbet():
 
             # 🏟️ Genel maç sorgusunda ESPN günlük fikstürünü doğrudan kullan.
             # Belirli lig/takım akışlarına dokunmadan yalnızca genel sorguları hedefler.
+            sampiyonlar_ligi_mi = any(k in mesaj.casefold().replace("\\u0307", "") for k in (
+                "şampiyonlar ligi", "sampiyonlar ligi", "champions league"
+            ))
+
+            # Şampiyonlar Ligi sorgularında eski web sonuçları yerine
+            # önce güncel ESPN skorboard verisini dene.
+            if sampiyonlar_ligi_mi:
+                genel_fikstur_verisi = genel_spor_fiksturu_getir(mesaj)
+                if genel_fikstur_verisi:
+                    genel_cevap = spor_fikstur_direkt_cevapla(
+                        mesaj,
+                        web_verisi=genel_fikstur_verisi
+                    )
+                    if genel_cevap:
+                        return jsonify({
+                            "ok": True,
+                            "answer": genel_cevap,
+                            "eagle_direct": True,
+                            "web_search": False,
+                            "memory_count": len(hafiza_yukle())
+                        })
+
             if genel_mac_sorgusu and not web_verisi:
                 genel_fikstur_verisi = genel_spor_fiksturu_getir(mesaj)
                 if genel_fikstur_verisi:
@@ -10401,8 +10511,9 @@ def sohbet():
                 "champions league"
             ])
 
-            if sampiyonlar_ligi_mi:
-                web_verisi = uefa_sampiyonlar_ligi_getir(mesaj)
+            # Şampiyonlar Ligi sorgularında sabit tarihli fikstür
+            # güncel web sonuçlarını ezmemeli. Mevcut spor web araması
+            # doğrulanabilir güncel veriyi getirsin.
 
 # 🌐 Genel spor veri kaynağı — UEFA/TFF/TVF boşsa ESPN
             # 🏟️ Geçmiş/son maç sonucu sorularında çoklu web araması.
@@ -11279,6 +11390,15 @@ def sohbet():
                         merkez_sonuc.get("answer", "")
                     )
                 ).strip()
+
+                # Kullanıcıya ham kaynak işaretlerini gösterme.
+                merkez_cevap = re.sub(
+                    r"\[\s*(?:\d+|[a-zçğıöşü])\s*\]",
+                    "",
+                    merkez_cevap,
+                    flags=re.IGNORECASE,
+                )
+                merkez_cevap = re.sub(r" {2,}", " ", merkez_cevap).strip()
 
                 if (
                     merkez_sonuc.get("ok")
