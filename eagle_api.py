@@ -3525,7 +3525,14 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             "ödeme", "odeme", "kredi"
         ]
 
-        if son_kullanici and any(x in son_kullanici for x in borc_isaretleri):
+        if (
+            son_kullanici
+            and any(x in son_kullanici for x in borc_isaretleri)
+            and (
+                any(x in metin for x in borc_isaretleri)
+                or any(x in metin for x in devam_ifadeleri)
+            )
+        ):
             karar.update({
                 "intent": "borc",
                 "guven": "yüksek",
@@ -5020,7 +5027,8 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
         "nerededir", "kıtadadır", "yaptı", "yapti",
         "verir", "misin", "mısın", "musun", "müsün",
         "misiniz", "mısınız", "musunuz", "müsünüz",
-        "lütfen", "lutfen",
+        "lütfen", "lutfen", "kısa", "kisa", "genel", "özet", "ozet",
+        "tanıtım", "tanitim", "tanıtır", "tanitir", "anlat", "eder", "misiniz",
     }
     kelimeler = {
         k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
@@ -5034,6 +5042,29 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
 
     baslik = str(sonuc.get("title", "") or "").casefold()
     metin = (baslik + " " + str(sonuc.get("snippet", "") or "")).casefold()
+
+    genel_tanitim = bool(re.search(
+        r"hakkında|hakkinda|genel bilgi|kısa bilgi|kisa bilgi|"
+        r"tanıt|tanit|özet|ozet|bilgi verir misin|bilgi ver",
+        str(sorgu or "").casefold(),
+    ))
+    if genel_tanitim and len(kelimeler) == 1:
+        konu = next(iter(kelimeler))
+        alt_konu = re.search(
+            r"film festivali|festival|futbol|basketbol|voleybol|"
+            r"maç sonuç|mac sonuc|üniversite|universite|"
+            r"seçim sonuç|secim sonuc|hava durumu|deprem|"
+            r"konser|albüm|album|dizi bölümü|dizi bolumu",
+            baslik,
+        )
+        sorguda_alt_konu = bool(re.search(
+            r"festival|futbol|basketbol|voleybol|maç|mac|"
+            r"üniversite|universite|seçim|secim|hava durumu|"
+            r"deprem|konser|albüm|album|dizi",
+            str(sorgu or "").casefold(),
+        ))
+        if konu in baslik and alt_konu and not sorguda_alt_konu:
+            return False
 
     # Başkent sorularında ülke ile başkent arasındaki ilişkiyi doğrula.
     bas_soru = re.search(
@@ -5729,6 +5760,9 @@ def web_arastir(sorgu, limit=6):
                     "hangi", "hakkında", "hakkinda", "bilgi", "son",
                     "gelişmeler", "gelismeler", "bulunur", "ülkelerde",
                     "ülkeler", "olan", "olarak", "için", "icin",
+                    "kısa", "kisa", "verir", "misin", "misiniz",
+                    "genel", "tanıtım", "tanitim", "özet", "ozet",
+                    "anlat", "lütfen", "lutfen", "eder",
                 }
             }
 
@@ -5781,6 +5815,49 @@ def web_arastir(sorgu, limit=6):
                         puan += 3
                     if any(x in baslik for x in olay_baslik):
                         puan -= 12
+
+                    # Genel tanıtım sorusunda dar alt konuları geriye al.
+                    sorgu_alt_konu = bool(re.search(
+                        r"festival|futbol|basketbol|voleybol|maç|mac|"
+                        r"üniversite|universite|seçim|secim|hava durumu|"
+                        r"deprem|konser|albüm|album|edebiyat|edebiyatı|"
+                        r"edebiyati|dizi|film|birliği|birligi|"
+                        r"tarihçe|tarihcesi|sonuçları|sonuclari",
+                        soru,
+                    ))
+                    dar_konu_baslik = (
+                        "edebiyat", "film festivali", "festival",
+                        "futbol", "basketbol", "voleybol", "üniversite",
+                        "universite", "seçim sonuç", "secim sonuc",
+                        "hava durumu", "deprem", "konser", "albüm",
+                        "album", "dizi bölümü", "dizi bolumu",
+                        "isveç ve norveç birliği", "isvec ve norvec birligi",
+                    )
+                    if not sorgu_alt_konu and any(
+                        x in baslik for x in dar_konu_baslik
+                    ):
+                        puan -= 22
+
+                    # Sosyal medya ve kısa video içerikleri genel tanıtımda
+                    # ansiklopedik veya kurumsal kaynakların önüne geçmesin.
+                    url = str(sonuc.get("url", "") or "").casefold()
+                    zayif_kaynaklar = (
+                        "tiktok.com", "instagram.com", "facebook.com",
+                        "pinterest.com",
+                    )
+                    if any(x in url for x in zayif_kaynaklar):
+                        puan -= 30
+
+                    # Doğrudan konu başlığını anlatan sayfaları öne çıkar.
+                    baslik_temiz = re.sub(
+                        r"[^a-z0-9çğıöşü ]+", " ", baslik
+                    ).strip()
+                    if baslik_temiz in anlamli:
+                        puan += 12
+                    if "wikipedia.org/wiki/" in url:
+                        puan += 5
+                    if ".gov.tr" in url:
+                        puan += 5
 
                 return puan
 
@@ -5997,11 +6074,16 @@ def web_arastir(sorgu, limit=6):
                         if ikinci_ilgili:
                             return ikinci_ilgili
 
+            ilgili_ilk_sonuclar = [
+                sonuc for sonuc in ilk_sonuclar
+                if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc)
+            ]
             print(
-                f"🧠 Web toplam: {len(ilk_sonuclar)} sonuç (çoklu kaynak)",
+                f"🧠 Web toplam: {len(ilk_sonuclar)} sonuç; "
+                f"ilgili: {len(ilgili_ilk_sonuclar)} (çoklu kaynak)",
                 flush=True
             )
-            return ilk_sonuclar
+            return ilgili_ilk_sonuclar
 
         return []
 
@@ -10940,12 +11022,39 @@ def sohbet():
         "kimsin", "sen kimsin", "senin adın ne", "senin adin ne",
         "ne yapabiliyorsun", "ne yapabilirsin",
     }
+
+    # Açıkça genel bilgi veya konu tanıtımı isteyen doğal ifadeler.
+    tanitim_istegi = bool(re.search(
+        r"(?:hakkında|hakkinda).*(?:bilgi|anlat|tanıt|tanit)"
+        r"|bilgi.*(?:ver|lazım|lazim|istiyorum|almak)"
+        r"|(?:tanıt|tanit|anlat)\w*"
+        r"|merak ediyorum|nasıl bir yer|nasil bir yer",
+        mesaj_yonlendirme
+    ))
+
+    # Tek kelimelik konu adları; selamlaşma ve kısa sohbet yanıtları hariç.
+    sohbet_kelimeleri = {
+        "selam", "merhaba", "hey", "evet", "hayır", "hayir",
+        "tamam", "peki", "olur", "yok", "var", "teşekkürler",
+        "tesekkurler", "sağol", "sagol", "görüşürüz", "gorusuruz",
+        "iyi", "güzel", "guzel", "aynen", "ok",
+    }
+    tek_konu_istegi = bool(
+        re.fullmatch(r"[^\W\d_]{3,}", mesaj_yonlendirme, flags=re.UNICODE)
+        and mesaj_yonlendirme not in sohbet_kelimeleri
+    )
+
+    genel_konu_istegi = tanitim_istegi or tek_konu_istegi
+
     if (
         karar.get("intent") in ("basit_sohbet", "sohbet")
         and karar.get("arac") == "eagle_sohbet"
         and not web_verisi
         and not kimlik_sorusu
-        and _soru_gibi_mi(str(mesaj or "").casefold().strip())
+        and (
+            _soru_gibi_mi(str(mesaj or "").casefold().strip())
+            or genel_konu_istegi
+        )
         and not any(
             ifade in str(mesaj or "").casefold()
             for ifade in (
