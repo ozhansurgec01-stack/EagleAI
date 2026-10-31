@@ -12,6 +12,7 @@ Amaç:
 
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, Optional
+import re
 
 
 @dataclass
@@ -56,29 +57,9 @@ class EagleAkilMotoru:
     SURUM = "1.1"
 
     DEVAM_IFADELERI = (
-        "bunu",
-        "buna",
-        "şunu",
-        "şuna",
-        "onun",
-        "onda",
-        "ondan",
-        "peki",
-        "peki ya",
-        "devam et",
-        "devamını",
-        "daha açık",
-        "daha fazla",
-        "biraz daha",
-        "anlatır mısın",
-        "açıklar mısın",
-        "ne demek",
-        "neden",
-        "nasıl yani",
-        "sonra ne oldu",
-        "ne zaman",
-        "kaç tane",
-        "hangisi"
+        "bunu", "buna", "şunu", "şuna", "onun", "onda", "ondan",
+        "peki", "peki ya", "devam et", "devamını", "daha açık",
+        "daha fazla", "biraz daha", "nasıl yani", "sonra ne oldu"
     )
 
     def __init__(self, karar_motoru=None, hafiza_yukle=None):
@@ -99,12 +80,11 @@ class EagleAkilMotoru:
     @classmethod
     def devam_sorusu_mu(cls, mesaj: str) -> bool:
         metin = cls.normalize(mesaj).lower()
-
         if not metin:
             return False
 
         return any(
-            ifade in metin
+            re.search(r"(?<!\w)" + re.escape(ifade) + r"(?!\w)", metin)
             for ifade in cls.DEVAM_IFADELERI
         )
 
@@ -113,23 +93,13 @@ class EagleAkilMotoru:
         mesaj: str,
         karar: EagleAkilKarari
     ) -> EagleAkilKarari:
-
         if not self.son_mesaj:
             return karar
 
-        # Açık bir devam ifadesi varsa veya hem mevcut hem önceki
-        # karar genel sohbet akışındaysa bağlamı koru.
-        # Bağımsız bilgi/araç soruları eski sohbet tarafından ezilmez.
-        ayni_sohbet_akisi = (
-            karar.arac == "eagle_sohbet"
-            and self.son_arac == "eagle_sohbet"
-        )
-
-        if not self.devam_sorusu_mu(mesaj) and not ayni_sohbet_akisi:
+        # Bağlam yalnızca açık bir devam ifadesi varsa taşınır.
+        if not self.devam_sorusu_mu(mesaj):
             return karar
 
-        # Önceki istek belirgin bir araç/konu taşıyorsa
-        # devam mesajını o bağlama bağla.
         if self.son_intent and self.son_arac:
             karar.intent = self.son_intent
             karar.arac = self.son_arac
