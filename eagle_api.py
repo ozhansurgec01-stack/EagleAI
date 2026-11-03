@@ -3544,6 +3544,24 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             })
             return karar
 
+    # Dizi ve televizyon yapımları hakkındaki bilgi sorularını web'e yönlendir.
+    dizi_bilgi_istegi = (
+        any(x in k for x in ("dizi", "dizisi", "televizyon dizisi", "tv dizisi"))
+        and any(x in k for x in (
+            "hakkında", "hakkinda", "bilgi ver", "anlat", "oyuncu",
+            "bölüm", "bolum", "sezon", "yayın", "yayin", "konusu"
+        ))
+    )
+    if dizi_bilgi_istegi:
+        karar.update({
+            "intent": "guncel_bilgi",
+            "guven": "yüksek",
+            "neden": "Dizi hakkında bilgi isteği web araştırmasına yönlendirildi.",
+            "arac": "web_arastirma",
+            "ogrenme_adayi": True
+        })
+        return karar
+
     if web_arastirma_gerekli(metin):
         karar.update({
             "intent": "guncel_bilgi",
@@ -10938,6 +10956,138 @@ def sohbet():
                 })
 
     elif karar.get("arac") == "web_arastirma":
+        # EAGLE_WIKIPEDIA_DIZI_TANITIM_V1
+        # Genel dizi tanıtımlarında tam başlıklı Wikipedia maddesini kullan.
+        _dizi_soru = str(mesaj_orijinal or mesaj or "").strip()
+        _dizi_norm = _dizi_soru.casefold().replace("ı", "i")
+        _dizi_tanitimi = (
+            any(x in _dizi_norm for x in (
+                "dizi hakkında", "dizisi hakkında", "dizisi hakkinda",
+                "dizisi hakkında bilgi", "dizisi hakkinda bilgi",
+                "dizi hakkında bilgi", "dizi hakkinda bilgi",
+                "dizisini anlat", "diziyi anlat", "dizisinin konusu",
+                "dizisi konusu", "dizisi hakkında anlat",
+                "dizisi hakkinda anlat"
+            ))
+            or (
+                "dizi" in _dizi_norm
+                and any(x in _dizi_norm for x in (
+                    "bilgi verir misin", "bilgi ver", "tanit",
+                    "tanıt", "konusu nedir", "anlat"
+                ))
+            )
+        )
+
+        # Bölüm/sezon/yayın tarihi gibi yapılandırılmış sorgulara dokunma.
+        _dizi_detay_sorgusu = any(x in _dizi_norm for x in (
+            "son bölüm", "son bolum", "en son bölüm", "en son bolum",
+            "kaçıncı bölüm", "kacinci bolum", "bölüm numarası",
+            "bolum numarasi", "hangi sezon", "kaçıncı sezon",
+            "kacinci sezon", "yayın tarihi", "yayin tarihi",
+            "ne zaman yayın", "ne zaman yayin", "son bölümün",
+            "son bolumun", "bölüm tarihi", "bolum tarihi"
+        ))
+
+        if _dizi_tanitimi and not _dizi_detay_sorgusu:
+            import unicodedata
+
+            def _dizi_baslik_norm(v):
+                v = str(v or "").casefold().replace("ı", "i")
+                v = unicodedata.normalize("NFKD", v)
+                v = "".join(
+                    c for c in v
+                    if not unicodedata.combining(c)
+                )
+                return re.sub(r"[^a-z0-9]+", " ", v).strip()
+
+            _baslik_eslesmesi = re.search(
+                r"(.+?)\s+(?:adlı\s+|adli\s+)?(?:televizyon\s+)?dizi(?:si|sini|sinin|sinde)?\b",
+                _dizi_soru.casefold()
+            )
+            _dizi_basligi = (
+                _baslik_eslesmesi.group(1).strip()
+                if _baslik_eslesmesi else ""
+            )
+
+            if _dizi_basligi:
+                try:
+                    import requests as _wiki_requests
+                    _wiki = _wiki_requests.get(
+                        "https://tr.wikipedia.org/w/api.php",
+                        params={
+                            "action": "query",
+                            "format": "json",
+                            "formatversion": 2,
+                            "generator": "search",
+                            "gsrsearch": f'intitle:"{_dizi_basligi}"',
+                            "gsrnamespace": 0,
+                            "gsrlimit": 8,
+                            "prop": "extracts",
+                            "exintro": 1,
+                            "explaintext": 1,
+                        },
+                        headers={
+                            "User-Agent": "EagleAI/1.0 (series information)"
+                        },
+                        timeout=12
+                    )
+                    _wiki.raise_for_status()
+                    _wiki_data = _wiki.json()
+                    _wiki_pages = (
+                        _wiki_data.get("query", {}).get("pages", [])
+                    )
+
+                    _hedef_baslik = _dizi_baslik_norm(_dizi_basligi)
+                    _wiki_sayfasi = next(
+                        (
+                            sayfa for sayfa in _wiki_pages
+                            if isinstance(sayfa, dict)
+                            and _dizi_baslik_norm(sayfa.get("title"))
+                            == _hedef_baslik
+                            and str(sayfa.get("extract") or "").strip()
+                        ),
+                        None
+                    )
+
+                    if _wiki_sayfasi:
+                        _wiki_baslik = str(
+                            _wiki_sayfasi.get("title") or _dizi_basligi
+                        ).strip()
+                        _wiki_ozet = re.sub(
+                            r"\s+", " ",
+                            str(_wiki_sayfasi.get("extract") or "")
+                        ).strip()
+
+                        if len(_wiki_ozet) >= 80:
+                            _wiki_url = (
+                                "https://tr.wikipedia.org/wiki/"
+                                + quote(_wiki_baslik.replace(" ", "_"))
+                            )
+                            return jsonify({
+                                "ok": True,
+                                "answer": (
+                                    f"📺 **{_wiki_baslik}**\n\n"
+                                    f"{_wiki_ozet}\n\n"
+                                    f"Kaynak: {_wiki_url}"
+                                ),
+                                "web_search": True,
+                                "eagle_direct": True,
+                                "merkez_motor": False,
+                                "source": _wiki_url,
+                                "memory_count": len(hafiza_yukle())
+                            })
+
+                    print(
+                        "📺 Dizi tanıtımı için tam başlıklı Wikipedia "
+                        "maddesi bulunamadı; normal akış devam edecek.",
+                        flush=True
+                    )
+                except Exception as _wiki_hata:
+                    print(
+                        f"📺 Wikipedia dizi tanıtım hatası: {_wiki_hata}",
+                        flush=True
+                    )
+
         # 🧠 Öğrenme hafızası: güncel olmayan genel konuda önce mevcut bilgiyi kullan
         mesaj_kucuk = mesaj.casefold()
         guncel_isaretleri = [
