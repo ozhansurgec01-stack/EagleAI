@@ -1581,6 +1581,143 @@ class EagleMerkezMotoru:
         if not mesaj:
             return "", 0.0
 
+        # EAGLEAI_YAPILANDIRILMIS_WEB_BILGISI_V1
+        # Web sayfalarındaki etiket-değer alanlarından doğrudan cevap üret.
+        try:
+            soru_norm = cls.normalize(mesaj)
+            alan_eslemesi = {
+                "bölüm numarası": "bolum",
+                "bolum numarasi": "bolum",
+                "bölüm": "bolum",
+                "bolum": "bolum",
+                "episode number": "bolum",
+                "episode": "bolum",
+                "sezon": "sezon",
+                "season": "sezon",
+                "yayın tarihi": "tarih",
+                "yayin tarihi": "tarih",
+                "yayinlanma tarihi": "tarih",
+                "air date": "tarih",
+                "release date": "tarih",
+                "oyuncular": "oyuncular",
+                "oyuncu kadrosu": "oyuncular",
+                "basrol oyunculari": "oyuncular",
+                "cast": "oyuncular",
+            }
+            istenen_alanlar = []
+            if re.search(r"\b(bölüm|bolum|episode)\b", soru_norm):
+                istenen_alanlar.append("bolum")
+            if re.search(r"\b(sezon\w*|season\w*)\b", soru_norm):
+                istenen_alanlar.append("sezon")
+            if re.search(r"\b(tarih\w*|ne zaman|date)\b", soru_norm):
+                istenen_alanlar.append("tarih")
+            if re.search(r"\b(oyuncu\w*|cast)\b", soru_norm):
+                istenen_alanlar.append("oyuncular")
+
+            if len(istenen_alanlar) >= 2:
+                konu_kelimeleri = [
+                    k for k in re.findall(r"[a-z0-9çğıöşü]+", soru_norm)
+                    if len(k) >= 3 and k not in {
+                        "son", "sonra", "sonuncu", "bolum", "episode",
+                        "sezon", "season", "tarih", "oyuncu", "oyuncular",
+                        "soyle", "lutfen", "nedir", "hangi", "numarasini",
+                        "numarasi", "bilgilerini", "ver"
+                    }
+                ]
+                adaylar = []
+
+                for veri in list(veriler or [])[:20]:
+                    if not isinstance(veri, dict):
+                        continue
+
+                    baslik = str(veri.get("title", "") or "").strip()
+                    url = str(veri.get("url", "") or "").strip()
+                    icerik = " ".join(
+                        str(veri.get(k, "") or "")
+                        for k in ("text", "description", "content", "snippet")
+                    ).strip()
+
+                    # Arama özeti yetersizse gerçek kaynak sayfasını oku.
+                    if sayfa_okuyucu and url:
+                        try:
+                            sayfa_metni = str(sayfa_okuyucu(url) or "").strip()
+                            if sayfa_metni:
+                                icerik = " ".join((icerik, sayfa_metni)).strip()
+                        except Exception as e:
+                            print("⚠️ Yapılandırılmış kaynak okunamadı:", e, flush=True)
+
+                    tum_metin = " ".join((baslik, url, icerik)).strip()
+                    if not tum_metin:
+                        continue
+
+                    bulunan = {}
+                    for parca in re.split(r"\s*[|;\n]\s*", tum_metin):
+                        if ":" not in parca:
+                            continue
+                        etiket, deger = parca.split(":", 1)
+                        etiket_norm = cls.normalize(etiket).strip()
+                        alan = alan_eslemesi.get(etiket_norm)
+                        deger = re.sub(r"<[^>]+>", " ", deger)
+                        deger = re.sub(r"\s+", " ", deger).strip(" \t\r\n-–")
+                        if alan and deger and alan not in bulunan:
+                            bulunan[alan] = deger
+
+                    kapsanan = [
+                        alan for alan in istenen_alanlar
+                        if bulunan.get(alan)
+                    ]
+                    if not kapsanan:
+                        continue
+
+                    baslik_norm = cls.normalize(baslik + " " + url)
+                    konu_eslesmesi = sum(
+                        1 for kelime in konu_kelimeleri
+                        if kelime in baslik_norm
+                    )
+                    if konu_kelimeleri and konu_eslesmesi == 0:
+                        continue
+
+                    adaylar.append(
+                        (len(kapsanan), konu_eslesmesi, bulunan, baslik, url)
+                    )
+
+                if adaylar:
+                    adaylar.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                    kapsama, konu_puani, bulunan, baslik, url = adaylar[0]
+
+                    if kapsama == len(istenen_alanlar):
+                        satirlar = ["📺 WEB KAYNAĞINDAN DOĞRULANAN BİLGİLER"]
+                        gorunen_adlar = {
+                            "bolum": "Bölüm",
+                            "sezon": "Sezon",
+                            "tarih": "Yayın tarihi",
+                            "oyuncular": "Oyuncular",
+                        }
+                        for alan in istenen_alanlar:
+                            deger = bulunan[alan]
+                            if alan == "tarih":
+                                tarih = re.search(
+                                    r"\b(\d{4})-(\d{2})-(\d{2})\b", deger
+                                )
+                                if tarih:
+                                    deger = (
+                                        f"{tarih.group(3)}."
+                                        f"{tarih.group(2)}."
+                                        f"{tarih.group(1)}"
+                                    )
+                            satirlar.append(
+                                f"**{gorunen_adlar[alan]}:** {deger}"
+                            )
+
+                        if baslik:
+                            satirlar.append(f"Kaynak başlığı: {baslik}")
+                        if url:
+                            satirlar.append(f"Kaynak: {url}")
+
+                        return "\n".join(satirlar), 0.95
+        except Exception as e:
+            print("⚠️ Yapılandırılmış web bilgisi çıkarılamadı:", e, flush=True)
+
         soru = cls.normalize(mesaj)
 
         etkisiz = {
@@ -4335,7 +4472,7 @@ class EagleMerkezMotoru:
             if sayfa_okuyucu:
                 okunmus_veriler = []
 
-                for veri in veriler[:4]:
+                for veri in veriler[:12]:
                     url = str(
                         veri.get("url", "")
                     ).strip()
