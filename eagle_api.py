@@ -2724,6 +2724,66 @@ def sembolik_denklem_coz(metin):
         return None
 
 
+
+def _eagle_dizi_sorgu_turu(metin):
+    """
+    Dizi sorgusunu genel tanıtım veya özel detay olarak sınıflandırır.
+    Dizi adına bağlı sabit kayıt içermez.
+    """
+    import re
+    import unicodedata
+
+    metin = str(metin or "").strip().casefold()
+    norm = unicodedata.normalize("NFKD", metin)
+    norm = "".join(
+        c for c in norm if not unicodedata.combining(c)
+    ).replace("ı", "i")
+    norm = re.sub(r"[^a-z0-9]+", " ", norm)
+    norm = re.sub(r"\s+", " ", norm).strip()
+
+    dizi_turu = re.search(
+        r"\b(?:dizi|dizisi|dizisini|dizisinin|dizinin|dizisinde|"
+        r"dizilerinin|diziler|dizileri|diziden|diziye|"
+        r"televizyon dizisi|tv dizisi)\b",
+        norm
+    )
+    if not dizi_turu:
+        return None
+
+    detay_kaliplari = (
+        r"\bson bolum(?:u|un|unde|unden|une)?\b",
+        r"\ben son bolum(?:u|un|unde|unden|une)?\b",
+        r"\bkacinci bolum(?:u|un|da|de|te|ta)?\b",
+        r"\bbolum numarasi\b",
+        r"\bhangi bolum(?:u|da|de)?\b",
+        r"\bbolum tarihi\b",
+        r"\bhangi sezon(?:u|da|unda|un)?\b",
+        r"\bkacinci sezon(?:u|da|unda|un)?\b",
+        r"\bson sezon(?:u|da|unda|un)?\b",
+        r"\byayin tarihi\b",
+        r"\bne zaman yayin\b",
+        r"\byayin tarihi ne\b",
+        r"\byeni bolum(?:u|de|den)?\b",
+    )
+    if any(re.search(kalip, norm) for kalip in detay_kaliplari):
+        return "detay"
+
+    tanitim_kaliplari = (
+        r"\bhakkinda\b", r"\bilgiler?\b", r"\bbilgisini\b",
+        r"\bbilgi ver\b", r"\bbilgi verir\b",
+        r"\bilgiler verir\b", r"\bilgiler verir misin\b",
+        r"\bile ilgili\b", r"\banlat\b", r"\btanit\b",
+        r"\bkonusu\b", r"\boyuncular?\b", r"\bkimler oynuyor\b",
+        r"\bne anlatiyor\b", r"\bnedir\b",
+    )
+    if any(re.search(kalip, norm) for kalip in tanitim_kaliplari):
+        return "tanitim"
+
+    # "Doctor Who dizisi" gibi yalnızca başlık ve tür belirten
+    # kısa sorgular da genel tanıtım isteğidir.
+    return "tanitim"
+
+
 def eagle_karar_motoru(mesaj, gecmis=None):
     """
     EagleAI karar motoru v1.
@@ -3544,15 +3604,9 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             })
             return karar
 
-    # Dizi ve televizyon yapımları hakkındaki bilgi sorularını web'e yönlendir.
-    dizi_bilgi_istegi = (
-        any(x in k for x in ("dizi", "dizisi", "televizyon dizisi", "tv dizisi"))
-        and any(x in k for x in (
-            "hakkında", "hakkinda", "bilgi ver", "anlat", "oyuncu",
-            "bölüm", "bolum", "sezon", "yayın", "yayin", "konusu"
-        ))
-    )
-    if dizi_bilgi_istegi:
+    # Dizi sorgularını ortak algılayıcıyla web araştırmasına yönlendir.
+    dizi_sorgu_turu = _eagle_dizi_sorgu_turu(metin)
+    if dizi_sorgu_turu:
         karar.update({
             "intent": "guncel_bilgi",
             "guven": "yüksek",
@@ -10961,21 +11015,7 @@ def sohbet():
         _dizi_soru = str(mesaj_orijinal or mesaj or "").strip()
         _dizi_norm = _dizi_soru.casefold().replace("ı", "i")
         _dizi_tanitimi = (
-            any(x in _dizi_norm for x in (
-                "dizi hakkında", "dizisi hakkında", "dizisi hakkinda",
-                "dizisi hakkında bilgi", "dizisi hakkinda bilgi",
-                "dizi hakkında bilgi", "dizi hakkinda bilgi",
-                "dizisini anlat", "diziyi anlat", "dizisinin konusu",
-                "dizisi konusu", "dizisi hakkında anlat",
-                "dizisi hakkinda anlat"
-            ))
-            or (
-                "dizi" in _dizi_norm
-                and any(x in _dizi_norm for x in (
-                    "bilgi verir misin", "bilgi ver", "tanit",
-                    "tanıt", "konusu nedir", "anlat"
-                ))
-            )
+            _eagle_dizi_sorgu_turu(_dizi_soru) == "tanitim"
         )
 
         # Bölüm/sezon/yayın tarihi gibi yapılandırılmış sorgulara dokunma.
@@ -11019,9 +11059,9 @@ def sohbet():
                             "format": "json",
                             "formatversion": 2,
                             "generator": "search",
-                            "gsrsearch": f'intitle:"{_dizi_basligi}"',
+                            "gsrsearch": _dizi_basligi,
                             "gsrnamespace": 0,
-                            "gsrlimit": 8,
+                            "gsrlimit": 10,
                             "prop": "extracts",
                             "exintro": 1,
                             "explaintext": 1,
@@ -11038,17 +11078,75 @@ def sohbet():
                     )
 
                     _hedef_baslik = _dizi_baslik_norm(_dizi_basligi)
-                    _wiki_sayfasi = next(
-                        (
-                            sayfa for sayfa in _wiki_pages
-                            if isinstance(sayfa, dict)
-                            and _dizi_baslik_norm(sayfa.get("title"))
-                            == _hedef_baslik
-                            and str(sayfa.get("extract") or "").strip()
-                        ),
-                        None
-                    )
+                    _wiki_adaylari = []
 
+                    for _sayfa in _wiki_pages:
+                        if not isinstance(_sayfa, dict):
+                            continue
+
+                        _sayfa_baslik = str(
+                            _sayfa.get("title") or ""
+                        ).strip()
+                        _sayfa_ozet = re.sub(
+                            r"\s+", " ",
+                            str(_sayfa.get("extract") or "")
+                        ).strip()
+
+                        if not _sayfa_baslik or len(_sayfa_ozet) < 80:
+                            continue
+
+                        _baslik_norm = _dizi_baslik_norm(_sayfa_baslik)
+                        _ozet_norm = _dizi_baslik_norm(_sayfa_ozet)
+
+                        # Sezon, bölüm, film ve liste maddelerini ana
+                        # dizi tanıtımı adayı olarak değerlendirme.
+                        _baslik_engelleri = (
+                            " film", " sezon", " bolum",
+                            " bolumleri", " listesi", " ozel bolum"
+                        )
+                        if any(
+                            engel in " " + _baslik_norm
+                            for engel in _baslik_engelleri
+                        ):
+                            continue
+
+                        _dizi_ifadesi = bool(re.search(
+                            r"\b(dizi|dizisi|dizidir|dizisini|"
+                            r"televizyon dizisi)\b",
+                            _ozet_norm
+                        ))
+                        if not _dizi_ifadesi:
+                            continue
+
+                        _tam_baslik = _baslik_norm == _hedef_baslik
+                        _ozette_ad = bool(re.search(
+                            r"(?<![a-z0-9])"
+                            + re.escape(_hedef_baslik)
+                            + r"(?![a-z0-9])",
+                            _ozet_norm
+                        ))
+
+                        if not (_tam_baslik or _ozette_ad):
+                            continue
+
+                        _puan = (
+                            (1000 if _tam_baslik else 0)
+                            + (200 if _ozette_ad else 0)
+                            + min(len(_sayfa_ozet), 2000) // 100
+                        )
+
+                        _wiki_adaylari.append((
+                            _puan, _sayfa, _sayfa_ozet
+                        ))
+
+                    _wiki_adaylari.sort(
+                        key=lambda aday: aday[0],
+                        reverse=True
+                    )
+                    _wiki_sayfasi = (
+                        _wiki_adaylari[0][1]
+                        if _wiki_adaylari else None
+                    )
                     if _wiki_sayfasi:
                         _wiki_baslik = str(
                             _wiki_sayfasi.get("title") or _dizi_basligi
