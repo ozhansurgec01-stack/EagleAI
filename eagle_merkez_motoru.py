@@ -1782,6 +1782,15 @@ class EagleMerkezMotoru:
                     flags=re.IGNORECASE,
                 ).strip(" ?.!")
 
+                # "Uzak Şehir dizisi" gibi ifadelerden tür ekini çıkar.
+                # Böylece kaynak başlığı "Uzak Şehir" ile eşleşebilir.
+                konu = re.sub(
+                    r"\s+(?:tv\s+)?(?:dizisi|dizi)$",
+                    "",
+                    konu,
+                    flags=re.IGNORECASE,
+                ).strip()
+
                 konu_norm = cls.normalize(konu)
                 konu_kelime = [
                     k for k in re.findall(r"[a-z0-9çğıöşü]+", konu_norm)
@@ -1832,8 +1841,32 @@ class EagleMerkezMotoru:
                     # Önce tam konu başlıklı kaynağı dene.
                     # Sayfa okuyucu varsa gerçek sayfa metnini de kullan.
                     icerikler = []
+                    url = str(v.get("url", "") or "").strip()
+                    # Video ve oynatma listelerini genel tanıtım kaynağı yapma.
+                    url_norm = url.lower()
+                    if "youtube.com" in url_norm or "youtu.be" in url_norm:
+                        continue
+
+                    # Bölüm, sezon, video ve galeri URL'leri genel
+                    # dizi tanıtımında kaynak olarak kullanılmasın.
+                    url_yolu = re.sub(r"[?#].*$", "", url_norm)
+                    if re.search(
+                        r"/(?:bolum(?:ler)?|episode(?:s)?|season(?:s)?|"
+                        r"fragman(?:lar)?|galeri|foto(?:graf)?(?:lar)?|"
+                        r"video(?:lar)?|watch|playlist)(?:/|$)",
+                        url_yolu,
+                    ):
+                        continue
+                     # Genel tanıtımda bölüm, fragman ve galeri sayfalarını ele.
+                    baslik_norm = cls.normalize(baslik)
+                    if re.search(
+                        r"\b(?:\d{1,3}\s*\.?\s*bolum|son bolum|tum bolumler|"
+                        r"bolumler|fragman|fotograf|galeri|izle|oynatma listesi)\b",
+                        baslik_norm,
+                        re.IGNORECASE,
+                    ):
+                        continue
                     if tam_baslik and sayfa_okuyucu:
-                        url = str(v.get("url", "") or "").strip()
                         if url:
                             try:
                                 sayfa_metni = str(sayfa_okuyucu(url) or "").strip()
@@ -1845,11 +1878,12 @@ class EagleMerkezMotoru:
                                     e, flush=True
                                 )
 
-                    if metin:
-                        icerikler.append(metin)
-                    if ozet:
-                        icerikler.append(ozet)
-
+                    # Sayfa metni varsa arama özetini tekrar ekleme.
+                    if not icerikler:
+                        if metin:
+                            icerikler.append(metin)
+                        if ozet:
+                            icerikler.append(ozet)
                     # Alt konu başlıkları (ör. İzmir Metrosu),
                     # genel tanıtımın önüne geçmesin.
                     oncelik = 0 if tam_baslik else 1
@@ -1895,6 +1929,24 @@ class EagleMerkezMotoru:
 
                         norm = cls.normalize(cumle)
                         norm = re.sub(r"\s+", " ", norm).strip()
+
+                        # Dizi tanıtımında eski bölüm ve yayın haberlerini ele.
+                        dizi_tanitimi = bool(re.search(r'\b(dizi|dizisi)\b', cls.normalize(soru)))
+                        if dizi_tanitimi:
+                            if re.search(
+                                r'\b(\d{1,3}\s*\.?\s*bolum|sezon finali|sezon arasi|'
+                                r'yeni bolum|son bolum|fragman|fotograf|pazartesi|'
+                                r'sali|carsamba|persembe|cuma|cumartesi|pazar|'
+                                r'kurban bayrami|televizyon filmi)\b', norm,
+                                re.IGNORECASE,
+                            ):
+                                continue
+                            if not re.search(
+                                r'\b(yapim|oyuncu|basrol|yonetmen|senaryo|uyarl|'
+                                r'dram|komedi|konu|hikaye|cekil|karakter)\b', norm,
+                                re.IGNORECASE,
+                            ):
+                                continue
 
                         if not norm or norm in gorulen_cumleler:
                             continue

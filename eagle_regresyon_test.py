@@ -702,6 +702,70 @@ def karar_motoru_test():
         f"Güncel haber isteği bozuldu: {guncel}"
     )
 
+    # Dizi algılama genel olmalı; belirli yapım adlarına özel kural olmamalı.
+    dizi_tanitim_sorulari = [
+        "Doctor Who dizisi",
+        "X Files dizisi ile ilgili bilgiler verir misin?",
+        "Uzak Şehir dizisi hakkında bilgi ver",
+        "Gönül Dağı dizisini anlat",
+    ]
+    for soru in dizi_tanitim_sorulari:
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("intent") == "guncel_bilgi", (
+            f"Dizi tanıtım isteği web araştırmasına yönlenmedi: {soru} -> {sonuc}"
+        )
+        assert sonuc.get("arac") == "web_arastirma", (
+            f"Dizi tanıtımında web aracı seçilmedi: {soru} -> {sonuc}"
+        )
+
+    dizi_detay_sorulari = [
+        "Doctor Who dizisinin son bölümü hangisi?",
+        "Bir dizinin kaçıncı sezonunda olduğunu öğrenmek istiyorum",
+    ]
+    for soru in dizi_detay_sorulari:
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("arac") == "web_arastirma", (
+            f"Dizi detay isteği web araştırmasına yönlenmedi: {soru} -> {sonuc}"
+        )
+        assert eagle_api._eagle_dizi_sorgu_turu(soru) == "detay", (
+            f"Dizi detay isteği tanıtım olarak sınıflandırıldı: {soru}"
+        )
+
+
+    # Film sorguları: başlık doğrulaması ve yanlış pozitif kontrolleri.
+    film_olumlu = [
+        "Inception filmi hakkında bilgi ver",
+        "Interstellar filminin konusu nedir?",
+        "The Godfather oyuncuları kimler?",
+        "Oppenheimer filmi",
+    ]
+    for soru in film_olumlu:
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("intent") == "guncel_bilgi", (
+            f"Film tanıtım isteği yanlış yönlendirildi: {soru} -> {sonuc}"
+        )
+        assert sonuc.get("arac") == "web_arastirma", (
+            f"Film sorgusunda web araştırması seçilmedi: {soru} -> {sonuc}"
+        )
+        assert sonuc.get("media_query") is True, (
+            f"Film sorgusu medya sorgusu olarak işaretlenmedi: {soru}"
+        )
+        assert eagle_api._eagle_film_baslik_cikar(soru), (
+            f"Film başlığı çıkarılamadı: {soru}"
+        )
+
+    film_olumsuz = [
+        "Bugün hava nasıl?",
+        "Bir film önerir misin?",
+        "Bana film öner",
+        "Film tavsiyesi istiyorum",
+        "Film hakkında bilgi ver",
+    ]
+    for soru in film_olumsuz:
+        assert eagle_api._eagle_film_sorgu_turu(soru) is None, (
+            f"Başlıksız veya ilgisiz sorgu film tanıtımı sayıldı: {soru}"
+        )
+
 
 def kod_analiz_import_test():
     import eagle_kod_analiz_motoru
