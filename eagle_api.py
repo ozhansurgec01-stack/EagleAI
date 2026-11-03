@@ -2725,6 +2725,223 @@ def sembolik_denklem_coz(metin):
 
 
 
+
+def _eagle_tmdb_norm(metin):
+    """TMDb başlık karşılaştırması için Türkçe karakterleri normalize eder."""
+    import unicodedata
+    metin = unicodedata.normalize("NFKD", str(metin or "").casefold())
+    metin = "".join(c for c in metin if not unicodedata.combining(c))
+    metin = metin.replace("ı", "i")
+    return re.sub(r"[^a-z0-9]+", " ", metin).strip()
+
+
+def _eagle_tmdb_medya_bul(baslik, tur=None):
+    """Tam başlık eşleşmesiyle TMDb yapım görsellerini ve oyuncu fotoğraflarını getirir."""
+    api_key = os.getenv("TMDB_API_KEY", "").strip()
+    baslik = str(baslik or "").strip()
+
+    if not api_key or not baslik:
+        return None
+
+    turler = [tur] if tur in ("movie", "tv") else ["movie", "tv"]
+    hedef = _eagle_tmdb_norm(baslik)
+    if not hedef:
+        return None
+
+    oturum = requests.Session()
+    secilen = None
+
+    for medya_turu in turler:
+        try:
+            yanit = oturum.get(
+                f"https://api.themoviedb.org/3/search/{medya_turu}",
+                params={
+                    "api_key": api_key,
+                    "query": baslik,
+                    "language": "tr-TR",
+                    "include_adult": "false",
+                },
+                timeout=12,
+            )
+            yanit.raise_for_status()
+            sonuclar = yanit.json().get("results", [])
+
+            for aday in sonuclar:
+                aday_baslik = (
+                    aday.get("title") or aday.get("name") or ""
+                )
+                orijinal_baslik = (
+                    aday.get("original_title")
+                    or aday.get("original_name")
+                    or ""
+                )
+
+                if hedef not in {
+                    _eagle_tmdb_norm(aday_baslik),
+                    _eagle_tmdb_norm(orijinal_baslik),
+                }:
+                    continue
+
+                secilen = (medya_turu, aday)
+                break
+
+            if secilen:
+                break
+        except Exception:
+            continue
+
+    if not secilen:
+        return None
+
+    medya_turu, aday = secilen
+    medya_id = aday.get("id")
+    if not medya_id:
+        return None
+
+    temel = {
+        "provider": "TMDb",
+        "media_type": medya_turu,
+        "tmdb_id": medya_id,
+        "title": aday.get("title") or aday.get("name") or baslik,
+        "overview": aday.get("overview") or "",
+        "release_date": aday.get("release_date") or aday.get("first_air_date") or "",
+        "poster_url": (
+            "https://image.tmdb.org/t/p/w500" + aday["poster_path"]
+            if aday.get("poster_path") else None
+        ),
+        "backdrop_url": (
+            "https://image.tmdb.org/t/p/original" + aday["backdrop_path"]
+            if aday.get("backdrop_path") else None
+        ),
+        "images": [],
+        "cast": [],
+        "attribution": (
+            "This product uses the TMDB API but is not endorsed or "
+            "certified by TMDB."
+        ),
+    }
+
+    try:
+        yanit = oturum.get(
+            f"https://api.themoviedb.org/3/{medya_turu}/{medya_id}/images",
+            params={"api_key": api_key},
+            timeout=12,
+        )
+        yanit.raise_for_status()
+        gorseller = yanit.json()
+
+        for kategori in ("backdrops", "posters", "logos"):
+            for gorsel in gorseller.get(kategori, [])[:8]:
+                yol = gorsel.get("file_path")
+                if yol:
+                    temel["images"].append({
+                        "type": kategori[:-1] if kategori.endswith("s") else kategori,
+                        "url": "https://image.tmdb.org/t/p/w780" + yol,
+                    })
+    except Exception:
+        pass
+
+    try:
+        yanit = oturum.get(
+            f"https://api.themoviedb.org/3/{medya_turu}/{medya_id}/credits",
+            params={"api_key": api_key, "language": "tr-TR"},
+            timeout=12,
+        )
+        yanit.raise_for_status()
+
+        for kisi in yanit.json().get("cast", [])[:12]:
+            yol = kisi.get("profile_path")
+            if yol:
+                temel["cast"].append({
+                    "name": kisi.get("name"),
+                    "character": kisi.get("character"),
+                    "image_url": "https://image.tmdb.org/t/p/w342" + yol,
+                })
+    except Exception:
+        pass
+
+    return temel
+
+
+
+# EAGLE_TMDB_FILM_TANITIM_V1
+def _eagle_film_baslik_cikar(metin):
+    """Yalnızca başlığı belirlenebilen film tanıtım sorgularını ayıklar."""
+    import re
+
+    ham = str(metin or "").strip()
+    if not ham:
+        return None
+
+    norm = _eagle_tmdb_norm(ham)
+
+    # Öneri/tavsiye istekleri bir film başlığı araması değildir.
+    if re.search(
+        r"\b(oner|tavsiye|tavsiyesi|tavsiyeler|"
+        r"oneri|film oner|film tavsiye)\w*\b",
+        norm,
+    ):
+        return None
+
+    # "Inception filmi", "Interstellar filminin konusu" gibi açık tür belirteçleri.
+    eslesme = re.search(
+        r"^(.+?)\s+(?:adli\s+|adlı\s+)?film"
+        r"(?:i|ini|inin|in|inde|inden|ine|ler|leri)?"
+        r"(?=\s|$|[?!.,])",
+        ham,
+        flags=re.IGNORECASE,
+    )
+
+    if eslesme:
+        baslik = eslesme.group(1).strip()
+    else:
+        # Film sözcüğü bulunmadan verilen açık tanıtım istekleri.
+        baslik = ham
+        son_ifadeler = (
+            r"\s+(?:filmin\s+)?hakkında\s+bilgi\s+ver(?:ir\s+misin)?\s*[?.!]*$",
+            r"\s+(?:filmin\s+)?hakkinda\s+bilgi\s+ver(?:ir\s+misin)?\s*[?.!]*$",
+            r"\s+konusu(?:\s+nedir)?\s*[?.!]*$",
+            r"\s+(?:filmin\s+)?oyuncuları(?:\s+kimler(?:dir)?)?\s*[?.!]*$",
+            r"\s+(?:filmin\s+)?oyunculari(?:\s+kimler(?:dir)?)?\s*[?.!]*$",
+            r"\s+kimler\s+oynuyor\s*[?.!]*$",
+            r"\s+yönetmeni\s+kim\s*[?.!]*$",
+            r"\s+yonetmeni\s+kim\s*[?.!]*$",
+            r"\s+ne\s+anlatıyor\s*[?.!]*$",
+            r"\s+ne\s+anlatiyor\s*[?.!]*$",
+        )
+        for kalip in son_ifadeler:
+            yeni = re.sub(kalip, "", baslik, flags=re.IGNORECASE).strip()
+            if yeni != baslik:
+                baslik = yeni
+                break
+        else:
+            return None
+
+    baslik = re.sub(r"^[\s:;,.!?]+|[\s:;,.!?]+$", "", baslik).strip()
+    baslik_norm = _eagle_tmdb_norm(baslik)
+
+    if not baslik_norm:
+        return None
+
+    genel_ifadeler = {
+        "film", "filmi", "bir film", "film hakkinda",
+        "film hakkında", "bana film", "hangi film",
+        "su film", "bu film",
+    }
+    if baslik_norm in {_eagle_tmdb_norm(x) for x in genel_ifadeler}:
+        return None
+
+    if len(baslik_norm) < 2:
+        return None
+
+    return baslik
+
+
+def _eagle_film_sorgu_turu(metin):
+    """Başlığı doğrulanabilen film tanıtım sorgularını sınıflandırır."""
+    return "tanitim" if _eagle_film_baslik_cikar(metin) else None
+
+
 def _eagle_dizi_sorgu_turu(metin):
     """
     Dizi sorgusunu genel tanıtım veya özel detay olarak sınıflandırır.
@@ -3603,6 +3820,19 @@ def eagle_karar_motoru(mesaj, gecmis=None):
                 "history_devam": True
             })
             return karar
+
+    # Başlığı belirlenebilen film tanıtımlarını TMDb akışına yönlendir.
+    film_sorgu_turu = _eagle_film_sorgu_turu(metin)
+    if film_sorgu_turu:
+        karar.update({
+            "intent": "guncel_bilgi",
+            "guven": "yüksek",
+            "neden": "Başlığı belirlenen film tanıtım isteği TMDb araştırmasına yönlendirildi.",
+            "arac": "web_arastirma",
+            "ogrenme_adayi": True,
+            "media_query": True
+        })
+        return karar
 
     # Dizi sorgularını ortak algılayıcıyla web araştırmasına yönlendir.
     dizi_sorgu_turu = _eagle_dizi_sorgu_turu(metin)
@@ -11010,6 +11240,66 @@ def sohbet():
                 })
 
     elif karar.get("arac") == "web_arastirma":
+        # EAGLE_TMDB_FILM_TANITIM_V1
+        _film_soru = str(mesaj_orijinal or mesaj or "").strip()
+        _film_basligi = _eagle_film_baslik_cikar(_film_soru)
+
+        if _film_basligi:
+            _film_medya = _eagle_tmdb_medya_bul(
+                _film_basligi, "movie"
+            )
+
+            if _film_medya:
+                _film_yil = str(
+                    _film_medya.get("release_date") or ""
+                )[:4]
+                _film_ozet = str(
+                    _film_medya.get("overview") or ""
+                ).strip()
+
+                _film_cevap = (
+                    f"🎬 **{_film_medya.get('title') or _film_basligi}**"
+                )
+                if _film_yil:
+                    _film_cevap += f" ({_film_yil})"
+                if _film_ozet:
+                    _film_cevap += f"\n\n{_film_ozet}"
+                else:
+                    _film_cevap += (
+                        "\n\nTMDb başlık eşleşmesi doğrulandı. "
+                        "Bu yapım için kayıtlı özet bilgisi bulunmuyor."
+                    )
+
+                return jsonify({
+                    "ok": True,
+                    "answer": _film_cevap,
+                    "web_search": True,
+                    "eagle_direct": True,
+                    "merkez_motor": False,
+                    "source": "https://www.themoviedb.org/movie/"
+                              + str(_film_medya.get("tmdb_id")),
+                    "media_query": True,
+                    "media_images": _film_medya,
+                    "memory_count": len(hafiza_yukle())
+                })
+
+            # Doğrulanmış eşleşme yoksa yanlış görsel gösterme.
+            return jsonify({
+                "ok": True,
+                "answer": (
+                    f"🎬 **{_film_basligi}** için TMDb üzerinde "
+                    "tam başlık eşleşmesi doğrulanamadı. "
+                    "Bu nedenle yanlış afiş veya oyuncu görseli "
+                    "göstermiyorum."
+                ),
+                "web_search": True,
+                "eagle_direct": True,
+                "merkez_motor": False,
+                "media_query": True,
+                "media_images": None,
+                "memory_count": len(hafiza_yukle())
+            })
+
         # EAGLE_WIKIPEDIA_DIZI_TANITIM_V1
         # Genel dizi tanıtımlarında tam başlıklı Wikipedia maddesini kullan.
         _dizi_soru = str(mesaj_orijinal or mesaj or "").strip()
@@ -11161,6 +11451,9 @@ def sohbet():
                                 "https://tr.wikipedia.org/wiki/"
                                 + quote(_wiki_baslik.replace(" ", "_"))
                             )
+                            _tmdb_medya = _eagle_tmdb_medya_bul(
+                                _wiki_baslik, "tv"
+                            )
                             return jsonify({
                                 "ok": True,
                                 "answer": (
@@ -11172,6 +11465,8 @@ def sohbet():
                                 "eagle_direct": True,
                                 "merkez_motor": False,
                                 "source": _wiki_url,
+                                "media_query": True,
+                                "media_images": _tmdb_medya,
                                 "memory_count": len(hafiza_yukle())
                             })
 
