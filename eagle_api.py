@@ -5030,9 +5030,36 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
         "lütfen", "lutfen", "kısa", "kisa", "genel", "özet", "ozet",
         "tanıtım", "tanitim", "tanıtır", "tanitir", "anlat", "eder", "misiniz",
     }
+    # İstek bildiren ve arama sonucunda bulunması şart olmayan
+    # dizi/bölüm bilgisi kelimelerini kökleri üzerinden ayıkla.
+    durak_kokleri = durak | {
+        "dizi", "bölüm", "bolum", "numara", "sezon",
+        "yayın", "yayin", "tarih", "oyuncu",
+        "son", "söyle", "soyle",
+    }
+    turkce_ekler = (
+        "larının", "lerinin", "larını", "lerini",
+        "sının", "sinin", "sunun", "sünün",
+        "sını", "sini", "sunu", "sünü",
+        "unun", "ünün", "ının", "inin",
+        "larını", "lerini", "ları", "leri",
+        "lar", "ler", "nın", "nin", "nun", "nün",
+        "ını", "ini", "unu", "ünü",
+    )
+
+    def durak_kelimesi_mi(kelime):
+        if kelime in durak_kokleri:
+            return True
+        return any(
+            kelime.endswith(ek)
+            and len(kelime) - len(ek) >= 4
+            and kelime[:-len(ek)] in durak_kokleri
+            for ek in turkce_ekler
+        )
+
     kelimeler = {
         k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
-        if len(k) >= 4 and k not in durak
+        if len(k) >= 4 and not durak_kelimesi_mi(k)
     }
     if not kelimeler:
         kelimeler = {
@@ -5168,23 +5195,11 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
         if not any(eslesiyor(k, baslik) for k in kelimeler):
             return False
 
-    # Birden fazla konu terimi varsa, yalnızca snippet eşleşmesi yeterli değil:
-    # başlık da sorunun konusuyla ilişkili olmalı.
-    if len(kelimeler) >= 2:
-        # Birden fazla konu teriminde, yalnızca ikincil
-        # bir kelimenin başlıkta geçmesi yeterli değildir.
-        ilk_konu = next(
-            (k for k in re.findall(
-                r"[a-z0-9çğıöşü]+",
-                str(sorgu).casefold()
-            ) if len(k) >= 4 and k not in durak),
-            None,
-        )
-        yagmur_ormani_sorgusu = bool(
-            re.search(r"yağmur\s+orman", sorgu_metni)
-        )
-        # İlgili açıklama yeterli eşleşme sağlıyorsa başlığın
-        # sorgu kelimelerini birebir içermesi zorunlu değildir.
+    # Birden fazla konu teriminde başlık da konuyla eşleşmeli.
+    # Yalnızca açıklamadaki ortak kelimeler yanlış sonuç için yeterli değildir.
+    if len(kelimeler) >= 2 and baslik_eslesmesi == 0:
+        return False
+
     return toplam_eslesme >= gerekli
 
 
@@ -6002,12 +6017,62 @@ def web_arastir(sorgu, limit=6):
                 "hangisi", "hangisidir", "hangileri", "hangileridir"
             }
 
+            # Soru eklerini ve bilgi isteği kelimelerini ayıkla;
+            # konu adlarını koruyarak genel bir arama çekirdeği oluştur.
+            durak_kokleri = etkisiz | {
+                "en", "son", "dizi",
+                "bölüm", "bolum", "numara", "sezon",
+                "yayın", "yayin", "tarih", "oyuncu",
+                "söyle", "soyle", "göster", "goster", "bul",
+                "listele", "öğren", "ogren", "anlat", "bilgi",
+                "ver", "kaç", "kac", "tane", "hakkında", "hakkinda",
+            }
+            turkce_ekler = (
+                "larının", "lerinin", "larını", "lerini",
+                "sının", "sinin", "sunun", "sünün",
+                "sını", "sini", "sunu", "sünü",
+                "unun", "ünün", "ının", "inin",
+                "larını", "lerini", "ları", "leri",
+                "lar", "ler", "nın", "nin", "nun", "nün",
+                "ını", "ini", "unu", "ünü",
+            )
+
+            def arama_durak_kelimesi_mi(kelime):
+                if kelime in durak_kokleri:
+                    return True
+                return any(
+                    kelime.endswith(ek)
+                    and len(kelime) - len(ek) >= 3
+                    and kelime[:-len(ek)] in durak_kokleri
+                    for ek in turkce_ekler
+                )
+
             kelimeler = [
                 k for k in re.findall(r"[a-z0-9çğıöşü]+", soru)
-                if len(k) >= 3 and k not in etkisiz
+                if len(k) >= 3 and not arama_durak_kelimesi_mi(k)
             ]
 
             kısa_kelimeler = kelimeler[:8]
+
+            # Dizi sorularında platform ve bölüm bağlamını koru.
+            dizi_sorusu = bool(re.search(
+                r"\b(?:dizi\w*|bölüm\w*|bolum\w*|sezon\w*|oyuncu\w*)\b",
+                soru
+            ))
+            if dizi_sorusu:
+                platform = re.search(r"\b([a-z0-9]+)\s+tv\b", soru)
+                if platform:
+                    platform_kelimeleri = [platform.group(1), "tv"]
+                    kısa_kelimeler = [
+                        k for k in kısa_kelimeler
+                        if k not in platform_kelimeleri and k != "bölümler"
+                    ]
+                    kısa_kelimeler.extend(platform_kelimeleri)
+                elif re.search(r"\btv\b", soru) and "tv" not in kısa_kelimeler:
+                    kısa_kelimeler.append("tv")
+
+                if "bölümler" not in kısa_kelimeler:
+                    kısa_kelimeler.append("bölümler")
 
             # "hangi bölüm", "hangi doktor", "hangi birim" gibi
             # yönlendirme amacı taşıyan soru kalıbını koru.
@@ -6029,7 +6094,7 @@ def web_arastir(sorgu, limit=6):
             if (
                 kısa_sorgu
                 and kısa_sorgu != soru
-                and len(kelimeler) >= 4
+                and len(kelimeler) >= 2
                 and (
                     not ekonomi_arama
                     or taylor_arama
@@ -6064,7 +6129,7 @@ def web_arastir(sorgu, limit=6):
                     if ikinci:
                         ikinci_ilgili = [
                             sonuc for sonuc in ikinci
-                            if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc)
+                            if _web_sonucu_sorguyla_ilgili_mi(kısa_sorgu, sonuc)
                         ]
                         print(
                             f"🧠 Kısa sorgu: {len(ikinci)} sonuç, "
@@ -6082,6 +6147,21 @@ def web_arastir(sorgu, limit=6):
                 f"🧠 Web toplam: {len(ilk_sonuclar)} sonuç; "
                 f"ilgili: {len(ilgili_ilk_sonuclar)} (çoklu kaynak)",
                 flush=True
+            )
+            # Tam başlık eşleşen Türkçe Wikipedia maddesini öne al.
+            konu = _web_arama_sorgusunu_sadelestir(sorgu).casefold().strip()
+            ilgili_ilk_sonuclar.sort(
+                key=lambda x: (
+                    not (
+                        x.get("url", "").startswith(
+                            "https://tr.wikipedia.org/wiki/"
+                        )
+                        and x.get("title", "").casefold().strip() == konu
+                    ),
+                    not x.get("url", "").startswith(
+                        "https://tr.wikipedia.org/wiki/"
+                    ),
+                )
             )
             return ilgili_ilk_sonuclar
 
@@ -6131,6 +6211,87 @@ def web_sayfa_oku(url, limit=7000):
         )
 
         # Sayfa metnine karışan teknik/navigasyon bölümlerini temizle.
+        yapilandirilmis_bilgiler = []
+        gorulen_bilgiler = set()
+
+        def json_ld_deger(deger):
+            if isinstance(deger, dict):
+                return (
+                    deger.get("name")
+                    or deger.get("@id")
+                    or deger.get("url")
+                    or ""
+                )
+            if isinstance(deger, list):
+                return ", ".join(
+                    str(json_ld_deger(x)).strip()
+                    for x in deger
+                    if json_ld_deger(x)
+                )
+            return str(deger).strip() if deger is not None else ""
+
+        def json_ld_gez(veri):
+            if isinstance(veri, list):
+                for oge in veri:
+                    json_ld_gez(oge)
+                return
+            if not isinstance(veri, dict):
+                return
+
+            tur = veri.get("@type", [])
+            if isinstance(tur, str):
+                turler = [tur.lower().split("/")[-1]]
+            elif isinstance(tur, list):
+                turler = [str(x).lower().split("/")[-1] for x in tur]
+            else:
+                turler = []
+
+            desteklenen = {
+                "tvepisode", "episode", "article", "newsarticle",
+                "reportagenewsarticle", "videoobject", "event"
+            }
+
+            if any(t in desteklenen for t in turler):
+                alanlar = (
+                    ("name", "Başlık"),
+                    ("headline", "Başlık"),
+                    ("episodeNumber", "Bölüm numarası"),
+                    ("partOfSeason", "Sezon"),
+                    ("partOfSeries", "Dizi"),
+                    ("datePublished", "Yayın tarihi"),
+                    ("uploadDate", "Yüklenme tarihi"),
+                    ("startDate", "Başlangıç tarihi"),
+                    ("description", "Açıklama"),
+                    ("url", "Bağlantı"),
+                    ("actor", "Oyuncular"),
+                    ("director", "Yönetmen"),
+                    ("productionCompany", "Yapım şirketi"),
+                    ("image", "Görsel"),
+                    ("aggregateRating", "İzleyici puanı"),
+                )
+
+                for anahtar, etiket in alanlar:
+                    deger = json_ld_deger(veri.get(anahtar))
+                    if not deger:
+                        continue
+                    deger = re.sub(r"\\s+", " ", deger).strip()
+                    satir = f"{etiket}: {deger}"
+                    if satir not in gorulen_bilgiler:
+                        gorulen_bilgiler.add(satir)
+                        yapilandirilmis_bilgiler.append(satir)
+
+            for alt in veri.values():
+                if isinstance(alt, (dict, list)):
+                    json_ld_gez(alt)
+
+        for betik in soup.find_all("script"):
+            if str(betik.get("type", "")).lower() != "application/ld+json":
+                continue
+            try:
+                json_ld_gez(json.loads(betik.string or betik.get_text(), strict=False))
+            except (ValueError, TypeError):
+                continue
+
         for etiket in soup([
             "script", "style", "noscript", "svg",
             "nav", "header", "footer", "aside", "form"
@@ -6160,6 +6321,10 @@ def web_sayfa_oku(url, limit=7000):
         else:
             metin = " ".join(kaynak.stripped_strings)
         metin = re.sub(r"\s+", " ", metin).strip()
+
+        if yapilandirilmis_bilgiler:
+            ek_bilgi = " | ".join(yapilandirilmis_bilgiler)
+            metin = (ek_bilgi + " | " + metin).strip(" |")
 
         if len(metin) > limit:
             metin = metin[:limit]
@@ -10780,7 +10945,10 @@ def sohbet():
             "haber", "haberler", "maç", "mac", "skor", "puan durumu",
             "bitcoin", "btc", "ethereum", "eth",
             "altın", "gram altın", "dolar", "euro", "sterlin",
-            "en son", "son durum", "ne oldu"
+            "en son", "son durum", "ne oldu",
+            "yeni bölüm", "yeni bolum", "bölüm", "bolum",
+            "yayınlandı", "yayimlandi", "yayında", "yayinda",
+            "dizi", "sezon", "fragman", "final yaptı", "final yapti"
         ]
 
         if not any(x in mesaj_kucuk for x in guncel_isaretleri):
