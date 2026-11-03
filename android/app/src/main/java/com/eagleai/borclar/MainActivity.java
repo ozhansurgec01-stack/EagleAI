@@ -528,16 +528,17 @@ public class MainActivity extends Activity {
         );
 
         executor.execute(() -> {
-            String sonucCevap = geminiIstek(mesaj, gonderilecekResim);
-
-            if (sonucCevap == null) {
-                sonucCevap =
-                        "❌ Eagle-AI API bağlantısı kurulamadı.\n\n" +
+            ApiCevap apiCevap = geminiIstek(mesaj, gonderilecekResim);
+            if (apiCevap == null) {
+                apiCevap = new ApiCevap();
+                apiCevap.answer =
+                        "❌ Eagle-AI API bağlantısı kurulamadı.\\n\\n" +
                         "Telefonun aynı Wi-Fi ağında olduğundan " +
                         "ve Termux'taki eagle_api.py sunucusunun çalıştığından emin ol.";
             }
-
-            final String cevapFinal = sonucCevap;
+            final String cevapFinal = apiCevap.answer;
+            final JSONArray medyaGorselleri = apiCevap.mediaImages;
+            final boolean medyaSorusu = apiCevap.mediaQuery;
 
             runOnUiThread(() -> {
                 mesajAlani.removeView(durum);
@@ -546,9 +547,13 @@ public class MainActivity extends Activity {
                         mesajOlustur("🦅\n\n" + cevapFinal);
                 mesajAlani.addView(cevapKarti);
 
-                if (gonderilecekResim == null
-                        && gorselAramasiUygunMu(mesaj, cevapFinal)) {
-                    commonsGorselleriEkle(cevapKarti, mesaj);
+                if (gonderilecekResim == null) {
+                    if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
+                        tmdbGorselleriEkle(cevapKarti, medyaGorselleri);
+                    } else if (!medyaSorusu
+                            && gorselAramasiUygunMu(mesaj, cevapFinal)) {
+                        commonsGorselleriEkle(cevapKarti, mesaj, cevapFinal);
+                    }
                 }
                 gecmiseKaydet("🦅\n\n" + cevapFinal);
                   sohbeteMesajEkle("🦅\n\n" + cevapFinal);
@@ -849,7 +854,13 @@ public class MainActivity extends Activity {
 
 
 
-    private String geminiIstek(String mesaj, Uri resimUri) {
+    private static class ApiCevap {
+        String answer = "Eagle-AI cevap vermedi.";
+        JSONArray mediaImages;
+        boolean mediaQuery;
+    }
+
+    private ApiCevap geminiIstek(String mesaj, Uri resimUri) {
 
         HttpURLConnection baglanti = null;
 
@@ -966,11 +977,64 @@ public class MainActivity extends Activity {
                     kod < 300 &&
                     cevapJson.optBoolean("ok", false)) {
 
-                String cevap =
-                        cevapJson.optString(
-                                "answer",
-                                "Eagle-AI cevap vermedi."
-                        );
+                ApiCevap apiCevap = new ApiCevap();
+                apiCevap.answer = cevapJson.optString(
+                        "answer",
+                        "Eagle-AI cevap vermedi."
+                );
+
+                apiCevap.mediaQuery = cevapJson.optBoolean("media_query", false);
+                JSONObject medya = cevapJson.optJSONObject("media_images");
+                if (medya != null) {
+                    JSONArray gorseller = new JSONArray();
+
+                    String afis = medya.optString("poster_url", "");
+                    String arkaPlan = medya.optString("backdrop_url", "");
+
+                    if (!afis.isEmpty() && !afis.equals("null")) {
+                        JSONObject item = new JSONObject();
+                        item.put("url", afis);
+                        item.put("type", "poster");
+                        gorseller.put(item);
+                    }
+
+                    if (!arkaPlan.isEmpty() && !arkaPlan.equals("null")) {
+                        JSONObject item = new JSONObject();
+                        item.put("url", arkaPlan);
+                        item.put("type", "backdrop");
+                        gorseller.put(item);
+                    }
+
+                    JSONArray ekGorseller = medya.optJSONArray("images");
+                    if (ekGorseller != null) {
+                        for (int i = 0; i < ekGorseller.length(); i++) {
+                            JSONObject item = ekGorseller.optJSONObject(i);
+                            if (item != null && item.has("url")) {
+                                gorseller.put(item);
+                            }
+                        }
+                    }
+
+                    JSONArray oyuncular = medya.optJSONArray("cast");
+                    if (oyuncular != null) {
+                        for (int i = 0; i < oyuncular.length(); i++) {
+                            JSONObject kisi = oyuncular.optJSONObject(i);
+                            if (kisi != null && kisi.has("image_url")) {
+                                JSONObject item = new JSONObject();
+                                item.put("url", kisi.optString("image_url"));
+                                item.put("type", "cast");
+                                item.put("name", kisi.optString("name"));
+                                item.put("character", kisi.optString("character"));
+                                gorseller.put(item);
+                            }
+                        }
+                    }
+
+                    apiCevap.mediaImages = gorseller;
+                }
+
+                String cevap = apiCevap.answer;
+
 
                 JSONObject userMessage =
                         new JSONObject();
@@ -989,14 +1053,13 @@ public class MainActivity extends Activity {
                     gecmis.add(modelMessage);
                 }
 
-                return cevap;
+                return apiCevap;
             }
 
-            return "API hatası: " +
-                    cevapJson.optString(
-                            "error",
-                            "Bilinmeyen hata."
-                    );
+            ApiCevap hataCevap = new ApiCevap();
+            hataCevap.answer = "API hatası: " +
+                    cevapJson.optString("error", "Bilinmeyen hata.");
+            return hataCevap;
 
         } catch (Exception e) {
 
@@ -1007,8 +1070,10 @@ public class MainActivity extends Activity {
                     e
             );
 
-            return "Bağlantı hatası: " +
+            ApiCevap hataCevap = new ApiCevap();
+            hataCevap.answer = "Bağlantı hatası: " +
                     e.getClass().getSimpleName();
+            return hataCevap;
 
         } finally {
 
@@ -2050,11 +2115,31 @@ private void sohbetYukle(String id) {
         return true;
     }
 
-    private void commonsGorselleriEkle(LinearLayout kart, String soru) {
+    private void commonsGorselleriEkle(LinearLayout kart, String soru, String cevap) {
         android.util.Log.i("EagleGorsel", "1 - Görsel araması çağrıldı: " + soru);
         gorselExecutor.execute(() -> {
             HttpURLConnection baglanti = null;
             try {
+                // Backend'in doğrulanmış orijinal görselini Commons aramasından önce kullan.
+                if (cevap != null) {
+                    java.util.regex.Matcher dogrudan = java.util.regex.Pattern
+                            .compile("(?i)Görsel\\s*:\\s*(https://upload\\.wikimedia\\.org/[^\\s|<>\"']+)")
+                            .matcher(cevap);
+
+                    if (dogrudan.find()) {
+                        String adres = dogrudan.group(1).trim();
+                        android.net.Uri uri = android.net.Uri.parse(adres);
+
+                        if ("https".equalsIgnoreCase(uri.getScheme())
+                                && "upload.wikimedia.org".equalsIgnoreCase(uri.getHost())) {
+                            android.util.Log.i("EagleGorsel",
+                                    "Orijinal backend görseli doğrudan kullanılacak.");
+                            dogrudanWikimediaGorseliEkle(kart, adres);
+                            return;
+                        }
+                    }
+                }
+
                 // Sorudaki istek kalıplarını ve Türkçe hâl eklerini temizle.
                 // Böylece "Adana'yı tanıtır mısın?" -> "Adana" olur.
                 // Orijinal harfleri koru. Özellikle "İzmir" kelimesi
@@ -2086,7 +2171,9 @@ private void sohbetYukle(String id) {
                         "gosterir", "resim", "resimleri", "fotograf", "fotograflari",
                         "lutfen", "ile", "icin", "ve", "bir", "bana", "lazim",
                         "yi", "yı", "yu", "yü", "nin", "nın", "nun", "nün",
-                        "den", "dan", "de", "da", "ye", "ya", "e", "a", "i", "in"
+                        "den", "dan", "de", "da", "ye", "ya", "e", "a", "i", "in",
+                        "dizi", "dizisi", "dizisinin", "dizisini", "dizisinde",
+                        "diziden", "diziye", "diziler", "dizileri"
                 };
                 java.util.Set<String> durSet = new java.util.HashSet<>(java.util.Arrays.asList(durKelimeler));
                 StringBuilder konuBuilder = new StringBuilder();
@@ -2096,11 +2183,57 @@ private void sohbetYukle(String id) {
                             .replaceAll("\\p{M}+", "")
                             .replace('ı', 'i').replace('ş', 's').replace('ğ', 'g')
                             .replace('ü', 'u').replace('ö', 'o').replace('ç', 'c');
-                    if (normalizeKelime.length() < 2 || durSet.contains(normalizeKelime)) continue;
+                    // Çok kelimeli özel adlarda tek harfli parçaları da koru (X Files gibi).
+                    if ((normalizeKelime.length() < 2
+                            && hamKonu.split("\\s+").length <= 1)
+                            || durSet.contains(normalizeKelime)) continue;
                     if (konuBuilder.length() > 0) konuBuilder.append(' ');
                     konuBuilder.append(kelime);
                 }
                 String konu = konuBuilder.toString().trim();
+
+// Cevabın başında "Gizli Dosyalar (The X-Files)" gibi
+// alternatif bir eser adı varsa Wikimedia aramasında onu da kullan.
+if (cevap != null && !konu.isEmpty()) {
+    String ilkSatir = cevap.substring(0, Math.min(cevap.length(), 2000));
+    java.util.regex.Matcher alternatif = java.util.regex.Pattern
+            .compile("(?s)\\(([^()]{2,100})\\)")
+            .matcher(ilkSatir);
+
+    if (alternatif.find()) {
+        String aday = alternatif.group(1).trim();
+
+        String ilkSatirNorm = java.text.Normalizer.normalize(
+                ilkSatir.toLowerCase(Locale.ROOT),
+                java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace('ı', 'i')
+                .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+
+        String konuNormKontrol = java.text.Normalizer.normalize(
+                konu.toLowerCase(Locale.ROOT),
+                java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace('ı', 'i')
+                .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+
+        String adayNorm = java.text.Normalizer.normalize(
+                aday.toLowerCase(Locale.ROOT),
+                java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace('ı', 'i')
+                .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+
+        if (!adayNorm.isEmpty()
+                && ilkSatirNorm.contains(konuNormKontrol)
+                && !adayNorm.equals(konuNormKontrol)
+                && aday.matches("(?s).*\\p{L}.*")) {
+            android.util.Log.i("EagleGorsel",
+                    "Alternatif konu adı bulundu: " + aday);
+            konu = aday;
+        }
+    }
+}
                 if (konu.length() < 2) {
                     android.util.Log.w("EagleGorsel", "Arama konusu çıkarılamadı: " + soru);
                     return;
@@ -2112,7 +2245,7 @@ private void sohbetYukle(String id) {
                 String api = "https://commons.wikimedia.org/w/api.php"
                         + "?action=query&generator=search&gsrnamespace=6&gsrlimit=40"
                         + "&gsrsearch=" + sorgu
-                        + "&prop=imageinfo&iiprop=url%7Cextmetadata&iiurlwidth=640&format=json";
+                        + "&prop=imageinfo&iiprop=url%7Cmime%7Cextmetadata&iiurlwidth=640&format=json";
 
                 URL url = new URL(api);
                 baglanti = (HttpURLConnection) url.openConnection();
@@ -2164,20 +2297,47 @@ try {
                 }
                 JSONObject query = kok.optJSONObject("query");
                 JSONObject pages = query == null ? null : query.optJSONObject("pages");
-                if (pages == null || pages.length() == 0) {
-                    android.util.Log.w("EagleGorsel", "Wikimedia bu konu için sayfa döndürmedi: " + konu);
-                    gorselDurumunuGoster(kart, "Bu konu için Wikimedia'da görsel bulunamadı.");
-                    return;
-                }
-                android.util.Log.i("EagleGorsel", "3 - API sayfa sayısı: " + pages.length());
+                android.util.Log.i("EagleGorsel", "3 - API sayfa sayısı: "
+                        + (pages == null ? 0 : pages.length()));
 
-                String konuKucukPuan = konu.toLowerCase(Locale.ROOT);
-                String[] kelimeler = konuKucukPuan
-                        .split("[^\\p{L}\\p{N}]+");
+                // Arama konusunu ve dosya başlıklarını aynı biçimde normalleştir.
+                String konuNorm = java.text.Normalizer.normalize(
+                        konu.toLowerCase(Locale.ROOT),
+                        java.text.Normalizer.Form.NFD)
+                        .replaceAll("\\p{M}+", "")
+                        .replace('ı', 'i')
+                        .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+                String[] kelimeler = konuNorm.split("\\s+");
                 List<JSONObject> secilenler = new ArrayList<>();
+                // Backend cevabındaki güvenilir Wikimedia görselini öncelikli ekle.
+                if (cevap != null) {
+                    java.util.regex.Matcher dogrudanGorsel =
+                            java.util.regex.Pattern.compile(
+                                    "(?i)Görsel\\s*:\\s*(https://upload\\.wikimedia\\.org/[^\\s|<>\"']+)"
+                            ).matcher(cevap);
 
-                JSONArray pageIds = pages.names();
-                if (pageIds == null) return;
+                    if (dogrudanGorsel.find()) {
+                        String gorselUrl = dogrudanGorsel.group(1).trim();
+                        android.net.Uri gorselUri = android.net.Uri.parse(gorselUrl);
+
+                        if ("https".equalsIgnoreCase(gorselUri.getScheme())
+                                && "upload.wikimedia.org".equalsIgnoreCase(gorselUri.getHost())) {
+                            JSONObject dogrudanItem = new JSONObject();
+                            dogrudanItem.put("title", konu + " — doğrudan kaynak görseli");
+                            dogrudanItem.put("thumb", gorselUrl);
+                            dogrudanItem.put("original", gorselUrl);
+                            dogrudanItem.put("source", gorselUrl);
+                            dogrudanItem.put("category", "diger");
+                            dogrudanItem.put("score", 100000);
+                            secilenler.add(dogrudanItem);
+                            android.util.Log.i("EagleGorsel",
+                                    "Backend doğrudan Wikimedia görseli bulundu.");
+                        }
+                    }
+                }
+
+                JSONArray pageIds = pages == null ? new JSONArray() : pages.names();
+                if (pageIds == null) pageIds = new JSONArray();
 
                 for (int i = 0; i < pageIds.length(); i++) {
                     JSONObject page = pages.optJSONObject(pageIds.optString(i));
@@ -2205,54 +2365,45 @@ try {
                                     .replaceAll("\\s+", " ")
                                     .toLowerCase(Locale.ROOT);
 
-                    String[] gorselKelimeleri = konu.toLowerCase(Locale.ROOT)
-                            .split("[^\\p{L}\\p{N}]+");
+                    String baslikNorm = java.text.Normalizer.normalize(
+                            baslik, java.text.Normalizer.Form.NFD)
+                            .replaceAll("\\p{M}+", "")
+                            .replace('ı', 'i')
+                            .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
 
-                    int anlamli = 0;
-                    int baslikEslesme = 0;
-                    int aciklamaEslesme = 0;
-                    int puan = 0;
+                    String aciklamaNorm = java.text.Normalizer.normalize(
+                            aciklama, java.text.Normalizer.Form.NFD)
+                            .replaceAll("\\p{M}+", "")
+                            .replace('ı', 'i')
+                            .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
 
-                    for (String kelime : gorselKelimeleri) {
-                        if (kelime.length() < 3) continue;
-                        anlamli++;
+                    // Boşluklu ve bitişik yazımları birlikte karşılaştır.
+                    // Örnek: "X Files" ile "TheX-Files".
+                    String konuBitisik = konuNorm.replace(" ", "");
+                    String baslikBitisik = baslikNorm.replace(" ", "");
+                    String aciklamaBitisik = aciklamaNorm.replace(" ", "");
 
-                        String kelimeNorm = java.text.Normalizer.normalize(
-                                kelime.toLowerCase(Locale.ROOT),
-                                java.text.Normalizer.Form.NFD)
-                                .replaceAll("\\p{M}+", "");
+                    boolean baslikTamEslesme =
+                            (" " + baslikNorm + " ").contains(" " + konuNorm + " ")
+                            || (!konuBitisik.isEmpty()
+                                && baslikBitisik.contains(konuBitisik));
 
-                        String baslikNorm = java.text.Normalizer.normalize(
-                                baslik, java.text.Normalizer.Form.NFD)
-                                .replaceAll("\\p{M}+", "")
-                                .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+                    boolean aciklamaTamEslesme =
+                            (" " + aciklamaNorm + " ").contains(" " + konuNorm + " ")
+                            || (!konuBitisik.isEmpty()
+                                && aciklamaBitisik.contains(konuBitisik));
 
-                        String aciklamaNorm = java.text.Normalizer.normalize(
-                                aciklama, java.text.Normalizer.Form.NFD)
-                                .replaceAll("\\p{M}+", "")
-                                .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+                    // Film/dizi aramalarında yapım adı dosya başlığında da bulunmalı.
+                    // Açıklamadaki tesadüfi eşleşmeler tek başına yeterli değil.
+                    if (konuNorm.isEmpty() || !baslikTamEslesme) continue;
 
-                        String kelimeSiniri = " " + kelimeNorm + " ";
+                    int puan = baslikTamEslesme ? 50 : 30;
 
-                        if ((" " + baslikNorm + " ").contains(kelimeSiniri)) {
-                            baslikEslesme++;
-                            puan += 6;
-                        } else if ((" " + aciklamaNorm + " ").contains(kelimeSiniri)) {
-                            aciklamaEslesme++;
-                            puan += 1;
-                        }
+                    if (baslikTamEslesme) {
+                        puan += 20;
                     }
-
-                    if (anlamli == 0 || (baslikEslesme + aciklamaEslesme) == 0) continue;
-
-                    // Başlık veya açıklamadaki konu eşleşmesi yeterlidir.
-
-                    String konuBaslik = konu.toLowerCase(Locale.ROOT)
-                            .replaceAll("\\s+", " ").trim();
-
-                    if (konuBaslik.length() >= 4
-                            && baslik.contains(konuBaslik)) {
-                        puan += 12;
+                    if (aciklamaTamEslesme) {
+                        puan += 10;
                     }
 
                     if (baslik.matches("(?s).*\\b(map|maps|chart|diagram|"
@@ -2265,7 +2416,22 @@ try {
                         puan += 2;
                     }
 
-String thumb = info.optString("thumburl", "");
+// Yalnızca görüntü dosyalarını kabul et; ses ve videoları ele.
+                    String mime = info.optString("mime", "").toLowerCase(Locale.ROOT);
+                    if (!mime.startsWith("image/")) continue;
+
+                    // Başlığı normalize ederek istatistik ve zaman çizelgelerini ele.
+                    String baslikFiltre = java.text.Normalizer.normalize(
+                            baslik, java.text.Normalizer.Form.NFD)
+                            .replaceAll("\\p{M}+", "")
+                            .replace('ı', 'i')
+                            .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+                    if (baslikFiltre.matches("(?s).*\\b(audience|audiences|rating|ratings|"
+                            + "viewer|viewers|timeline|statistics|statistic|"
+                            + "infographic|chart|graph|diagram|"
+                            + "soundtrack|audio|theme)\\b.*")) continue;
+
+                    String thumb = info.optString("thumburl", "");
                     if (!thumb.startsWith("https://")) continue;
 
 
@@ -2313,50 +2479,15 @@ JSONObject item = new JSONObject();
                 List<JSONObject> cesitliSecilenler = new ArrayList<>();
                 java.util.Set<String> kullanilanTurler = new java.util.HashSet<>();
 
-                // Önce farklı kategorilerden en alakalı görselleri seç.
+                // Yalnızca en yüksek puanlı iki kesin başlık eşleşmesini göster.
+                // Kategori çeşitliliği için alakasız sonuç ekleme.
                 for (JSONObject aday : secilenler) {
-                    String tur = aday.optString("category", "diger");
-                    if (kullanilanTurler.add(tur) && cesitliSecilenler.size() < 4) {
-                        cesitliSecilenler.add(aday);
-                    }
-                }
-
-                // Dört farklı tür bulunamazsa kalan yerleri alakalı sonuçlarla tamamla.
-                for (JSONObject aday : secilenler) {
-                    if (cesitliSecilenler.size() >= 4) break;
-                    if (!cesitliSecilenler.contains(aday)) {
-                        cesitliSecilenler.add(aday);
-                    }
+                    if (cesitliSecilenler.size() >= 2) break;
+                    cesitliSecilenler.add(aday);
                 }
 
                 secilenler.clear();
                 secilenler.addAll(cesitliSecilenler);
-
-                // Alakali sonuc bulunamazsa Commons aramasinin ilk gorsellerini goster.
-                if (secilenler.isEmpty()) {
-                    for (int i = 0; i < pageIds.length() && secilenler.size() < 4; i++) {
-                        JSONObject page = pages.optJSONObject(pageIds.optString(i));
-                        if (page == null) continue;
-
-                        JSONArray infos = page.optJSONArray("imageinfo");
-                        if (infos == null || infos.length() == 0) continue;
-
-                        JSONObject info = infos.optJSONObject(0);
-                        if (info == null) continue;
-
-                        String thumb = info.optString("thumburl", "");
-                        if (!thumb.startsWith("https://")) continue;
-
-                        JSONObject item = new JSONObject();
-                        item.put("title", page.optString("title", "Wikimedia Commons"));
-                        item.put("thumb", thumb);
-                        item.put("original", info.optString("url", ""));
-                        item.put("source", info.optString("descriptionurl",
-                                "https://commons.wikimedia.org/"));
-                        item.put("score", 0);
-                        secilenler.add(item);
-                    }
-                }
 
                 android.util.Log.i("EagleGorsel", "4 - Gösterilecek görsel sayısı: " + secilenler.size());
                 if (secilenler.isEmpty()) {
@@ -2462,6 +2593,123 @@ JSONObject item = new JSONObject();
     }
 
 
+    private void tmdbGorselleriEkle(LinearLayout kart, JSONArray gorseller) {
+        runOnUiThread(() -> {
+            if (isFinishing() || kart == null || kart.getParent() == null) return;
+
+            LinearLayout galeri = new LinearLayout(this);
+            galeri.setOrientation(LinearLayout.VERTICAL);
+            galeri.setPadding(0, 10, 0, 10);
+
+            TextView baslik = new TextView(this);
+            baslik.setText("🎬 Yapım görselleri");
+            baslik.setTextSize(14);
+            baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            baslik.setTextColor(Color.WHITE);
+            galeri.addView(baslik);
+
+            String afisAdresi = "";
+            String arkaPlanAdresi = "";
+
+            for (int i = 0; i < gorseller.length(); i++) {
+                JSONObject item = gorseller.optJSONObject(i);
+                if (item == null) continue;
+
+                String adres = item.optString("url", "");
+                if (!adres.startsWith("https://image.tmdb.org/")) continue;
+
+                String tur = item.optString("type", "image");
+
+                if ("poster".equals(tur)) {
+                    if (!afisAdresi.isEmpty() || adres.equals(arkaPlanAdresi)) continue;
+                    afisAdresi = adres;
+                } else if ("backdrop".equals(tur)) {
+                    if (!arkaPlanAdresi.isEmpty() || adres.equals(afisAdresi)) continue;
+                    arkaPlanAdresi = adres;
+                } else {
+                    continue;
+                }
+
+                String ad = item.optString("name", "");
+                String karakter = item.optString("character", "");
+
+                String etiket;
+                if ("poster".equals(tur)) {
+                    etiket = "Afiş";
+                } else if ("backdrop".equals(tur)) {
+                    etiket = "Arka plan";
+                } else if ("logo".equals(tur)) {
+                    etiket = "Logo";
+                } else if ("cast".equals(tur)) {
+                    etiket = "Oyuncu";
+                } else {
+                    etiket = "Yapım görseli";
+                }
+
+                if (!ad.isEmpty()) {
+                    etiket += ": " + ad;
+                    if (!karakter.isEmpty()) etiket += " (" + karakter + ")";
+                }
+
+                TextView etiketView = new TextView(this);
+                etiketView.setText(etiket);
+                etiketView.setTextSize(12);
+                etiketView.setTextColor(Color.LTGRAY);
+                etiketView.setPadding(0, 10, 0, 4);
+                galeri.addView(etiketView);
+
+                ImageView resim = new ImageView(this);
+                resim.setAdjustViewBounds(true);
+                resim.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                resim.setMaxHeight(520);
+                resim.setContentDescription(etiket);
+                galeri.addView(resim, new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                ));
+
+                gorselExecutor.execute(() -> {
+                    try {
+                        Bitmap bitmap = wikimediaGorselIndir(adres, adres);
+                        if (bitmap != null && !isFinishing()) {
+                            runOnUiThread(() -> {
+                                if (resim.getParent() != null) {
+                                    resim.setImageBitmap(bitmap);
+                                }
+                            });
+                        }
+                    } catch (Exception hata) {
+                        android.util.Log.e("EagleTMDB",
+                                "TMDb görseli yüklenemedi: " + adres, hata);
+                    }
+                });
+            }
+
+            TextView kaynak = new TextView(this);
+            kaynak.setText("Görsel ve yapım verileri: TMDb");
+            kaynak.setTextSize(11);
+            kaynak.setTextColor(Color.GRAY);
+            kaynak.setPadding(0, 8, 0, 2);
+            kaynak.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://www.themoviedb.org/")));
+                } catch (Exception ignored) {}
+            });
+            galeri.addView(kaynak);
+
+            TextView atif = new TextView(this);
+            atif.setText("This product uses the TMDB API but is not endorsed or certified by TMDB.");
+            atif.setTextSize(10);
+            atif.setTextColor(Color.GRAY);
+            galeri.addView(atif);
+
+            int index = Math.max(0, kart.getChildCount() - 1);
+            kart.addView(galeri, index);
+            kaydirma.post(() -> kaydirma.fullScroll(View.FOCUS_DOWN));
+        });
+    }
+
     // Hata/sonuç mesajını cevap kartına güvenli biçimde ekle.
     private void gorselDurumunuGoster(LinearLayout kart, String mesaj) {
         runOnUiThread(() -> {
@@ -2473,6 +2721,77 @@ JSONObject item = new JSONObject();
             durum.setPadding(0, 8, 0, 8);
             int index = Math.max(0, kart.getChildCount() - 1);
             kart.addView(durum, index);
+        });
+    }
+
+    private void dogrudanWikimediaGorseliEkle(
+            LinearLayout kart, String adres) {
+        runOnUiThread(() -> {
+            if (isFinishing() || kart == null || kart.getParent() == null) return;
+
+            LinearLayout galeri = new LinearLayout(this);
+            galeri.setOrientation(LinearLayout.VERTICAL);
+            galeri.setPadding(0, 10, 0, 10);
+
+            TextView baslik = new TextView(this);
+            baslik.setText("🖼 Orijinal kaynak görseli");
+            baslik.setTextSize(12);
+            baslik.setTextColor(Color.GRAY);
+            galeri.addView(baslik);
+
+            ImageView resim = new ImageView(this);
+            resim.setAdjustViewBounds(true);
+            resim.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            resim.setMaxHeight(420);
+            resim.setContentDescription("Orijinal Wikimedia görseli");
+            resim.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+            galeri.addView(resim);
+
+            TextView kaynak = new TextView(this);
+            kaynak.setText("Kaynak: Wikimedia");
+            kaynak.setTextSize(11);
+            kaynak.setTextColor(Color.GRAY);
+            kaynak.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(adres)));
+                } catch (Exception ignored) {}
+            });
+            galeri.addView(kaynak);
+
+            int index = Math.max(0, kart.getChildCount() - 1);
+            kart.addView(galeri, index);
+
+            gorselExecutor.execute(() -> {
+                try {
+                    Bitmap bitmap = wikimediaGorselIndir(adres, adres);
+                    if (bitmap != null && !isFinishing()) {
+                        runOnUiThread(() -> {
+                            if (resim.getParent() != null) {
+                                resim.setImageBitmap(bitmap);
+                            }
+                        });
+                    } else {
+                        runOnUiThread(() -> {
+                            if (resim.getParent() != null) {
+                                resim.setImageResource(
+                                        android.R.drawable.ic_menu_report_image);
+                            }
+                        });
+                    }
+                } catch (Exception hata) {
+                    android.util.Log.e("EagleGorsel",
+                            "Orijinal görsel indirilemedi.", hata);
+                    runOnUiThread(() -> {
+                        if (resim.getParent() != null) {
+                            resim.setImageResource(
+                                    android.R.drawable.ic_menu_report_image);
+                        }
+                    });
+                }
+            });
         });
     }
 
