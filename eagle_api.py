@@ -2938,7 +2938,9 @@ def _eagle_film_baslik_cikar(metin):
 
 
 def _eagle_film_sorgu_turu(metin):
-    """Başlığı doğrulanabilen film tanıtım sorgularını sınıflandırır."""
+    """Dizi sorgularını film olarak sınıflandırmadan film tanıtımını belirler."""
+    if _eagle_dizi_sorgu_turu(metin):
+        return None
     return "tanitim" if _eagle_film_baslik_cikar(metin) else None
 
 
@@ -11242,7 +11244,11 @@ def sohbet():
     elif karar.get("arac") == "web_arastirma":
         # EAGLE_TMDB_FILM_TANITIM_V1
         _film_soru = str(mesaj_orijinal or mesaj or "").strip()
-        _film_basligi = _eagle_film_baslik_cikar(_film_soru)
+        _film_basligi = (
+            None
+            if _eagle_dizi_sorgu_turu(_film_soru)
+            else _eagle_film_baslik_cikar(_film_soru)
+        )
 
         if _film_basligi:
             _film_medya = _eagle_tmdb_medya_bul(
