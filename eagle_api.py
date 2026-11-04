@@ -3677,7 +3677,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "oynayacak", "oynanacak",
         "kimle oynayacak", "kiminle oynayacak",
         "bu hafta", "gelecek hafta",
-        "puan durumu", "voleybol", "futbol",
+        "puan durumu", "kaçıncı sırada", "kacinci sirada", "hangi sırada", "hangi sirada", "voleybol", "futbol",
         "basketbol", "tenis", "vnl",
         "süper lig", "super lig", "süperlig", "superlig",
         "premier lig", "premier league",
@@ -7084,6 +7084,262 @@ def sofascore_son_mac_getir(mesaj):
         print(f"[SofaScore] Son maç hatası: {e}")
         return None
 
+
+
+
+def fotmob_takim_bul(sorgu):
+    """FotMob arama API'sinden takım adını ve ID'sini bulur."""
+    import requests
+
+    sorgu = str(sorgu or "").strip()
+    if not sorgu:
+        return None
+
+    try:
+        r = requests.get(
+            "https://apigw.fotmob.com/searchapi/suggest",
+            params={"term": sorgu, "lang": "en"},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=15
+        )
+        r.raise_for_status()
+        data = r.json()
+        norm = _sofascore_takim_adi_norm
+        sorgu_norm = norm(sorgu)
+        adaylar = []
+
+        for grup in data.get("teamSuggest", []):
+            for secenek in grup.get("options", []):
+                payload = secenek.get("payload") or {}
+                takim_id = payload.get("id")
+                ad = str(secenek.get("text") or "").split("|")[0].strip()
+
+                if not takim_id or not ad:
+                    continue
+
+                ad_norm = norm(ad)
+                if ad_norm != sorgu_norm and not ad_norm.startswith(sorgu_norm):
+                    continue
+
+                puan = float(secenek.get("score") or 0)
+                if ad_norm == sorgu_norm:
+                    puan += 1000000
+
+                adaylar.append((puan, {"id": takim_id, "name": ad}))
+
+        if not adaylar:
+            return None
+
+        adaylar.sort(key=lambda x: x[0], reverse=True)
+        return adaylar[0][1]
+
+    except Exception as e:
+        print(f"[FotMob] Takım arama hatası: {e}", flush=True)
+        return None
+
+
+def fotmob_takim_puan_durumu_getir(takim, mesaj=""):
+    """FotMob üzerinden takımın genel lig sıralamasını getirir."""
+    import requests
+
+    if not takim or not takim.get("id"):
+        return None
+
+    try:
+        r = requests.get(
+            "https://www.fotmob.com/api/data/teams",
+            params={"id": takim["id"]},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=20
+        )
+        r.raise_for_status()
+
+        gruplar = (r.json().get("overview") or {}).get("table") or []
+        sorgu = str(mesaj or "").casefold()
+
+        acik_lig = None
+        for grup in gruplar:
+            data = grup.get("data") or {}
+            lig = str(data.get("leagueName") or "")
+            if lig and lig.casefold() in sorgu:
+                acik_lig = lig
+                break
+
+        for grup in gruplar:
+            data = grup.get("data") or {}
+            lig = str(data.get("leagueName") or "")
+
+            if acik_lig and lig.casefold() != acik_lig.casefold():
+                continue
+
+            satirlar = ((data.get("table") or {}).get("all") or [])
+            for satir in satirlar:
+                if str(satir.get("id")) == str(takim["id"]):
+                    return {
+                        "takim": satir.get("name") or takim.get("name"),
+                        "lig": lig,
+                        "sira": satir.get("idx"),
+                        "puan": satir.get("pts"),
+                        "oynanan": satir.get("played")
+                    }
+
+        return None
+    except Exception as e:
+        print(f"[FotMob] Puan durumu hatası: {e}", flush=True)
+        return None
+
+
+def fotmob_takim_mac_getir(takim, gelecek=True):
+    """FotMob takım verisinden canlı/sıradaki veya son bitmiş maçı alır."""
+    import requests
+    from datetime import datetime, timezone, timedelta
+
+
+    if not takim or not takim.get("id"):
+        return None
+
+    try:
+        r = requests.get(
+            "https://www.fotmob.com/api/data/teams",
+            params={"id": takim["id"]},
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://www.fotmob.com/"
+            },
+            timeout=20
+        )
+        r.raise_for_status()
+        overview = r.json().get("overview") or {}
+        mac = overview.get("nextMatch") if gelecek else overview.get("lastMatch")
+
+        if not isinstance(mac, dict):
+            return None
+
+        status = mac.get("status") or {}
+        if status.get("cancelled"):
+            return None
+
+        finished = bool(status.get("finished"))
+        started = bool(status.get("started"))
+
+        if gelecek and finished:
+            return None
+        if not gelecek and not finished:
+            return None
+
+        ev = mac.get("home") or {}
+        dep = mac.get("away") or {}
+        utc = status.get("utcTime")
+        if not utc:
+            return None
+
+        dt = datetime.fromisoformat(utc.replace("Z", "+00:00"))
+        tarih = dt.astimezone(timezone(timedelta(hours=3))).strftime("%d.%m.%Y %H:%M")
+
+        live = status.get("liveTime") or mac.get("liveTime") or {}
+
+        return {
+            "ev": ev.get("name", "Ev sahibi"),
+            "deplasman": dep.get("name", "Deplasman"),
+            "ev_skor": ev.get("score") if (started or finished) else None,
+            "dep_skor": dep.get("score") if (started or finished) else None,
+            "durum": "finished" if finished else ("inprogress" if started else "notstarted"),
+            "canli_durum": live.get("long") or live.get("short") or "",
+            "tarih_saat": tarih,
+            "turnuva": (mac.get("tournament") or {}).get("name")
+        }
+
+    except Exception as e:
+        print(f"[FotMob] Tek takım maç hatası: {e}", flush=True)
+        return None
+
+
+
+
+def sofascore_takim_mac_getir(takim, gelecek=True):
+    """Bir futbol takımının sıradaki veya son tamamlanmış maçını SofaScore'dan getirir."""
+    import requests
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    if not takim or not takim.get("id"):
+        return None
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json"
+        }
+        yon = "next" if gelecek else "last"
+        url = (
+            f"https://www.sofascore.com/api/v1/team/"
+            f"{takim['id']}/events/{yon}/0"
+        )
+
+        r = requests.get(url, headers=headers, timeout=12)
+        if r.status_code != 200:
+            return None
+
+        events = r.json().get("events", [])
+        simdi = datetime.now(timezone.utc).timestamp()
+        adaylar = []
+
+        for event in events:
+            ev = event.get("homeTeam") or {}
+            dep = event.get("awayTeam") or {}
+            takim_id = str(takim.get("id"))
+
+            if takim_id not in (str(ev.get("id")), str(dep.get("id"))):
+                continue
+
+            timestamp = event.get("startTimestamp")
+            if not timestamp:
+                continue
+
+            durum = (event.get("status") or {}).get("type", "")
+
+            if gelecek:
+                if timestamp < simdi or durum not in ("notstarted", "inprogress"):
+                    continue
+            else:
+                if durum != "finished":
+                    continue
+                if timestamp > simdi:
+                    continue
+
+            adaylar.append(event)
+
+        if not adaylar:
+            return None
+
+        mac = (
+            min(adaylar, key=lambda x: x["startTimestamp"])
+            if gelecek
+            else max(adaylar, key=lambda x: x["startTimestamp"])
+        )
+
+        ev = mac.get("homeTeam") or {}
+        dep = mac.get("awayTeam") or {}
+        ev_skor = (mac.get("homeScore") or {}).get("current")
+        dep_skor = (mac.get("awayScore") or {}).get("current")
+
+        tarih = datetime.fromtimestamp(
+            mac["startTimestamp"], ZoneInfo("Europe/Istanbul")
+        ).strftime("%d.%m.%Y %H:%M")
+
+        return {
+            "ev": ev.get("name", "Ev sahibi"),
+            "deplasman": dep.get("name", "Deplasman"),
+            "ev_skor": ev_skor,
+            "dep_skor": dep_skor,
+            "durum": (mac.get("status") or {}).get("type"),
+            "tarih_saat": tarih,
+            "turnuva": (mac.get("tournament") or {}).get("name")
+        }
+
+    except Exception as e:
+        print(f"[SofaScore] Tek takım maç hatası: {e}", flush=True)
+        return None
 
 
 def fotmob_iki_takim_skoru_getir(mesaj, takimlar):
@@ -10545,10 +10801,19 @@ def sohbet():
             "filenin sultanlari", "filenin efeleri"
         ))
 
-        if skor_istegi and not voleybol_sorgusu:
+        tek_takim_mac_istegi = any(k in mesaj_kf for k in (
+    "maç", "mac", "saat", "kaçta", "kacta", "rakibi",
+    "kimle", "kiminle", "oynayacak", "oynuyor",
+    "son maç", "son mac", "kazandı", "kazandi"
+))
+        puan_durumu_istegi = any(k in mesaj_kf for k in (
+            "kaçıncı", "kacinci", "sırada", "sirada",
+            "puan durumu", "puan", "ligde"
+        ))
+        if (skor_istegi or tek_takim_mac_istegi or puan_durumu_istegi) and not voleybol_sorgusu:
             # Önce yapılandırılmış direkt spor kaynağını dene.
             # FotMob gerçek sonucu bulursa SofaScore'a geçmeden döndür.
-            direkt_skor = spor_skoru_direkt_cevapla(mesaj)
+            direkt_skor = spor_skoru_direkt_cevapla(mesaj) if skor_istegi else ''
             if direkt_skor:
                 print(
                     f"⚽ FOTMOB DOĞRUDAN API CEVAP: {direkt_skor}",
@@ -10564,7 +10829,7 @@ def sohbet():
                 })
 
             temiz_mesaj = re.sub(
-                r"\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|bitti|sonucu)\b",
+                r"\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|bitti|sonucu|saat|kaçta|kacta|rakibi|kimle|kiminle|oynayacak|oynuyor|son|kazandı|kazandi|kaçıncı|kacinci|sırada|sirada|puan|durumu|ligde|europa|league|uefa|mı|mi|mu|mü|ne|zaman|fikstür|fikstur|gelecek|nin|nın|nun|nün|in|ın|un|ün)\b",
                 " ",
                 mesaj_kf
             )
@@ -10590,7 +10855,7 @@ def sohbet():
 
                     gorulen.add(parca)
 
-                    takim = sofascore_takim_bul(parca)
+                    takim = fotmob_takim_bul(parca)
 
                     if takim:
                         adaylar.append(
@@ -10624,6 +10889,120 @@ def sohbet():
                 if len(secilen) == 2:
                     break
 
+            if len(secilen) == 1:
+                tek_takim = secilen[0]
+                if puan_durumu_istegi:
+                    bilgi = fotmob_takim_puan_durumu_getir(tek_takim, mesaj)
+                    if bilgi:
+                        cevap = (
+                            f"{bilgi['takim']}, {bilgi['lig']} puan durumunda "
+                            f"{bilgi['sira']}. sırada. "
+                            f"{bilgi['puan']} puanı var; "
+                            f"{bilgi['oynanan']} maç oynadı."
+                        )
+                    else:
+                        cevap = (
+                            f"{tek_takim.get('name', 'Takım')} için "
+                            "güncel lig sıralaması bilgisine ulaşılamadı."
+                        )
+
+                    print(f"FOTMOB PUAN DURUMU CEVAP: {cevap}", flush=True)
+                    return jsonify({
+                        "ok": True,
+                        "answer": cevap,
+                        "web_search": True,
+                        "eagle_direct": True,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
+                son_mac_istegi = any(k in mesaj_kf for k in (
+                    "son maç", "son mac", "kazandı", "kazandi",
+                    "maç sonucu", "mac sonucu", "kaç kaç", "kac kac",
+                    "skor", "bitti"
+                ))
+
+                mac = fotmob_takim_mac_getir(
+                    tek_takim, gelecek=not son_mac_istegi
+                )
+
+                if mac:
+                    ev = mac["ev"]
+                    dep = mac["deplasman"]
+                    tarih_saat = mac["tarih_saat"]
+                    takim_adi = tek_takim.get("name", "Takım")
+
+                    if son_mac_istegi:
+                        es = mac.get("ev_skor")
+                        ds = mac.get("dep_skor")
+                        skor = (
+                            f" {es} - {ds}"
+                            if es is not None and ds is not None else ""
+                        )
+                        sonuc_metni = ''
+                        if es is not None and ds is not None:
+                            try:
+                                ev_sayi, dep_sayi = int(es), int(ds)
+                                takim_norm = _sofascore_takim_adi_norm(takim_adi)
+                                if takim_norm == _sofascore_takim_adi_norm(ev):
+                                    takim_skor, rakip_skor = ev_sayi, dep_sayi
+                                elif takim_norm == _sofascore_takim_adi_norm(dep):
+                                    takim_skor, rakip_skor = dep_sayi, ev_sayi
+                                else:
+                                    takim_skor = rakip_skor = None
+                                if takim_skor is not None:
+                                    if takim_skor > rakip_skor:
+                                        sonuc_metni = f'{takim_adi} kazandı.'
+                                    elif takim_skor < rakip_skor:
+                                        sonuc_metni = f'{takim_adi} kaybetti.'
+                                    else:
+                                        sonuc_metni = f'{takim_adi} berabere kaldı.'
+                            except (TypeError, ValueError):
+                                pass
+                        cevap = (
+                            f'{takim_adi} takımının son maçı: '
+                            f'{ev}{skor} {dep}. '
+                        )
+                        if sonuc_metni:
+                            cevap += sonuc_metni + ' '
+                        cevap += f'Tarih: {tarih_saat}.'
+                    else:
+                        if mac.get("durum") == "inprogress":
+                            es = mac.get("ev_skor")
+                            ds = mac.get("dep_skor")
+                            skor = (
+                                f"{es} - {ds}"
+                                if es is not None and ds is not None
+                                else "skor bilgisi alınamadı"
+                            )
+                            cevap = f"{ev} {skor} {dep}. Maç şu anda oynanıyor"
+                            if mac.get("canli_durum"):
+                                cevap += f" ({mac['canli_durum']})"
+                            cevap += f". Başlangıç: {tarih_saat}."
+                        else:
+                            cevap = (
+                                f"{takim_adi} takımının sıradaki maçı: "
+                                f"{ev} - {dep}. Tarih ve saat: "
+                                f"{tarih_saat} (Türkiye saati)."
+                            )
+
+                    if mac.get("turnuva"):
+                        cevap += f" Organizasyon: {mac['turnuva']}."
+
+                    print(f"SOFASCORE TEK TAKIM CEVAP: {cevap}", flush=True)
+                    return jsonify({
+                        "ok": True,
+                        "answer": cevap,
+                        "web_search": True,
+                        "eagle_direct": True,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
+                print(
+                    f"[SofaScore] {tek_takim.get('name')} için maç bulunamadı.",
+                    flush=True
+                )
             if len(secilen) == 2:
                 mac = sofascore_takimlar_arasi_mac_getir(
                     secilen[0],
