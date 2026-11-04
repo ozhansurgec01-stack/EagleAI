@@ -4536,10 +4536,11 @@ def genel_spor_fiksturu_getir(mesaj=""):
     """ESPN skorboard API'sinden fikstür ve tamamlanmış maç sonuçlarını getirir."""
     try:
         from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
         import requests
 
         mesaj_kucuk = (mesaj or "").lower().replace("\\u0307", "")
-        bugun = datetime.now()
+        bugun = datetime.now(ZoneInfo("Europe/Istanbul"))
         sonuc_sorgusu = any(k in mesaj_kucuk for k in (
             "sonuç", "sonuc", "skor", "bitti", "maç sonucu", "mac sonucu"
         ))
@@ -4660,7 +4661,7 @@ def genel_spor_fiksturu_getir(mesaj=""):
                                     tarih_saat.replace("Z", "+00:00")
                                 )
                                 if dt.utcoffset() is not None:
-                                    dt = dt.astimezone().replace(tzinfo=None)
+                                    dt = dt.astimezone(ZoneInfo("Europe/Istanbul")).replace(tzinfo=None)
                                 saat = dt.strftime("%H:%M")
                             except Exception:
                                 pass
@@ -8046,6 +8047,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
     """Bugünkü spor fikstürünü kaynaklardan ayıklayıp kategori bazında doğrudan cevaplar."""
     import re
     from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     if not mesaj:
         return ""
@@ -8562,7 +8564,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         if bugun_mu and not sonuc_mu and saat and not genel_fikstur_mu:
             try:
                 saat_dt = datetime.strptime(saat, "%H:%M")
-                simdi_dt = datetime.now()
+                simdi_dt = datetime.now(ZoneInfo("Europe/Istanbul")).replace(tzinfo=None)
                 if (
                     saat_dt.hour < simdi_dt.hour
                     or (
@@ -8670,6 +8672,10 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         renk_ikonu = renk_ikonlari[len(yapilandirilmis) % len(renk_ikonlari)]
 
         tarih = str(sonuc.get("tarih", "")).strip()
+        if bugun_mu and tarih:
+            bugunun_tarihi = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y")
+            if tarih != bugunun_tarihi:
+                continue
         gun_metni = ""
 
         if tarih:
@@ -11277,6 +11283,22 @@ def sohbet():
                             "web_search": False,
                             "memory_count": len(hafiza_yukle())
                         })
+                elif any(k in mesaj_spor for k in (
+                    "bugün", "bugun", "bugünkü", "bugunku"
+                )):
+                    from datetime import datetime
+                    from zoneinfo import ZoneInfo
+                    bugun_tarih = datetime.now(
+                        ZoneInfo("Europe/Istanbul")
+                    ).strftime("%d.%m.%Y")
+                    return jsonify({
+                        "ok": True,
+                        "answer": f"🏆 Şampiyonlar Ligi\n\nBugün ({bugun_tarih}) için ESPN fikstüründe maç bulunmuyor.",
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
 
             if genel_mac_sorgusu and not web_verisi:
                 genel_fikstur_verisi = genel_spor_fiksturu_getir(mesaj)
