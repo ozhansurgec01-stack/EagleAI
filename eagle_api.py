@@ -2960,6 +2960,20 @@ def _eagle_dizi_sorgu_turu(metin):
     norm = re.sub(r"[^a-z0-9]+", " ", norm)
     norm = re.sub(r"\s+", " ", norm).strip()
 
+    # Dizi adı + bölüm numarası + yayın zamanı sorusu.
+    # Kullanıcının ayrıca "dizi" demesi gerekmez.
+    bolum_eslesmesi = re.search(
+        r"^(.{2,}?)\s+\d{1,3}\s+bolum\b",
+        norm,
+    )
+    yayin_niyeti = re.search(
+        r"\b(?:ne zaman|hangi gun|hangi tarihte|"
+        r"yayinlanacak|yayin tarihi|bolum tarihi)\b",
+        norm,
+    )
+    if bolum_eslesmesi and yayin_niyeti:
+        return "detay"
+
     dizi_turu = re.search(
         r"\b(?:dizi|dizisi|dizisini|dizisinin|dizinin|dizisinde|"
         r"dizilerinin|diziler|dizileri|diziden|diziye|"

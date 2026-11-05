@@ -537,6 +537,10 @@ public class MainActivity extends Activity {
                         "ve Termux'taki eagle_api.py sunucusunun çalıştığından emin ol.";
             }
             final String cevapFinal = apiCevap.answer;
+            final String cevapGosterim = cevapFinal.replaceAll(
+                    "(?i)\\s*\\|?\\s*Görsel\\s*:\\s*https://upload\\.wikimedia\\.org/[^\\s|<>\"']+",
+                    ""
+            ).replaceAll("[ \\t]+\\|[ \\t]*$", "").trim();
             final JSONArray medyaGorselleri = apiCevap.mediaImages;
             final boolean medyaSorusu = apiCevap.mediaQuery;
 
@@ -544,7 +548,7 @@ public class MainActivity extends Activity {
                 mesajAlani.removeView(durum);
 
                 LinearLayout cevapKarti =
-                        mesajOlustur("🦅\n\n" + cevapFinal);
+                        mesajOlustur("🦅\n\n" + cevapGosterim);
                 mesajAlani.addView(cevapKarti);
 
                 if (gonderilecekResim == null) {
@@ -555,9 +559,9 @@ public class MainActivity extends Activity {
                         commonsGorselleriEkle(cevapKarti, mesaj, cevapFinal);
                     }
                 }
-                gecmiseKaydet("🦅\n\n" + cevapFinal);
-                  sohbeteMesajEkle("🦅\n\n" + cevapFinal);
-                metniSesliOku(cevapFinal);
+                gecmiseKaydet("🦅\n\n" + cevapGosterim);
+                  sohbeteMesajEkle("🦅\n\n" + cevapGosterim);
+                metniSesliOku(cevapGosterim);
 
                 kaydirma.post(() ->
                         kaydirma.fullScroll(View.FOCUS_DOWN)
