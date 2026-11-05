@@ -731,6 +731,7 @@ def karar_motoru_test():
     # Soru işareti içermeyen genel bilgi başlıkları web'e yönlenmeli.
     genel_bilgi_basliklari = [
         "1923 yılında Finlandiya'da görülen kuyruklu yıldız",
+        "Finlandiya'da görülen kuyruklu yıldız",
         "Finlandiya tarihi",
     ]
     for soru in genel_bilgi_basliklari:
