@@ -5516,6 +5516,17 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
                 return True
         return False
 
+    # Açık yıl içeren tarihsel sorgularda aynı yıl sonuçta doğrulanmalı.
+    yil_eslesmesi = re.search(
+        r"\b(?:1[0-9]{3}|20[0-9]{2})\b",
+        str(sorgu or "").casefold(),
+    )
+    if yil_eslesmesi and not re.search(
+        r"\b" + re.escape(yil_eslesmesi.group(0)) + r"\b",
+        metin,
+    ):
+        return False
+
     baslik_eslesmesi = sum(1 for k in kelimeler if eslesiyor(k, baslik))
     toplam_eslesme = sum(1 for k in kelimeler if eslesiyor(k, metin))
     gerekli = _gerekli_web_eslesme_sayisi(len(kelimeler))

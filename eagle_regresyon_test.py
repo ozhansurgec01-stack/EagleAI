@@ -573,6 +573,32 @@ def web_sonuc_ilgililik_test():
     ), "Kanada sorgusu İngilizce Canada başlığıyla eşleşmeli"
 
 
+    tarihsel_sorgu = "1923 yılında Finlandiya'da görülen kuyruklu yıldız"
+    yil_1923 = {
+        "title": "1923 yılında Finlandiya'da görülen kuyruklu yıldız",
+        "snippet": "Finlandiya'da 1923 yılında gözlemlenen kuyruklu yıldız.",
+    }
+    yil_2023 = {
+        "title": "2023 yılında görülen kuyruklu yıldız",
+        "snippet": "Finlandiya ve kuyruklu yıldız hakkında bilgiler.",
+    }
+    yilsiz_sorgu_sonucu = {
+        "title": "2023 Finlandiya'da görülen kuyruklu yıldız",
+        "snippet": "Finlandiya'da görülen kuyruklu yıldız.",
+    }
+
+    assert eagle_api._web_sonucu_sorguyla_ilgili_mi(
+        tarihsel_sorgu, yil_1923
+    ), "1923 tarihli doğru sonuç kabul edilmedi"
+    assert not eagle_api._web_sonucu_sorguyla_ilgili_mi(
+        tarihsel_sorgu, yil_2023
+    ), "1923 sorgusunda 2023 sonucu kabul edildi"
+    assert eagle_api._web_sonucu_sorguyla_ilgili_mi(
+        "Finlandiya'da görülen kuyruklu yıldız",
+        yilsiz_sorgu_sonucu,
+    ), "Yıl içermeyen normal sorgunun davranışı bozuldu"
+
+
 def web_eslesme_esigi_test():
     import eagle_api
 
