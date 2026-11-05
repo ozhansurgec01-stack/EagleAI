@@ -702,6 +702,23 @@ def karar_motoru_test():
         f"Güncel haber isteği bozuldu: {guncel}"
     )
 
+    # Soru işareti içermeyen genel bilgi başlıkları web'e yönlenmeli.
+    genel_bilgi_basliklari = [
+        "1923 yılında Finlandiya'da görülen kuyruklu yıldız",
+        "Finlandiya tarihi",
+    ]
+    for soru in genel_bilgi_basliklari:
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("arac") == "web_arastirma", (
+            f"Genel bilgi başlığı web'e yönlenmedi: {soru} -> {sonuc}"
+        )
+
+    # Sosyal sohbet ifadeleri genel bilgi araması olarak algılanmamalı.
+    for soru in ("Nasılsın?", "Sence bu film güzel mi?", "Bugün çok yoruldum"):
+        assert not eagle_api.web_arastirma_gerekli(soru), (
+            f"Sosyal ifade web araması tetikledi: {soru}"
+        )
+
     # Dizi algılama genel olmalı; belirli yapım adlarına özel kural olmamalı.
     dizi_tanitim_sorulari = [
         "Doctor Who dizisi",
@@ -753,6 +770,14 @@ def karar_motoru_test():
         assert eagle_api._eagle_film_baslik_cikar(soru), (
             f"Film başlığı çıkarılamadı: {soru}"
         )
+
+    # Kişisel görüş soruları film tanıtımı olarak sınıflandırılmamalı.
+    gorus_sorusu = "Sence bu film güzel mi?"
+    assert eagle_api._eagle_film_baslik_cikar(gorus_sorusu) is None
+    gorus_karari = eagle_api.eagle_karar_motoru(gorus_sorusu, [])
+    assert gorus_karari.get("arac") == "eagle_sohbet", (
+        f"Kişisel film görüşü sohbet olarak kalmadı: {gorus_karari}"
+    )
 
     film_olumsuz = [
         "Bugün hava nasıl?",

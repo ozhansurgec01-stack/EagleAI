@@ -2875,6 +2875,10 @@ def _eagle_film_baslik_cikar(metin):
 
     norm = _eagle_tmdb_norm(ham)
 
+    # Kişisel görüş soruları film tanıtım sorgusu değildir.
+    if re.match(r"^(?:sence|sizce)\b", norm):
+        return None
+
     # Öneri/tavsiye istekleri bir film başlığı araması değildir.
     if re.search(
         r"\b(oner|tavsiye|tavsiyesi|tavsiyeler|"
@@ -3903,8 +3907,31 @@ def web_arastirma_gerekli(mesaj):
         "açıkla", "acikla", "nasıl çalışır", "nasil calisir"
     ]
 
-    mesaj_kucuk = mesaj.lower()
-    return any(k in mesaj_kucuk for k in kelimeler)
+    mesaj_kucuk = str(mesaj or "").casefold()
+
+    if any(k in mesaj_kucuk for k in kelimeler):
+        return True
+
+    # Yıl ve tarihsel olay içeren bilgi başlıkları.
+    tarihsel_olay = (
+        re.search(r"\b(?:1[0-9]{3}|20[0-9]{2})\s+yılında\b", mesaj_kucuk)
+        and re.search(
+            r"\b(?:görülen|yaşanan|gerçekleşen|meydana gelen|"
+            r"bulunan|keşfedilen|ortaya çıkan)\b",
+            mesaj_kucuk,
+        )
+    )
+    if tarihsel_olay:
+        return True
+
+    # Açık bilgi başlıkları: "Finlandiya tarihi" gibi.
+    bilgi_basligi = re.search(
+        r"\b[\wçğıöşü-]+\s+"
+        r"(?:tarihi|coğrafyası|nüfusu|başkenti|özellikleri|"
+        r"hayatı|biyografisi|keşfi|icatları|sonuçları)\b",
+        mesaj_kucuk,
+    )
+    return bool(bilgi_basligi)
 
 
 def web_url_tekillestirme_anahtari(url):
