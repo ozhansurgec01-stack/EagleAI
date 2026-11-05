@@ -3924,6 +3924,17 @@ def web_arastirma_gerekli(mesaj):
     if tarihsel_olay:
         return True
 
+    # Yıl belirtilmese de "Finlandiya'da görülen kuyruklu yıldız"
+    # gibi tanımlayıcı konu başlıklarını web araştırmasına yönlendir.
+    konu_basligi = re.search(
+        r"\b[\wçğıöşü-]+['’](?:da|de|ta|te)\s+"
+        r"(?:görülen|yaşanan|gerçekleşen|bulunan|keşfedilen)\s+"
+        r"[\wçğıöşü-]+",
+        mesaj_kucuk,
+    )
+    if konu_basligi:
+        return True
+
     # Açık bilgi başlıkları: "Finlandiya tarihi" gibi.
     bilgi_basligi = re.search(
         r"\b[\wçğıöşü-]+\s+"
