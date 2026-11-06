@@ -559,7 +559,7 @@ public class MainActivity extends Activity {
                 if (gonderilecekResim == null) {
                     if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
                         tmdbGorselleriEkle(cevapKarti, medyaGorselleri);
-                    } else if (!medyaSorusu
+                    } else if (!bitcoinFiyati && !medyaSorusu
                             && gorselAramasiUygunMu(mesaj, cevapFinal)) {
                         commonsGorselleriEkle(cevapKarti, mesaj, cevapFinal);
                     }
