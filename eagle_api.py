@@ -12222,7 +12222,15 @@ def sohbet():
 
     # 🧠 Eagle teknik bilgi bankası — doğrudan cevap
     bilgi_sonuclari = []
-    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api", "guvenli_hesaplama", "kod_analiz", "program_yazma") and not autofix_istegi:
+    if karar.get("arac") not in (
+        "borc_modulu",
+        "spor_kaynaklari",
+        "hava_api",
+        "guvenli_hesaplama",
+        "kod_analiz",
+        "program_yazma",
+        "web_arastirma",
+    ) and not autofix_istegi:
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
     if bilgi_sonuclari:
