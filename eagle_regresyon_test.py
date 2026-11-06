@@ -1027,6 +1027,50 @@ def tvf_tarih_eslesme_regresyon_test():
     finally:
         requests.get = orijinal_get
 
+
+
+def bitcoin_fiyat_regresyon_test():
+    from types import SimpleNamespace
+    import eagle_api
+
+    assert eagle_api.bitcoin_fiyat_sorgusu_mu("Güncel Bitcoin fiyatı")
+    assert eagle_api.bitcoin_fiyat_sorgusu_mu(
+        "Bitcoin şu anda dolar karşısında ne kadar?"
+    )
+    assert eagle_api.bitcoin_fiyat_sorgusu_mu("BTC kaç dolar?")
+    assert not eagle_api.bitcoin_fiyat_sorgusu_mu("Bitcoin nedir?")
+    assert not eagle_api.bitcoin_fiyat_sorgusu_mu("Bitcoin nasıl çalışır?")
+    assert not eagle_api.bitcoin_fiyat_sorgusu_mu("Ethereum fiyatı")
+
+    orijinal_get = eagle_api.requests.get
+    try:
+        eagle_api.requests.get = lambda *a, **k: SimpleNamespace(
+            json=lambda: {"bitcoin": {
+                "usd": 75684.25,
+                "last_updated_at": 1794000000,
+            }},
+            raise_for_status=lambda: None,
+        )
+        sonuc = eagle_api.bitcoin_fiyatini_getir()
+        assert sonuc is not None, "Geçerli yanıt reddedildi"
+        assert sonuc["price"] == 75684.25
+        assert sonuc["updated_at"]
+
+        eagle_api.requests.get = lambda *a, **k: SimpleNamespace(
+            json=lambda: {"bitcoin": {"usd": "hatalı"}},
+            raise_for_status=lambda: None,
+        )
+        assert eagle_api.bitcoin_fiyatini_getir() is None
+
+        def hata_get(*a, **k):
+            raise RuntimeError("test bağlantı hatası")
+
+        eagle_api.requests.get = hata_get
+        assert eagle_api.bitcoin_fiyatini_getir() is None
+    finally:
+        eagle_api.requests.get = orijinal_get
+
+
 def api_fonksiyon_test():
     import eagle_api
 
@@ -1075,6 +1119,7 @@ test("AutoFix", autofix_import_test)
 test("BooleanComparison AutoFix", boolean_autofix_test)
 test("Voleybol takım eşleşmesi ve genel sonuçlar", voleybol_takim_eslesme_regresyon_test)
 test("TVF tarih eşleşmesi ve çakışma kontrolü", tvf_tarih_eslesme_regresyon_test)
+test("Bitcoin fiyatı CoinGecko doğrulaması", bitcoin_fiyat_regresyon_test)
 test("API /api/sohbet altyapısı", api_fonksiyon_test)
 test("Genel bilgi soru algılama", genel_soru_algilama_test)
 
