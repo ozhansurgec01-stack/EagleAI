@@ -5571,6 +5571,54 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
     return toplam_eslesme >= gerekli
 
 
+
+
+def bitcoin_fiyat_sorgusu_mu(mesaj):
+    metin = (mesaj or "").casefold().replace("\u0307", "")
+    if not re.search(r"\b(?:bitcoin|btc)\b", metin):
+        return False
+    return bool(re.search(
+        r"fiyat|kaç|kac|ne kadar|şu an|su an|güncel|guncel|"
+        r"dolar karşısında|dolar karsisinda|\busd\b",
+        metin,
+    ))
+
+
+def bitcoin_fiyatini_getir():
+    try:
+        from zoneinfo import ZoneInfo
+
+        url = (
+            "https://api.coingecko.com/api/v3/simple/price"
+            "?ids=bitcoin&vs_currencies=usd&include_last_updated_at=true"
+        )
+        yanit = requests.get(url, timeout=8)
+        yanit.raise_for_status()
+        veri = yanit.json()
+        bitcoin = veri.get("bitcoin") if isinstance(veri, dict) else None
+        fiyat = bitcoin.get("usd") if isinstance(bitcoin, dict) else None
+        guncelleme = bitcoin.get("last_updated_at") if isinstance(bitcoin, dict) else None
+
+        if (
+            isinstance(fiyat, bool)
+            or not isinstance(fiyat, (int, float))
+            or not 0 < fiyat < 1_000_000_000
+            or isinstance(guncelleme, bool)
+            or not isinstance(guncelleme, (int, float))
+            or guncelleme <= 0
+        ):
+            return None
+
+        tarih = datetime.fromtimestamp(
+            guncelleme, ZoneInfo("Europe/Istanbul")
+        ).strftime("%d.%m.%Y %H:%M:%S")
+        return {"price": float(fiyat), "updated_at": tarih}
+
+    except Exception as hata:
+        print(f"CoinGecko fiyat alınamadı: {hata}", flush=True)
+        return None
+
+
 def web_arastir(sorgu, limit=6):
     """Güncel web araması: DuckDuckGo -> Google -> Bing."""
 
@@ -12003,6 +12051,25 @@ def sohbet():
 
         if web_verisi and eagle_webden_ogren(mesaj, web_verisi, karar):
             print("🧠 WEB BİLGİSİ ÖĞRENME HAFIZASINA KAYDEDİLDİ", flush=True)
+
+        if bitcoin_fiyat_sorgusu_mu(mesaj):
+            btc = bitcoin_fiyatini_getir()
+            if btc:
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        f"₿ Bitcoin (BTC): ${btc['price']:,.2f} USD\n"
+                        "Kaynak: CoinGecko\n"
+                        f"Son güncelleme: {btc['updated_at']} (İstanbul)"
+                    ),
+                    "web_search": True,
+                    "eagle_direct": True,
+                    "bitcoin_price": True,
+                    "bitcoin_usd": btc["price"],
+                    "bitcoin_updated_at": btc["updated_at"],
+                    "source": "CoinGecko",
+                    "memory_count": len(hafiza_yukle()),
+                })
 
 
 
