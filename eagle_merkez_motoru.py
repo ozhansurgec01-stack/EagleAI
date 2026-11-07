@@ -4458,19 +4458,9 @@ class EagleMerkezMotoru:
                 neden="Kullanıcı kaynakları açıkça istedi."
             )
 
-        # 3. Web sonucu yoksa Gemini'ye doğrudan atlama.
-        # Önce diğer mevcut motorların sonucu beklenir.
-        if not veriler:
-            if self.finans_fiyat_sorgusu_mu(mesaj):
-                return EagleMerkezSonuc(
-                    ok=True,
-                    cevap="Güncel fiyatı güvenilir kaynaklardan doğrulayamadım. Lütfen daha sonra tekrar deneyin.",
-                    guven=0.0,
-                    kaynak_sayisi=0,
-                    gemini_gerekli=False,
-                    kaynak_goster=False,
-                    neden="Finans fiyatı doğrulanamadı; tahmin üretilmedi.",
-                )
+        # Finans sorguları kendi ek web aramalarını yapabilmelidir.
+        # Diğer sorgularda mevcut boş veri davranışını koru.
+        if not veriler and not self.finans_fiyat_sorgusu_mu(mesaj):
 
             # Web sonucu bulunmasa bile genel yönlendirme soruları
             # mevcut güvenli cevap motorundan doğrudan çözülebilir.
