@@ -1071,6 +1071,39 @@ def bitcoin_fiyat_regresyon_test():
         eagle_api.requests.get = orijinal_get
 
 
+
+
+def finans_api_veri_ayristirma_test():
+    import eagle_api
+
+    altin = eagle_api.finans_verisini_ayristir(
+        "**Gram Altın**\nAlış: 6.500,00 TL | Satış: 6.550,00 TL\n"
+        "**Çeyrek Altın**\nAlış: 10.400,00 TL | Satış: 10.600,00 TL"
+    )
+    assert altin == {
+        "type": "gold",
+        "items": [
+            {"name": "Gram Altın", "buy": "6.500,00", "sell": "6.550,00"},
+            {"name": "Çeyrek Altın", "buy": "10.400,00", "sell": "10.600,00"},
+        ],
+    }, altin
+
+    doviz = eagle_api.finans_verisini_ayristir(
+        "USD: 42,50 TL\nEUR: 49,20 TL"
+    )
+    assert doviz == {
+        "type": "currency",
+        "items": [
+            {"code": "USD", "value": "42,50"},
+            {"code": "EUR", "value": "49,20"},
+        ],
+    }, doviz
+
+    assert eagle_api.finans_verisini_ayristir(
+        "Güncel fiyat doğrulanamadı."
+    ) is None
+
+
 def api_fonksiyon_test():
     import eagle_api
 
@@ -1091,6 +1124,107 @@ def genel_soru_algilama_test():
         assert _soru_gibi_mi(soru), f"Genel bilgi sorusu algılanmadı: {soru}"
         cevaplar = eagle_api.bilgi_bankasi_ara(soru)
         assert "Ankara" in cevaplar, f"Başkent cevabı bulunamadı: {soru} -> {cevaplar}"
+
+
+
+
+def finans_doviz_normalizasyon_test():
+    import eagle_api
+
+    assert eagle_api.doviz_arama_sorgusu("Euro ne kadar?") == "1 EUR kaç TL"
+    assert eagle_api.doviz_arama_sorgusu("Dolar kaç TL?") == "1 USD kaç TL"
+    assert eagle_api.doviz_arama_sorgusu("Euro nedir?") == "Euro nedir?"
+
+
+def finans_doviz_kaynak_onceligi_test():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    bugun = datetime.now(ZoneInfo("Europe/Istanbul"))
+    aramalar = []
+
+    ilk_veriler = [
+        {
+            "url": "https://kur-a.example/usd",
+            "text": f"1 USD = 40 TL bugün {bugun.year}",
+        },
+        {
+            "url": "https://kur-b.example/usd",
+            "text": f"1 USD = 40 TL bugün {bugun.year}",
+        },
+    ]
+
+    def ek_arama(sorgu, limit=6):
+        aramalar.append(sorgu)
+        return [{
+            "url": "https://kur-c.example/usd",
+            "text": f"1 USD = 39 TL bugün {bugun.year}",
+        }]
+
+    cevap, guven = EagleMerkezMotoru.genel_doviz_cevabi(
+        "Dolar kaç TL?",
+        ilk_veriler,
+        web_arayici=ek_arama,
+    )
+
+    assert cevap and "40" in cevap, f"İki kaynakla doğrulanan kur korunmadı: {cevap}"
+    assert "39" not in cevap, f"Tek kaynaklı zayıf kur seçildi: {cevap}"
+    assert len(aramalar) == 1
+    assert bugun.strftime("%d.%m.%Y") in aramalar[0], (
+        f"Arama tarihi dinamik değil: {aramalar[0]}"
+    )
+    assert guven > 0
+
+
+def finans_gram_altin_dogrulama_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+    motor = EagleMerkezMotoru()
+
+    veriler = [
+        {
+            "url": "https://altin-a.example/fiyat",
+            "text": "Gram Altın alış 6500 TL satış 6550 TL",
+        },
+        {
+            "url": "https://altin-b.example/fiyat",
+            "text": "Gram Altın alış 6500 TL satış 6550 TL",
+        },
+    ]
+
+    cevap, guven = motor.genel_altin_cevabi(
+        "Gram altın fiyatı",
+        veriler,
+    )
+
+    assert "Gram Altın" in cevap, f"Gram altın cevabı üretilemedi: {cevap}"
+    assert "6.500,00 TL" in cevap, f"Alış fiyatı hatalı: {cevap}"
+    assert "6.550,00 TL" in cevap, f"Satış fiyatı hatalı: {cevap}"
+    assert guven > 0
+
+
+def finans_genel_altin_esik_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+    motor = EagleMerkezMotoru()
+
+    veriler = [
+        {
+            "url": "https://altin-a.example/fiyat",
+            "text": "Gram Altın alış 6500 TL satış 6550 TL",
+        },
+        {
+            "url": "https://altin-b.example/fiyat",
+            "text": "Gram Altın alış 6500 TL satış 6550 TL",
+        },
+    ]
+
+    cevap, guven = motor.genel_altin_cevabi(
+        "Altın ne kadar?",
+        veriler,
+    )
+
+    assert not cevap, f"Tek ürünle genel altın cevabı üretildi: {cevap}"
+    assert guven == 0.0
 
 
 print("===== EAGLEAI REGRESYON TEST =====")
@@ -1120,6 +1254,11 @@ test("BooleanComparison AutoFix", boolean_autofix_test)
 test("Voleybol takım eşleşmesi ve genel sonuçlar", voleybol_takim_eslesme_regresyon_test)
 test("TVF tarih eşleşmesi ve çakışma kontrolü", tvf_tarih_eslesme_regresyon_test)
 test("Bitcoin fiyatı CoinGecko doğrulaması", bitcoin_fiyat_regresyon_test)
+test("Döviz sorgusu normalizasyonu", finans_doviz_normalizasyon_test)
+test("Döviz kaynak önceliği ve dinamik tarih", finans_doviz_kaynak_onceligi_test)
+test("Gram altın iki kaynak doğrulaması", finans_gram_altin_dogrulama_test)
+test("Genel altın sorgusu ürün eşiği", finans_genel_altin_esik_test)
+test("Finans API veri ayrıştırma", finans_api_veri_ayristirma_test)
 test("API /api/sohbet altyapısı", api_fonksiyon_test)
 test("Genel bilgi soru algılama", genel_soru_algilama_test)
 

@@ -125,6 +125,19 @@ class EagleMerkezMotoru:
         return re.sub(r"\s+", " ", text)
 
     @classmethod
+    def finans_fiyat_sorgusu_mu(cls, mesaj):
+        metin = cls.normalize(mesaj)
+        fiyat_niyeti = any(x in metin for x in (
+            "ne kadar", "nekadar", "fiyat", "kaç tl", "kac tl",
+            "kaç lira", "kac lira", "alış", "alis", "satış", "satis",
+        ))
+        varlik = re.search(
+            r"(?<!\w)(altın|altin|gram|dolar|usd|euro|eur|sterlin|gbp)(?!\w)",
+            metin,
+        )
+        return bool(fiyat_niyeti and varlik)
+
+    @classmethod
     def kaynak_isteniyor_mu(cls, mesaj):
         metin = cls.normalize(mesaj)
         return any(
@@ -1274,7 +1287,9 @@ class EagleMerkezMotoru:
         def kur_cikar(sonuclar, kod, adlar):
             """Güncel kur değerini para birimine göre ve tarih kontrolüyle seçer."""
             from datetime import datetime
+            from zoneinfo import ZoneInfo
 
+            bugun = datetime.now(ZoneInfo("Europe/Istanbul"))
             isimler = tuple(dict.fromkeys((kod,) + tuple(adlar)))
 
             kur_re = re.compile(
@@ -1345,7 +1360,7 @@ class EagleMerkezMotoru:
                 # Açıkça geçmiş yıllara ait sonuçları kullanma.
                 yillar = [int(x) for x in yil_re.findall(metin)]
 
-                if any(y < datetime.now().year for y in yillar):
+                if any(y < bugun.year for y in yillar):
                     continue
 
                 eslesmeler = list(kur_re.finditer(metin))
@@ -1381,7 +1396,7 @@ class EagleMerkezMotoru:
                             r"saat önce|saat once|"
                             r"gün önce|gun once|"
                             r"dakika önce|dakika once|"
-                            r"2026",
+                            + re.escape(str(bugun.year)),
                             baglam,
                             flags=re.IGNORECASE
                         )
@@ -1495,10 +1510,15 @@ class EagleMerkezMotoru:
                 bulunan[kod] = (deger, kaynak_sayisi)
 
         if web_arayici:
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+
+            bugun = datetime.now(ZoneInfo("Europe/Istanbul"))
+            tarih = bugun.strftime("%d.%m.%Y")
             sorgular = {
-                "USD": "1 USD kaç TL bugün 10.09.2026",
-                "EUR": "1 EUR kaç TL bugün 10.09.2026",
-                "GBP": "1 GBP kaç TL bugün 10.09.2026",
+                "USD": f"1 USD kaç TL bugün {tarih}",
+                "EUR": f"1 EUR kaç TL bugün {tarih}",
+                "GBP": f"1 GBP kaç TL bugün {tarih}",
             }
 
             for kod, adlar in para_birimleri:
@@ -1521,7 +1541,10 @@ class EagleMerkezMotoru:
                     adlar
                 )
 
-                if deger:
+                if deger and (
+                    kod not in bulunan
+                    or kaynak_sayisi > bulunan[kod][1]
+                ):
                     bulunan[kod] = (deger, kaynak_sayisi)
 
         # Tekil kur sorgusunda bir para birimi yeterlidir.
@@ -4250,7 +4273,8 @@ class EagleMerkezMotoru:
 
         fiyat_re = re.compile(
             r"(\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,4})?|\d+(?:,\d{1,4})?)"
-            r"\s*TL"
+            r"\s*TL",
+            re.I,
         )
 
         for urun, desenler in urunler:
@@ -4319,9 +4343,17 @@ class EagleMerkezMotoru:
                     len(kaynak_eslesmeleri)
                   )
 
-          # En az 3 farklı altın türü gerçek sayfalardan çıkarılmadıysa
-        # generic sayı motoruna bırak.
-        if len(bulunan) < 3:
+          # Açıkça tek ürün istenmişse yalnızca o ürünün doğrulanması yeterli.
+        istenen_urun = next((
+            urun for urun, desenler in urunler
+            if any(re.search(desen, metin_ascii, re.I) for desen in desenler)
+        ), None)
+
+        if istenen_urun:
+            if istenen_urun not in bulunan:
+                return "", 0.0
+        elif len(bulunan) < 3:
+            # Genel altın sorgusunda mevcut doğrulama eşiğini koru.
             return "", 0.0
 
         satirlar = ["🟡 **ALTIN FİYATLARI**", ""]
@@ -4421,6 +4453,17 @@ class EagleMerkezMotoru:
         # 3. Web sonucu yoksa Gemini'ye doğrudan atlama.
         # Önce diğer mevcut motorların sonucu beklenir.
         if not veriler:
+            if self.finans_fiyat_sorgusu_mu(mesaj):
+                return EagleMerkezSonuc(
+                    ok=True,
+                    cevap="Güncel fiyatı güvenilir kaynaklardan doğrulayamadım. Lütfen daha sonra tekrar deneyin.",
+                    guven=0.0,
+                    kaynak_sayisi=0,
+                    gemini_gerekli=False,
+                    kaynak_goster=False,
+                    neden="Finans fiyatı doğrulanamadı; tahmin üretilmedi.",
+                )
+
             # Web sonucu bulunmasa bile genel yönlendirme soruları
             # mevcut güvenli cevap motorundan doğrudan çözülebilir.
             genel_cevap, genel_guven = self.genel_web_cevabi(
@@ -4592,6 +4635,17 @@ class EagleMerkezMotoru:
         # 6. Hiçbir güvenli çıkarım yok.
         # Gemini burada devreye GİRECEK değil;
         # yalnızca üst katmana son çare sinyali verilecek.
+        if self.finans_fiyat_sorgusu_mu(mesaj):
+            return EagleMerkezSonuc(
+                ok=True,
+                cevap="Güncel fiyatı güvenilir kaynaklardan doğrulayamadım. Lütfen daha sonra tekrar deneyin.",
+                guven=0.0,
+                kaynak_sayisi=kaynak_ozet["kaynak_sayisi"],
+                gemini_gerekli=False,
+                kaynak_goster=False,
+                neden="Finans fiyatı doğrulanamadı; genel web metni ve tahmin kullanılmadı.",
+            )
+
         genel_cevap, genel_guven = self.genel_web_cevabi(
             mesaj,
             veriler,
