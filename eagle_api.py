@@ -720,18 +720,34 @@ def bilgi_bankasi_yukle():
     return {}
 
 def finans_fiyat_sorgusu_mu(mesaj):
-    metin = str(mesaj or "").casefold()
+    metin = str(mesaj or "").casefold().replace("\u0307", "")
     fiyat_niyeti = any(x in metin for x in (
         "ne kadar", "nekadar", "fiyat", "kaç tl", "kac tl",
         "kaç lira", "kac lira", "alış", "alis", "satış", "satis",
+    ))
+    kur_niyeti = any(x in metin for x in (
+        "kur", "kuru", "kaç tl", "kac tl", "kaç lira", "kac lira",
     ))
     altin_sorgusu = (
         fiyat_niyeti
         and any(x in metin for x in ("altın", "altin", "gram"))
         and any(x in metin for x in ("altın", "altin"))
     )
-    return altin_sorgusu or bool(doviz_arama_sorgusu(mesaj))
-
+    para_birimi = bool(re.search(
+        r"(?<!\w)(?:usd|dolar|eur|euro|gbp|sterlin)(?!\w)", metin
+    ))
+    genel_doviz = bool(re.search(
+        r"(?<!\w)(?:döviz|doviz)(?!\w)", metin
+    ))
+    doviz_sorgusu = (
+        (fiyat_niyeti and para_birimi)
+        or (kur_niyeti and (para_birimi or genel_doviz))
+    )
+    return (
+        altin_sorgusu
+        or doviz_sorgusu
+        or bitcoin_fiyat_sorgusu_mu(mesaj)
+    )
 
 def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").replace("İ", "i").lower()
