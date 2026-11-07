@@ -1125,6 +1125,60 @@ def finans_api_veri_ayristirma_test():
     ) is None
 
 
+def merkez_finans_bos_web_verisi_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    # Döviz: ilk web sonucu boş olsa bile döviz fonksiyonuna ulaşılmalı.
+    motor = EagleMerkezMotoru()
+    cagrilar = []
+
+    def doviz(mesaj, veriler, web_arayici=None):
+        cagrilar.append("doviz")
+        return "USD: 42,50 TL", 0.82
+
+    motor.genel_doviz_cevabi = doviz
+    sonuc = motor.calistir(
+        "Dolar ne kadar?",
+        web_verisi=[],
+        web_arayici=lambda *a, **k: [],
+    )
+    assert sonuc.ok and "42,50" in sonuc.cevap, sonuc
+    assert cagrilar == ["doviz"], cagrilar
+
+    # Altın: döviz sonucu yoksa altın fonksiyonuna ulaşılmalı.
+    motor = EagleMerkezMotoru()
+    cagrilar = []
+
+    def doviz_yok(mesaj, veriler, web_arayici=None):
+        cagrilar.append("doviz")
+        return None, 0.0
+
+    def altin(mesaj, veriler, web_arayici=None, sayfa_okuyucu=None):
+        cagrilar.append("altin")
+        return "Gram Altın: doğrulanmış test fiyatı", 0.82
+
+    motor.genel_doviz_cevabi = doviz_yok
+    motor.genel_altin_cevabi = altin
+    sonuc = motor.calistir(
+        "Gram altın ne kadar?",
+        web_verisi=[],
+        web_arayici=lambda *a, **k: [],
+    )
+    assert sonuc.ok and "test fiyatı" in sonuc.cevap, sonuc
+    assert cagrilar == ["doviz", "altin"], cagrilar
+
+    # Doğrulanmış fiyat yoksa güvenli hata cevabı korunmalı.
+    motor = EagleMerkezMotoru()
+    motor.genel_doviz_cevabi = lambda *a, **k: (None, 0.0)
+    motor.genel_altin_cevabi = lambda *a, **k: ("", 0.0)
+    sonuc = motor.calistir(
+        "Dolar ne kadar?",
+        web_verisi=[],
+        web_arayici=lambda *a, **k: [],
+    )
+    assert "doğrulayamadım" in sonuc.cevap.casefold(), sonuc
+
+
 def api_fonksiyon_test():
     import eagle_api
 
@@ -1275,6 +1329,7 @@ test("BooleanComparison AutoFix", boolean_autofix_test)
 test("Voleybol takım eşleşmesi ve genel sonuçlar", voleybol_takim_eslesme_regresyon_test)
 test("TVF tarih eşleşmesi ve çakışma kontrolü", tvf_tarih_eslesme_regresyon_test)
 test("Bitcoin fiyatı CoinGecko doğrulaması", bitcoin_fiyat_regresyon_test)
+test("Boş web sonucunda finans ek araması", merkez_finans_bos_web_verisi_test)
 test("Döviz sorgusu normalizasyonu", finans_doviz_normalizasyon_test)
 test("Döviz kaynak önceliği ve dinamik tarih", finans_doviz_kaynak_onceligi_test)
 test("Gram altın iki kaynak doğrulaması", finans_gram_altin_dogrulama_test)
