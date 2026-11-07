@@ -1350,9 +1350,35 @@ def finans_genel_altin_esik_test():
     assert guven == 0.0
 
 
+
+
+def finans_altin_genel_sayisal_engeli_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    motor = EagleMerkezMotoru()
+    veriler = [
+        {
+            "url": "https://ornek-a.example",
+            "text": "Gram altın 6.555,36 TL",
+        },
+        {
+            "url": "https://ornek-b.example",
+            "text": "Gram altın fiyatı 6.555,36 TL",
+        },
+    ]
+
+    for soru in (
+        "Gram altın ne kadar?",
+        "Gram altın kaç TL?",
+        "Gram altın fiyatı",
+    ):
+        cevap, guven = motor.net_sayisal_cevap(soru, veriler)
+        assert cevap is None and guven == 0.0, (soru, cevap, guven)
+
 print("===== EAGLEAI REGRESYON TEST =====")
 print()
 
+test("Altın sorgusunda doğrulanmamış tekil sayı engeli", finans_altin_genel_sayisal_engeli_test)
 test("Bilgi bankası JSON ve 49 yeni Python kaydı", bilgi_bankasi_test)
 test("Python syntax temel testleri", python_syntax_test)
 test("Program üretme regresyonu", program_uretme_regresyon_test)
