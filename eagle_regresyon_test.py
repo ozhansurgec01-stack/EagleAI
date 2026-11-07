@@ -1214,6 +1214,7 @@ def finans_doviz_normalizasyon_test():
 def finans_doviz_kaynak_onceligi_test():
     from datetime import datetime
     from zoneinfo import ZoneInfo
+    from unittest.mock import patch
     from eagle_merkez_motoru import EagleMerkezMotoru
 
     bugun = datetime.now(ZoneInfo("Europe/Istanbul"))
@@ -1237,11 +1238,16 @@ def finans_doviz_kaynak_onceligi_test():
             "text": f"1 USD = 39 TL bugün {bugun.year}",
         }]
 
-    cevap, guven = EagleMerkezMotoru.genel_doviz_cevabi(
-        "Dolar kaç TL?",
-        ilk_veriler,
-        web_arayici=ek_arama,
-    )
+    # Bu test web kaynak önceliğini sınar; TCMB çağrısını izole et.
+    with patch(
+        "eagle_merkez_motoru.tcmb_doviz_kurlarini_getir",
+        return_value=None,
+    ):
+        cevap, guven = EagleMerkezMotoru.genel_doviz_cevabi(
+            "Dolar kaç TL?",
+            ilk_veriler,
+            web_arayici=ek_arama,
+        )
 
     assert cevap and "40" in cevap, f"İki kaynakla doğrulanan kur korunmadı: {cevap}"
     assert "39" not in cevap, f"Tek kaynaklı zayıf kur seçildi: {cevap}"
@@ -1250,6 +1256,48 @@ def finans_doviz_kaynak_onceligi_test():
         f"Arama tarihi dinamik değil: {aramalar[0]}"
     )
     assert guven > 0
+
+
+
+def finans_tcmb_xml_dogrulama_test():
+    import io
+    from unittest.mock import patch
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    xml = b"""<?xml version="1.0" encoding="UTF-8"?>
+    <Tarih_Date Date="06.11.2026">
+      <Currency CurrencyCode="USD">
+        <ForexBuying>42.1234</ForexBuying>
+        <ForexSelling>42.4567</ForexSelling>
+      </Currency>
+      <Currency CurrencyCode="EUR">
+        <ForexBuying>48.1234</ForexBuying>
+        <ForexSelling>48.4567</ForexSelling>
+      </Currency>
+      <Currency CurrencyCode="GBP">
+        <ForexBuying>55.1234</ForexBuying>
+        <ForexSelling>55.4567</ForexSelling>
+      </Currency>
+    </Tarih_Date>"""
+
+    with patch("urllib.request.urlopen", return_value=io.BytesIO(xml)):
+        cevap, guven = EagleMerkezMotoru.genel_doviz_cevabi(
+            "Dolar kaç TL?", []
+        )
+
+    assert cevap and "42,1234" in cevap, cevap
+    assert "42,4567" in cevap, cevap
+    assert "06.11.2026" in cevap, cevap
+    assert "TCMB" in cevap, cevap
+    assert guven == 0.95
+
+    with patch("urllib.request.urlopen", return_value=io.BytesIO(xml)):
+        cevap, guven = EagleMerkezMotoru.genel_doviz_cevabi(
+            "Euro kaç TL?", []
+        )
+
+    assert "48,1234" in cevap, cevap
+    assert "48,4567" in cevap, cevap
 
 
 def finans_gram_altin_dogrulama_test():
@@ -1332,6 +1380,7 @@ test("Bitcoin fiyatı CoinGecko doğrulaması", bitcoin_fiyat_regresyon_test)
 test("Boş web sonucunda finans ek araması", merkez_finans_bos_web_verisi_test)
 test("Döviz sorgusu normalizasyonu", finans_doviz_normalizasyon_test)
 test("Döviz kaynak önceliği ve dinamik tarih", finans_doviz_kaynak_onceligi_test)
+test("TCMB XML döviz alış/satış doğrulaması", finans_tcmb_xml_dogrulama_test)
 test("Gram altın iki kaynak doğrulaması", finans_gram_altin_dogrulama_test)
 test("Genel altın sorgusu ürün eşiği", finans_genel_altin_esik_test)
 test("Finans API veri ayrıştırma", finans_api_veri_ayristirma_test)
