@@ -4291,6 +4291,42 @@ class EagleMerkezMotoru:
 
         bulunan = {}
 
+        # Gram Altın: iki bağımsız API aynı gün ve %2 toleransla doğrulamalı.
+        try:
+            import requests
+            from datetime import datetime
+            from zoneinfo import ZoneInfo
+            from eagle_sanalkuyumculuk import API_URL as SANAL_URL, parse_payload as sanal_parse
+            from eagle_altinkaynak import API_URL as ALTIN_URL, parse_payload as altin_parse
+
+            headers = {"User-Agent": "EagleAI/1.0", "Accept": "application/json"}
+            sr = requests.get(SANAL_URL, headers=headers, timeout=8)
+            ar = requests.get(ALTIN_URL, headers=headers, timeout=8)
+            sk = sanal_parse(sr.json()) if sr.status_code == 200 else []
+            ak = altin_parse(ar.json()) if ar.status_code == 200 else []
+
+            sg = next((x for x in sk if x.get("urun") == "Gram Altın" and x.get("tarih_kapsami") == "urun"), None)
+            ag = next((x for x in ak if x.get("urun") == "Gram Altın" and x.get("tarih_kapsami") == "urun"), None)
+
+            if sg and ag:
+                bugun = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
+                ayni_gun = sg.get("tarih") == bugun and ag.get("tarih") == bugun
+                fiyatlar = (sg["alis"], ag["alis"], sg["satis"], ag["satis"])
+                pozitif = all(float(x) > 0 for x in fiyatlar)
+                uyumlu = pozitif and all(
+                    abs(float(a) - float(b)) / ((float(a) + float(b)) / 2) * 100 <= 2
+                    for a, b in ((sg["alis"], ag["alis"]), (sg["satis"], ag["satis"]))
+                )
+                if ayni_gun and uyumlu:
+                    bulunan["Gram Altın"] = (
+                        (float(sg["alis"]) + float(ag["alis"])) / 2,
+                        (float(sg["satis"]) + float(ag["satis"])) / 2,
+                        2,
+                    )
+        except Exception:
+            # API hatasında tek kaynaktan fiyat yayımlama.
+            pass
+
         # -------------------------------------------------
         # GERÇEK HTML ALTIN TABLOSU
         # Arama sonucunda gelen doğrulanmış HTML tablolarını
