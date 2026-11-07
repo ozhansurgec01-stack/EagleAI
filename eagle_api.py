@@ -516,6 +516,67 @@ def hafiza_ekle(bilgi):
     return True
 
 
+def finans_verisini_ayristir(merkez_cevap):
+    """Doğrulanmış altın ve döviz cevaplarını Android kart verisine dönüştürür."""
+    finans_verisi = None
+    altin_urun = None
+    altin_alis = None
+    altin_satis = None
+    altin_ogeleri = []
+
+    for satir in str(merkez_cevap or "").splitlines():
+        baslik = re.search(r"\*\*(.+?)\*\*", satir)
+        if baslik:
+            aday = baslik.group(1).strip()
+            if "ALTIN FİYATLARI" not in aday.upper():
+                altin_urun = aday
+                altin_alis = None
+                altin_satis = None
+
+        alis = re.search(r"Alış:\s*([\d.,]+)\s*TL", satir, re.I)
+        satis = re.search(r"Satış:\s*([\d.,]+)\s*TL", satir, re.I)
+
+        if alis:
+            altin_alis = alis.group(1)
+        if satis:
+            altin_satis = satis.group(1)
+
+        if altin_urun and altin_alis and altin_satis:
+            altin_ogeleri.append({
+                "name": altin_urun,
+                "buy": altin_alis,
+                "sell": altin_satis,
+            })
+            altin_urun = None
+            altin_alis = None
+            altin_satis = None
+
+    if altin_ogeleri:
+        return {
+            "type": "gold",
+            "items": altin_ogeleri,
+        }
+
+    doviz_ogeleri = []
+    for eslesme in re.finditer(
+        r"\b(USD|EUR|GBP):\s*([\d.,]+)\s*TL",
+        str(merkez_cevap or ""),
+        re.I,
+    ):
+        doviz_ogeleri.append({
+            "code": eslesme.group(1).upper(),
+            "value": eslesme.group(2),
+        })
+
+    if doviz_ogeleri:
+        return {
+            "type": "currency",
+            "items": doviz_ogeleri,
+        }
+
+    return None
+
+
 def sohbet_hafizaya_ekle(soru, cevap, konu="", kaynak=None):
     soru = str(soru).strip()
     cevap = str(cevap).strip()
@@ -657,6 +718,20 @@ def bilgi_bankasi_yukle():
     except Exception as e:
         print("⚠️ Bilgi bankası okunamadı:", e, flush=True)
     return {}
+
+def finans_fiyat_sorgusu_mu(mesaj):
+    metin = str(mesaj or "").casefold()
+    fiyat_niyeti = any(x in metin for x in (
+        "ne kadar", "nekadar", "fiyat", "kaç tl", "kac tl",
+        "kaç lira", "kac lira", "alış", "alis", "satış", "satis",
+    ))
+    altin_sorgusu = (
+        fiyat_niyeti
+        and any(x in metin for x in ("altın", "altin", "gram"))
+        and any(x in metin for x in ("altın", "altin"))
+    )
+    return altin_sorgusu or bool(doviz_arama_sorgusu(mesaj))
+
 
 def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").replace("İ", "i").lower()
@@ -2274,7 +2349,7 @@ def doviz_arama_sorgusu(mesaj):
         ifade in metin
         for ifade in [
             "kur", "kuru", "kaç tl", "kac tl",
-            "kaç lira", "kac lira", "tl", "lira"
+            "kaç lira", "kac lira", "ne kadar", "nekadar", "tl", "lira"
         ]
     )
 
@@ -9968,6 +10043,7 @@ def sohbet():
     if karar.get("arac") not in (
         "borc_modulu", "spor_kaynaklari", "hava_api",
         "guvenli_hesaplama", "kod_analiz", "program_yazma",
+        "web_arastirma",
     ) and not karar.get("komut"):
         genel_dosya = Path(__file__).resolve().with_name("eagle_genel_bilgi.json")
         try:
@@ -12230,7 +12306,7 @@ def sohbet():
         "kod_analiz",
         "program_yazma",
         "web_arastirma",
-    ) and not autofix_istegi:
+    ) and not autofix_istegi and not finans_fiyat_sorgusu_mu(mesaj):
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
     if bilgi_sonuclari:
@@ -12773,12 +12849,15 @@ def sohbet():
                         merkez_cevap,
                         karar.get("komut", "")
                     )
+
+                    finans_verisi = finans_verisini_ayristir(merkez_cevap)
                     return jsonify({
                         "ok": True,
                         "answer": merkez_cevap,
                         "web_search": True,
                         "eagle_direct": True,
                         "merkez_motor": True,
+                        **({"finance_data": finans_verisi} if finans_verisi else {}),
                         "memory_count": len(hafiza_yukle())
                     })
 

@@ -546,6 +546,7 @@ public class MainActivity extends Activity {
             final boolean bitcoinFiyati = apiCevap.bitcoinPrice;
             final String bitcoinUsd = apiCevap.bitcoinUsd;
             final String bitcoinUpdatedAt = apiCevap.bitcoinUpdatedAt;
+            final JSONObject finansVerisi = apiCevap.financeData;
 
             runOnUiThread(() -> {
                 mesajAlani.removeView(durum);
@@ -553,13 +554,15 @@ public class MainActivity extends Activity {
                 LinearLayout cevapKarti =
                         bitcoinFiyati && !bitcoinUsd.isEmpty()
                                 ? bitcoinFiyatKartiOlustur(bitcoinUsd, bitcoinUpdatedAt)
-                                : mesajOlustur("🦅\n\n" + cevapGosterim);
+                                : finansVerisi != null
+                                    ? finansKartlariOlustur(finansVerisi)
+                                    : mesajOlustur("🦅\n\n" + cevapGosterim);
                 mesajAlani.addView(cevapKarti);
 
                 if (gonderilecekResim == null) {
                     if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
                         tmdbGorselleriEkle(cevapKarti, medyaGorselleri);
-                    } else if (!bitcoinFiyati && !medyaSorusu
+                    } else if (!bitcoinFiyati && finansVerisi == null && !medyaSorusu
                             && gorselAramasiUygunMu(mesaj, cevapFinal)) {
                         commonsGorselleriEkle(cevapKarti, mesaj, cevapFinal);
                     }
@@ -870,6 +873,7 @@ public class MainActivity extends Activity {
         boolean bitcoinPrice;
         String bitcoinUsd = "";
         String bitcoinUpdatedAt = "";
+        JSONObject financeData;
     }
 
     private ApiCevap geminiIstek(String mesaj, Uri resimUri) {
@@ -999,6 +1003,7 @@ public class MainActivity extends Activity {
                 apiCevap.bitcoinPrice = cevapJson.optBoolean("bitcoin_price", false);
                 apiCevap.bitcoinUsd = cevapJson.optString("bitcoin_usd", "");
                 apiCevap.bitcoinUpdatedAt = cevapJson.optString("bitcoin_updated_at", "");
+                apiCevap.financeData = cevapJson.optJSONObject("finance_data");
                 JSONObject medya = cevapJson.optJSONObject("media_images");
                 if (medya != null) {
                     JSONArray gorseller = new JSONArray();
@@ -2970,6 +2975,133 @@ JSONObject item = new JSONObject();
         kart.setLayoutParams(kartLp);
 
         return kart;
+    }
+
+    private LinearLayout finansKartlariOlustur(JSONObject veri) {
+        LinearLayout liste = new LinearLayout(this);
+        liste.setOrientation(LinearLayout.VERTICAL);
+
+        JSONArray ogeler = veri.optJSONArray("items");
+        if (ogeler == null) return liste;
+
+        float yogunluk = getResources().getDisplayMetrics().density;
+        int ekranGenisligi = getResources().getDisplayMetrics().widthPixels;
+        int maxGenislik = Math.min(
+                (int) (ekranGenisligi * 0.84f),
+                (int) (640 * yogunluk)
+        );
+        boolean altin = "gold".equalsIgnoreCase(veri.optString("type"));
+
+        for (int i = 0; i < ogeler.length(); i++) {
+            JSONObject oge = ogeler.optJSONObject(i);
+            if (oge == null) continue;
+
+            String kod = altin
+                    ? oge.optString("name", "ALTIN")
+                    : oge.optString("code", "");
+
+            String fiyatMetni;
+            if (altin) {
+                String alis = oge.optString("buy", "");
+                String satis = oge.optString("sell", "");
+                if (alis.isEmpty() || satis.isEmpty()) continue;
+                fiyatMetni = "ALIŞ   " + alis + " TL\nSATIŞ  " + satis + " TL";
+            } else {
+                String deger = oge.optString("value", "");
+                if (deger.isEmpty()) continue;
+                fiyatMetni = deger + " TL";
+            }
+
+            int arkaRenk;
+            int kenarlik;
+            int vurgu;
+
+            if (altin) {
+                arkaRenk = Color.rgb(61, 45, 19);
+                kenarlik = Color.rgb(190, 143, 54);
+                vurgu = Color.rgb(255, 211, 125);
+            } else if ("USD".equalsIgnoreCase(kod)) {
+                arkaRenk = Color.rgb(15, 53, 39);
+                kenarlik = Color.rgb(53, 151, 103);
+                vurgu = Color.rgb(125, 232, 168);
+            } else if ("EUR".equalsIgnoreCase(kod)) {
+                arkaRenk = Color.rgb(18, 43, 75);
+                kenarlik = Color.rgb(72, 132, 207);
+                vurgu = Color.rgb(151, 195, 255);
+            } else {
+                arkaRenk = Color.rgb(48, 35, 65);
+                kenarlik = Color.rgb(133, 102, 177);
+                vurgu = Color.rgb(205, 175, 255);
+            }
+
+            int dp = (int) (16 * yogunluk + 0.5f);
+            LinearLayout kart = new LinearLayout(this);
+            kart.setOrientation(LinearLayout.VERTICAL);
+            kart.setPadding(dp, dp, dp, dp);
+            kart.setBackground(yuvarlakArkaPlan(arkaRenk, kenarlik, 18));
+            kart.setElevation(6f);
+
+            TextView baslik = new TextView(this);
+            baslik.setText(altin ? "🟡 " + kod : kod + "  /  TÜRK LİRASI");
+            baslik.setTextSize(14);
+            baslik.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+            baslik.setTextColor(vurgu);
+            kart.addView(baslik);
+
+            TextView fiyat = new TextView(this);
+            fiyat.setText(fiyatMetni);
+            fiyat.setTextSize(altin ? 19 : 29);
+            fiyat.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+            fiyat.setTextColor(Color.WHITE);
+            fiyat.setTextIsSelectable(true);
+
+            LinearLayout.LayoutParams fiyatLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            fiyatLp.topMargin = (int) (12 * yogunluk);
+            kart.addView(fiyat, fiyatLp);
+
+            TextView kopyala = new TextView(this);
+            kopyala.setText("📋  FİYATLARI KOPYALA");
+            kopyala.setTextSize(12);
+            kopyala.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+            kopyala.setTextColor(Color.WHITE);
+            kopyala.setGravity(Gravity.CENTER);
+            kopyala.setPadding(dp, (int) (10 * yogunluk), dp, (int) (10 * yogunluk));
+            kopyala.setBackground(yuvarlakArkaPlan(
+                    Color.rgb(35, 65, 75), kenarlik, 12
+            ));
+
+            final String kopyalanacak = kod + "\n" + fiyatMetni;
+            kopyala.setOnClickListener(v -> {
+                ClipboardManager clipboard =
+                        (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(
+                            ClipData.newPlainText("Finans fiyatı", kopyalanacak)
+                    );
+                    Toast.makeText(this, "Fiyatlar kopyalandı", Toast.LENGTH_SHORT).show();
+                }
+            });
+
+            LinearLayout.LayoutParams kopyalaLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            kopyalaLp.topMargin = (int) (12 * yogunluk);
+            kart.addView(kopyala, kopyalaLp);
+
+            LinearLayout.LayoutParams kartLp = new LinearLayout.LayoutParams(
+                    maxGenislik,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            kartLp.gravity = Gravity.START;
+            kartLp.bottomMargin = (int) (12 * yogunluk);
+            liste.addView(kart, kartLp);
+        }
+
+        return liste;
     }
 
     private LinearLayout mesajOlustur(String metin) {
