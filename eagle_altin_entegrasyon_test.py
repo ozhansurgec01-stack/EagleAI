@@ -41,10 +41,24 @@ class AltinEntegrasyonTests(unittest.TestCase):
         self.assertIn("6.562,11 TL", cevap)
         self.assertGreater(guven, 0)
 
-    def test_yuzde_iki_fark_asilirsa_cevap_yok(self):
+    def test_yuzde_iki_fark_asilirsa_html_gram_fallback_yok(self):
         data = responses(6800, 6900)
+        html_verileri = [
+            {"url": "https://altin-a.example/fiyat", "text": "Gram Altın alış 6500 TL satış 6550 TL"},
+            {"url": "https://altin-b.example/fiyat", "text": "Gram Altın alış 6500 TL satış 6550 TL"},
+        ]
         with patch("requests.get", side_effect=lambda url, **kw: data[url]):
-            cevap, guven = EagleMerkezMotoru().genel_altin_cevabi("Gram altın fiyatı", [])
+            cevap, guven = EagleMerkezMotoru().genel_altin_cevabi("Gram altın fiyatı", html_verileri)
+        self.assertEqual(cevap, "")
+        self.assertEqual(guven, 0.0)
+
+    def test_api_hatasinda_html_gram_fallback_yok(self):
+        html_verileri = [
+            {"url": "https://altin-a.example/fiyat", "text": "Gram Altın alış 6500 TL satış 6550 TL"},
+            {"url": "https://altin-b.example/fiyat", "text": "Gram Altın alış 6500 TL satış 6550 TL"},
+        ]
+        with patch("requests.get", side_effect=RuntimeError("API erişilemiyor")):
+            cevap, guven = EagleMerkezMotoru().genel_altin_cevabi("Gram altın fiyatı", html_verileri)
         self.assertEqual(cevap, "")
         self.assertEqual(guven, 0.0)
 

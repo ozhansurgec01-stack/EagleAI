@@ -1322,10 +1322,8 @@ def finans_gram_altin_dogrulama_test():
             veriler,
         )
 
-    assert "Gram Altın" in cevap, f"Gram altın cevabı üretilemedi: {cevap}"
-    assert "6.500,00 TL" in cevap, f"Alış fiyatı hatalı: {cevap}"
-    assert "6.550,00 TL" in cevap, f"Satış fiyatı hatalı: {cevap}"
-    assert guven > 0
+    assert not cevap, f"API doğrulaması yokken HTML'den Gram Altın üretildi: {cevap}"
+    assert guven == 0.0
 
 
 def finans_genel_altin_esik_test():

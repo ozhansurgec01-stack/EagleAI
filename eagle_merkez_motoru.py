@@ -4377,6 +4377,8 @@ class EagleMerkezMotoru:
         # AltınVeri fiyatını yalnızca başka bir gerçek kaynak
         # aynı ürünü doğruluyorsa kullan.
         for urun, kayitlar in tablo_urunleri.items():
+            if urun == "Gram Altın":
+                continue
             altinveri = next(
                 (
                     x for x in kayitlar
@@ -4422,6 +4424,8 @@ class EagleMerkezMotoru:
         )
 
         for urun, desenler in urunler:
+            if urun == "Gram Altın":
+                continue
             kaynak_eslesmeleri = []
 
             for veri in kaynaklar:
