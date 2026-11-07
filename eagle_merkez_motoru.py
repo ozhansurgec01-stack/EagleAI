@@ -52,6 +52,53 @@ class EagleMerkezSonuc:
         }
 
 
+
+def tcmb_doviz_kurlarini_getir():
+    """TCMB'nin son yayımladığı resmi döviz alış/satış kurlarını getirir."""
+    from urllib.request import urlopen
+    import xml.etree.ElementTree as ET
+
+    adres = "https://www.tcmb.gov.tr/kurlar/today.xml"
+
+    with urlopen(adres, timeout=5) as yanit:
+        xml_verisi = yanit.read()
+
+    kok = ET.fromstring(xml_verisi)
+    tarih = kok.attrib.get("Date") or kok.attrib.get("Tarih", "")
+
+    # TCMB XML tarihi bazı yanıtlarda AA/GG/YYYY biçiminde gelir.
+    from datetime import datetime
+    for bicim in ("%m/%d/%Y", "%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            tarih = datetime.strptime(tarih, bicim).strftime("%d.%m.%Y")
+            break
+        except ValueError:
+            pass
+
+    kurlar = {}
+    for para in kok.findall("Currency"):
+        kod = para.attrib.get("CurrencyCode", "").upper()
+        if kod not in ("USD", "EUR", "GBP"):
+            continue
+
+        alis = para.findtext("ForexBuying")
+        satis = para.findtext("ForexSelling")
+
+        try:
+            alis = float(alis.replace(",", "."))
+            satis = float(satis.replace(",", "."))
+        except (AttributeError, TypeError, ValueError):
+            continue
+
+        if alis > 0 and satis > 0:
+            kurlar[kod] = {"alis": alis, "satis": satis}
+
+    if not tarih or not kurlar:
+        return None
+
+    return {"tarih": tarih, "kurlar": kurlar}
+
+
 class EagleMerkezMotoru:
     SURUM = "1.0"
 
@@ -1291,6 +1338,41 @@ class EagleMerkezMotoru:
             para_birimleri = tuple(
                 item for item in para_birimleri if item[0] == tekil_kod
             )
+
+        # Öncelik: TCMB resmi alış/satış verisi.
+        try:
+            tcmb = tcmb_doviz_kurlarini_getir()
+        except Exception as hata:
+            print("TCMB döviz verisi alınamadı:", hata, flush=True)
+            tcmb = None
+
+        if tcmb:
+            tcmb_satirlari = []
+            for kod, _ in para_birimleri:
+                kur = tcmb["kurlar"].get(kod)
+                if not kur:
+                    continue
+
+                def tl_yaz(deger):
+                    return (
+                        f"{deger:,.4f}"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", ".")
+                    )
+
+                tcmb_satirlari.append(
+                    f"{kod} alış: {tl_yaz(kur['alis'])} TL"
+                    f" | satış: {tl_yaz(kur['satis'])} TL"
+                )
+
+            gerekli_sayi = 1 if tekil_kod else 2
+            if len(tcmb_satirlari) >= gerekli_sayi:
+                return (
+                    "🟢 **TCMB RESMİ DÖVİZ KURLARI**\n"
+                    + " | ".join(tcmb_satirlari)
+                    + f"\nVeri tarihi: {tcmb['tarih']} (TCMB)"
+                ), 0.95
 
         def kur_cikar(sonuclar, kod, adlar):
             """Güncel kur değerini para birimine göre ve tarih kontrolüyle seçer."""
