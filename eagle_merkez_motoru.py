@@ -626,6 +626,24 @@ class EagleMerkezMotoru:
         # 2) Kullanıcının istediği birimi belirle.
         # -------------------------------------------------
         mesaj_norm = cls.normalize(mesaj)
+
+        # Altın fiyatlarında doğrulanmamış tekil sayı çıkarımını engelle.
+        altin_fiyat_sorusu = (
+            re.search(
+                r"(?<!\w)(?:altın|altin|gram)(?!\w)",
+                mesaj_norm,
+                flags=re.IGNORECASE,
+            )
+            and re.search(
+                r"fiyat|fiyati|ne kadar|nekadar|kaç tl|kac tl|"
+                r"kaç lira|kac lira|alış|alis|satış|satis",
+                mesaj_norm,
+                flags=re.IGNORECASE,
+            )
+        )
+        if altin_fiyat_sorusu:
+            return None, 0.0
+
         if re.search(
             r"\bmaç\b|\bmac\b|\bskor\b|\bson maç\b|\bson mac\b|"
             r"\bmaç sonucu\b|\bmac sonucu\b|\bkaç kaç\b|\bkac kac\b",
