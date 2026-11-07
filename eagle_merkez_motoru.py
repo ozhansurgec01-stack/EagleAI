@@ -135,7 +135,15 @@ class EagleMerkezMotoru:
             r"(?<!\w)(altın|altin|gram|dolar|usd|euro|eur|sterlin|gbp)(?!\w)",
             metin,
         )
-        return bool(fiyat_niyeti and varlik)
+        bitcoin_fiyat_istegi = (
+            bool(re.search(r"(?<!\w)(bitcoin|btc)(?!\w)", metin))
+            and bool(re.search(
+                r"fiyat|kaç|kac|ne kadar|şu an|su an|güncel|guncel|"
+                r"dolar karşısında|dolar karsisinda|usd",
+                metin,
+            ))
+        )
+        return bool((fiyat_niyeti and varlik) or bitcoin_fiyat_istegi)
 
     @classmethod
     def kaynak_isteniyor_mu(cls, mesaj):

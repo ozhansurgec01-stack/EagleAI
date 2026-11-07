@@ -1032,6 +1032,27 @@ def tvf_tarih_eslesme_regresyon_test():
 def bitcoin_fiyat_regresyon_test():
     from types import SimpleNamespace
     import eagle_api
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    finans_algilama_ornekleri = [
+        ("Merhaba", False),
+        ("Şampiyonlar Ligi maç sonuçları", False),
+        ("Bitcoin nedir?", False),
+        ("Bitcoin fiyatı", True),
+        ("BTC kaç dolar?", True),
+        ("Dolar kaç TL?", True),
+        ("Gram altın ne kadar?", True),
+        ("Euro nedir?", False),
+    ]
+    for mesaj, beklenen in finans_algilama_ornekleri:
+        assert eagle_api.finans_fiyat_sorgusu_mu(mesaj) is beklenen, mesaj
+
+    assert not EagleMerkezMotoru.finans_fiyat_sorgusu_mu("Bitcoin nedir?")
+    assert EagleMerkezMotoru.finans_fiyat_sorgusu_mu("Bitcoin fiyatı")
+    assert EagleMerkezMotoru.finans_fiyat_sorgusu_mu("BTC kaç dolar?")
+    assert not EagleMerkezMotoru.finans_fiyat_sorgusu_mu(
+        "Şampiyonlar Ligi maç sonuçları"
+    )
 
     assert eagle_api.bitcoin_fiyat_sorgusu_mu("Güncel Bitcoin fiyatı")
     assert eagle_api.bitcoin_fiyat_sorgusu_mu(
