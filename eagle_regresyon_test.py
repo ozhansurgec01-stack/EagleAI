@@ -1328,8 +1328,10 @@ def finans_gram_altin_dogrulama_test():
 
 def finans_genel_altin_esik_test():
     from eagle_merkez_motoru import EagleMerkezMotoru
-    motor = EagleMerkezMotoru()
+    from eagle_altin_entegrasyon_test import responses
+    from unittest.mock import patch
 
+    motor = EagleMerkezMotoru()
     veriler = [
         {
             "url": "https://altin-a.example/fiyat",
@@ -1341,15 +1343,13 @@ def finans_genel_altin_esik_test():
         },
     ]
 
-    cevap, guven = motor.genel_altin_cevabi(
-        "Altın ne kadar?",
-        veriler,
-    )
+    data = responses()
+    with patch("requests.get", side_effect=lambda url, **kw: data[url]):
+        cevap, guven = motor.genel_altin_cevabi("Altın ne kadar?", veriler)
 
-    assert not cevap, f"Tek ürünle genel altın cevabı üretildi: {cevap}"
-    assert guven == 0.0
-
-
+    assert "Gram Altın" in cevap, f"Doğrulanmış Gram Altın genel sorguda gösterilmedi: {cevap}"
+    assert "6.562,11 TL" in cevap, f"Ortalama alış fiyatı hatalı: {cevap}"
+    assert guven > 0.0, f"Doğrulanmış fiyat için güven puanı üretilmedi: {guven}"
 
 
 def finans_altin_genel_sayisal_engeli_test():
