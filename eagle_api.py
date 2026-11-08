@@ -10803,6 +10803,15 @@ def sohbet():
                         f"Neden: {autofix_sonucu.get('reason', '')}",
                     ])
 
+                else:
+                    cevap.extend([
+                        "",
+                        "🛑 DÜZELTME REDDEDİLDİ",
+                        "",
+                        "Otomatik değişiklik uygulanmadı.",
+                        f"Neden: {autofix_sonucu.get('reason', 'Doğrulama başarısız.')}",
+                    ])
+
                 cevap.extend([
                     "",
                     "📤 Gerçek çalışma çıktısı:",
