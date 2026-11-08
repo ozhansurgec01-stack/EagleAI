@@ -32,8 +32,23 @@ class AltinkaynakTests(unittest.TestCase):
         self.assertEqual(result[0]["tarih_kapsami"], "urun")
         self.assertEqual(result[0]["host"], "static.altinkaynak.com")
 
-    def test_dogrulanmamis_urun_kodlari_dislanir(self):
-        payload = [item(code) for code in ("C", "PC", "Y", "T", "PA", "XX")]
+    def test_ceyrek_ve_yarim_altin_eslesmesi(self):
+        payload = [
+            item("C", Aciklama="Çeyrek", Alis="10.569", Satis="10.893"),
+            item("Y", Aciklama="Yarım", Alis="21.048", Satis="21.909"),
+        ]
+        result = parse_payload(payload, now=NOW)
+        self.assertEqual(
+            [x["urun"] for x in result],
+            ["Çeyrek Altın", "Yarım Altın"],
+        )
+        self.assertEqual(
+            [(x["alis"], x["satis"]) for x in result],
+            [(10569, 10893), (21048, 21909)],
+        )
+
+    def test_belirsiz_urun_kodlari_dislanir(self):
+        payload = [item(code) for code in ("PC", "T", "PT", "PA", "A_T", "XX")]
         self.assertEqual(parse_payload(payload, now=NOW), [])
 
     def test_eski_ve_gelecek_veri_dislanir(self):

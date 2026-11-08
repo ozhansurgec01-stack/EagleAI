@@ -8,7 +8,11 @@ API_URL = "https://static.altinkaynak.com/public/Gold"
 HOST = "static.altinkaynak.com"
 
 # Şimdilik yalnızca iki kaynak arasında fiyatı doğrulanmış ürün.
-PRODUCTS = {"GA": "Gram Altın"}
+PRODUCTS = {
+    "GA": "Gram Altın",
+    "C": "Çeyrek Altın",
+    "Y": "Yarım Altın",
+}
 
 
 def _fiyat(value):

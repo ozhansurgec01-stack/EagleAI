@@ -4305,20 +4305,41 @@ class EagleMerkezMotoru:
             sk = sanal_parse(sr.json()) if sr.status_code == 200 else []
             ak = altin_parse(ar.json()) if ar.status_code == 200 else []
 
-            sg = next((x for x in sk if x.get("urun") == "Gram Altın" and x.get("tarih_kapsami") == "urun"), None)
-            ag = next((x for x in ak if x.get("urun") == "Gram Altın" and x.get("tarih_kapsami") == "urun"), None)
+            bugun = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
 
-            if sg and ag:
-                bugun = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
-                ayni_gun = sg.get("tarih") == bugun and ag.get("tarih") == bugun
+            # Her ürün kendi iki API kaydıyla bağımsız doğrulanır.
+            for urun in ("Gram Altın", "Çeyrek Altın", "Yarım Altın"):
+                sg = next((
+                    x for x in sk
+                    if x.get("urun") == urun
+                    and x.get("tarih_kapsami") == "urun"
+                ), None)
+                ag = next((
+                    x for x in ak
+                    if x.get("urun") == urun
+                    and x.get("tarih_kapsami") == "urun"
+                ), None)
+
+                if not sg or not ag:
+                    continue
+
+                ayni_gun = (
+                    sg.get("tarih") == bugun
+                    and ag.get("tarih") == bugun
+                )
                 fiyatlar = (sg["alis"], ag["alis"], sg["satis"], ag["satis"])
                 pozitif = all(float(x) > 0 for x in fiyatlar)
                 uyumlu = pozitif and all(
-                    abs(float(a) - float(b)) / ((float(a) + float(b)) / 2) * 100 <= 2
-                    for a, b in ((sg["alis"], ag["alis"]), (sg["satis"], ag["satis"]))
+                    abs(float(a) - float(b))
+                    / ((float(a) + float(b)) / 2) * 100 <= 2
+                    for a, b in (
+                        (sg["alis"], ag["alis"]),
+                        (sg["satis"], ag["satis"]),
+                    )
                 )
+
                 if ayni_gun and uyumlu:
-                    bulunan["Gram Altın"] = (
+                    bulunan[urun] = (
                         (float(sg["alis"]) + float(ag["alis"])) / 2,
                         (float(sg["satis"]) + float(ag["satis"])) / 2,
                         2,
