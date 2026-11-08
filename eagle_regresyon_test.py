@@ -715,6 +715,36 @@ def karar_motoru_test():
         sonuc = eagle_api.eagle_karar_motoru(soru, [])
         assert sonuc is not None, f"Karar motoru sonuç üretmedi: {soru}"
 
+    # Takvim soruları özel hesaplama aracına yönlendirilmeli.
+    takvim_sorulari = (
+        "14 Kasım hangi güne geliyor?",
+        "14 Kasım 2026 hangi güne geliyor?",
+        "Bugün hangi gün?",
+        "Yarın hangi gün?",
+    )
+    for soru in takvim_sorulari:
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("intent") == "takvim", (
+            f"Takvim intent hatalı: {soru} -> {sonuc}"
+        )
+        assert sonuc.get("arac") == "takvim_hesaplama", (
+            f"Takvim aracı seçilmedi: {soru} -> {sonuc}"
+        )
+
+    referans_gun = eagle_api.datetime(2026, 11, 8).date()
+    assert eagle_api.eagle_takvim_tarihini_coz(
+        "14 Kasım hangi güne geliyor?", referans_gun
+    ) == eagle_api.datetime(2026, 11, 14).date()
+    assert eagle_api.eagle_takvim_tarihini_coz(
+        "Bugün hangi gün?", referans_gun
+    ) == referans_gun
+    assert eagle_api.eagle_takvim_tarihini_coz(
+        "Yarın hangi gün?", referans_gun
+    ) == eagle_api.datetime(2026, 11, 9).date()
+    assert eagle_api.eagle_takvim_tarihini_coz(
+        "31 Şubat hangi güne geliyor?", referans_gun
+    ) is None
+
     rss = eagle_api.eagle_karar_motoru("RSS haber merkezi oluştur", [])
     assert rss.get("intent") == "program_yazma", (
         f"RSS isteği yanlış yönlendirildi: {rss}"
