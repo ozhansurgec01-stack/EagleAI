@@ -10779,10 +10779,12 @@ def sohbet():
                     "",
                 ]
 
+                kod_degisti = False
                 if autofix_sonucu.get("success"):
                     if gecici_dosya.exists():
                         duzeltilmis_kod = gecici_dosya.read_text(encoding="utf-8").strip()
                         if duzeltilmis_kod and duzeltilmis_kod != kaynak_kod:
+                            kod_degisti = True
                             cevap.extend([
                                 "",
                                 "📝 DÜZELTİLMİŞ KOD",
@@ -10792,7 +10794,11 @@ def sohbet():
                                 "```"
                             ])
                     cevap.extend([
-                        "✅ DÜZELTME KABUL EDİLDİ",
+                        (
+                            "✅ DÜZELTME UYGULANDI"
+                            if kod_degisti
+                            else "✅ ÇALIŞTIRMA BAŞARILI — MANTIKSAL DOĞRULUK TEYİT EDİLMEDİ"
+                        ),
                         "",
                         f"Neden: {autofix_sonucu.get('reason', '')}",
                     ])

@@ -95,7 +95,7 @@ class EagleAutoFixEngine:
         error_types = [
             "SyntaxError", "IndentationError", "NameError",
             "TypeError", "ValueError", "IndexError", "KeyError",
-            "ImportError", "ModuleNotFoundError"
+            "ImportError", "ModuleNotFoundError", "AssertionError"
         ]
         detected = next(
             (name for name in error_types if name in text),
@@ -201,7 +201,8 @@ class EagleAutoFixEngine:
             "IndexError": "Liste/koleksiyon indeks sınırları kontrol edilmeli.",
             "KeyError": "Sözlük anahtarının mevcut olup olmadığı kontrol edilmeli.",
             "ImportError": "Modül adı ve import yolu kontrol edilmeli.",
-            "ModuleNotFoundError": "Gerekli modülün kurulu ve doğru adla çağrıldığı kontrol edilmeli."
+            "ModuleNotFoundError": "Gerekli modülün kurulu ve doğru adla çağrıldığı kontrol edilmeli.",
+            "AssertionError": "Assert doğrulaması başarısız. Beklenen ve gerçek sonuç karşılaştırılmalı; kanıt olmadan otomatik düzeltme yapılmamalı."
         }
         suggestion = rules.get(error_type, "Hata mesajı ve ilgili kod bölümü ayrıntılı olarak incelenmeli.")
         if error_type == "NameError":
@@ -656,9 +657,13 @@ class EagleAutoFixEngine:
                     if output_ok:
                         return {
                             "success": True,
+                            "fix_applied": False,
+                            "execution_ok": True,
+                            "semantic_verified": False,
                             "reason": (
-                                "Kod statik analiz ve çalışma "
-                                "kontrolünden geçti."
+                                "Kod statik analizden geçti ve hatasız "
+                                "çalıştı; ancak mantıksal doğruluk "
+                                "ayrıca doğrulanmadı."
                             ),
                             "attempts": attempts,
                             "history": history,
@@ -687,6 +692,22 @@ class EagleAutoFixEngine:
                 error_info = self.analyze_error(output)
 
                 history[-1]["runtime_error"] = error_info
+
+                if error_info.get("type") == "AssertionError":
+                    self.rollback(backup_path, target_file)
+                    return {
+                        "success": False,
+                        "fix_applied": False,
+                        "execution_ok": False,
+                        "semantic_verified": False,
+                        "reason": (
+                            "Assert doğrulaması başarısız; beklenen sonuç "
+                            "sağlanmadı. Otomatik değişiklik yapılmadı."
+                        ),
+                        "attempts": attempts,
+                        "history": history,
+                        "backup": str(backup_path)
+                    }
 
                 if error_info.get("confidence") != "yüksek":
                     self.rollback(

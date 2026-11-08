@@ -873,6 +873,37 @@ def autofix_import_test():
     assert eagle_autofix is not None
 
 
+def assertion_autofix_regresyon_test():
+    from eagle_autofix import EagleAutoFixEngine
+
+    test_file = Path("assertion_regresyon_gecici.py")
+    kaynak = 'assert False, "beklenen doğrulama hatası"\n'
+    test_file.write_text(kaynak, encoding="utf-8")
+
+    try:
+        motor = EagleAutoFixEngine()
+        hata = motor.analyze_error(
+            'Traceback (most recent call last):\n'
+            '  File "assertion_regresyon_gecici.py", line 1, in <module>\n'
+            '    assert False, "beklenen doğrulama hatası"\n'
+            'AssertionError: beklenen doğrulama hatası'
+        )
+        assert hata.get("type") == "AssertionError", hata
+
+        sonuc = motor.repair_loop(test_file)
+        assert sonuc.get("success") is False, (
+            f"Başarısız assert başarılı sayıldı: {sonuc}"
+        )
+        assert sonuc.get("fix_applied") is False, sonuc
+        assert "Assert doğrulaması başarısız" in sonuc.get("reason", ""), sonuc
+        assert test_file.read_text(encoding="utf-8") == kaynak, (
+            "AssertionError durumunda kaynak dosya değiştirildi."
+        )
+    finally:
+        if test_file.exists():
+            test_file.unlink()
+
+
 def boolean_autofix_test():
     from eagle_autofix import EagleAutoFixEngine
 
@@ -1443,6 +1474,7 @@ test("Matematik bilgi bankası", matematik_test)
 test("Karar motoru", karar_motoru_test)
 test("Kod analiz motoru", kod_analiz_import_test)
 test("AutoFix", autofix_import_test)
+test("AssertionError doğrulama", assertion_autofix_regresyon_test)
 test("BooleanComparison AutoFix", boolean_autofix_test)
 test("Voleybol takım eşleşmesi ve genel sonuçlar", voleybol_takim_eslesme_regresyon_test)
 test("TVF tarih eşleşmesi ve çakışma kontrolü", tvf_tarih_eslesme_regresyon_test)
