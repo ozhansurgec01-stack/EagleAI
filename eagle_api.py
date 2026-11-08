@@ -10851,6 +10851,22 @@ def sohbet():
                     "memory_count": len(hafiza_yukle())
                 })
 
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🦅 EAGLE KOD ANALİZİ + AUTOFIX\n\n"
+                        "⏱️ Kod 5 saniye içinde tamamlanmadı; "
+                        "güvenli süre sınırı nedeniyle durduruldu."
+                    ),
+                    "eagle_direct": True,
+                    "code_analysis": True,
+                    "code_execution": False,
+                    "autofix": False,
+                    "timeout": True,
+                    "memory_count": len(hafiza_yukle())
+                })
+
             finally:
                 # Geçici dosyayı ve klasörü temizle.
                 try:
