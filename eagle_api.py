@@ -2993,8 +2993,6 @@ def _eagle_film_baslik_cikar(metin):
         # Film sözcüğü bulunmadan verilen açık tanıtım istekleri.
         baslik = ham
         son_ifadeler = (
-            r"\s+(?:filmin\s+)?hakkında\s+bilgi\s+ver(?:ir\s+misin)?\s*[?.!]*$",
-            r"\s+(?:filmin\s+)?hakkinda\s+bilgi\s+ver(?:ir\s+misin)?\s*[?.!]*$",
             r"\s+konusu(?:\s+nedir)?\s*[?.!]*$",
             r"\s+(?:filmin\s+)?oyuncuları(?:\s+kimler(?:dir)?)?\s*[?.!]*$",
             r"\s+(?:filmin\s+)?oyunculari(?:\s+kimler(?:dir)?)?\s*[?.!]*$",
