@@ -4500,8 +4500,8 @@ class EagleMerkezMotoru:
         if istenen_urun:
             if istenen_urun not in bulunan:
                 return "", 0.0
-        elif len(bulunan) < 3:
-            # Genel altın sorgusunda mevcut doğrulama eşiğini koru.
+        elif not bulunan:
+            # Genel sorguda yalnızca API doğrulamasından geçen ürünleri göster.
             return "", 0.0
 
         satirlar = ["🟡 **ALTIN FİYATLARI**", ""]
