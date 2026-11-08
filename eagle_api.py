@@ -3110,6 +3110,67 @@ def _eagle_dizi_sorgu_turu(metin):
     return "tanitim"
 
 
+
+def eagle_takvim_tarihini_coz(mesaj, bugun=None):
+    """Türkçe tarih sorularını Türkiye saat dilimine göre takvim tarihine çevirir."""
+    from zoneinfo import ZoneInfo
+
+    if bugun is None:
+        bugun = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+    elif isinstance(bugun, datetime):
+        bugun = bugun.date()
+
+    k = str(mesaj or "").casefold().replace("i\u0307", "i")
+    k = k.translate(str.maketrans({
+        "ç": "c", "ğ": "g", "ı": "i",
+        "ö": "o", "ş": "s", "ü": "u"
+    }))
+
+    gun_sorusu = bool(re.search(
+        r"\b(hangi gun(?:e)?|haftanin hangi gunu|gunune denk geliyor)\b",
+        k
+    ))
+    if not gun_sorusu:
+        return None
+
+    if re.search(r"\bbugun\b", k):
+        return bugun
+    if re.search(r"\byarin\b", k):
+        return bugun + timedelta(days=1)
+
+    aylar = {
+        "ocak": 1, "subat": 2, "mart": 3, "nisan": 4,
+        "mayis": 5, "haziran": 6, "temmuz": 7, "agustos": 8,
+        "eylul": 9, "ekim": 10, "kasim": 11, "aralik": 12
+    }
+
+    eslesme = re.search(
+        r"\b(\d{1,2})\s+(ocak|subat|mart|nisan|mayis|haziran|"
+        r"temmuz|agustos|eylul|ekim|kasim|aralik)(?:\s+(\d{4}))?\b",
+        k
+    )
+
+    if eslesme:
+        gun = int(eslesme.group(1))
+        ay = aylar[eslesme.group(2)]
+        yil = int(eslesme.group(3) or bugun.year)
+    else:
+        eslesme = re.search(
+            r"\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?\b",
+            k
+        )
+        if not eslesme:
+            return None
+        gun = int(eslesme.group(1))
+        ay = int(eslesme.group(2))
+        yil = int(eslesme.group(3) or bugun.year)
+
+    try:
+        return datetime(yil, ay, gun).date()
+    except ValueError:
+        return None
+
+
 def eagle_karar_motoru(mesaj, gecmis=None):
     """
     EagleAI karar motoru v1.
@@ -3164,6 +3225,18 @@ def eagle_karar_motoru(mesaj, gecmis=None):
     erken_karar = erken_sohbet_karari(metin, karar)
     if erken_karar is not None:
         return erken_karar
+
+    # Takvim soruları web veya genel sohbet yerine yerel hesaplamaya gider.
+    if eagle_takvim_tarihini_coz(metin) is not None:
+        karar.update({
+            "intent": "takvim",
+            "guven": "yüksek",
+            "neden": "Tarih ve haftanın günü hesaplama isteği algılandı.",
+            "arac": "takvim_hesaplama",
+            "islem": "gun_bul",
+            "dogrulama": False
+        })
+        return karar
 
     # 🧾 FATURA
     # Elektrik, su, internet, telefon ve D-Smart gibi
@@ -9765,6 +9838,7 @@ def eagle_baglam_yonlendir(mesaj, karar, sohbet_baglam, borc_modulu, gecmis=None
         "kod_analiz",
         "hafiza",
         "program_yazma",
+        "takvim_hesaplama",
     }
 
     if karar.get("arac") in yeni_konu_araclari:
@@ -10053,11 +10127,45 @@ def sohbet():
     akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
 
+    # Takvim hesabını bilgi bankası ve web aşamalarından önce doğrudan yanıtla.
+    if karar.get("arac") == "takvim_hesaplama":
+        takvim_tarihi = eagle_takvim_tarihini_coz(mesaj_orijinal)
+        if takvim_tarihi is not None:
+            ay_adlari = [
+                "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"
+            ]
+            gun_adlari = [
+                "Pazartesi", "Salı", "Çarşamba", "Perşembe",
+                "Cuma", "Cumartesi", "Pazar"
+            ]
+            gun_adi = gun_adlari[takvim_tarihi.weekday()]
+            tarih_metni = (
+                f"{takvim_tarihi.day} {ay_adlari[takvim_tarihi.month - 1]} "
+                f"{takvim_tarihi.year}"
+            )
+            soru_norm = str(mesaj_orijinal).casefold().replace("ü", "u")
+            if "bugun" in soru_norm or "bugün" in soru_norm:
+                cevap = f"📅 Bugün {tarih_metni}, {gun_adi}."
+            elif "yarin" in soru_norm or "yarın" in soru_norm:
+                cevap = f"📅 Yarın {tarih_metni}, {gun_adi}."
+            else:
+                cevap = f"📅 {tarih_metni}, {gun_adi} gününe denk geliyor."
+
+            return jsonify({
+                "ok": True,
+                "answer": cevap,
+                "eagle_direct": True,
+                "web_search": False,
+                "takvim_hesaplama": True,
+                "memory_count": len(hafiza_yukle())
+            })
+
     # Genel bilgi JSON kaydını web/matematik yönlendirmesinden önce dene.
     if karar.get("arac") not in (
         "borc_modulu", "spor_kaynaklari", "hava_api",
         "guvenli_hesaplama", "kod_analiz", "program_yazma",
-        "web_arastirma",
+        "web_arastirma", "takvim_hesaplama",
     ) and not karar.get("komut"):
         genel_dosya = Path(__file__).resolve().with_name("eagle_genel_bilgi.json")
         try:
@@ -12320,6 +12428,7 @@ def sohbet():
         "kod_analiz",
         "program_yazma",
         "web_arastirma",
+        "takvim_hesaplama",
     ) and not autofix_istegi and not finans_fiyat_sorgusu_mu(mesaj):
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
