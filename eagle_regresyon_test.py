@@ -812,10 +812,24 @@ def karar_motoru_test():
         "Bana film öner",
         "Film tavsiyesi istiyorum",
         "Film hakkında bilgi ver",
+        "Lityum aküler hakkında bilgi verir misin?",
+        "Güneş panelleri hakkında bilgi verir misin?",
+        "LiFePO4 akü nedir?",
     ]
     for soru in film_olumsuz:
         assert eagle_api._eagle_film_sorgu_turu(soru) is None, (
             f"Başlıksız veya ilgisiz sorgu film tanıtımı sayıldı: {soru}"
+        )
+
+    teknik_konu_sorulari = [
+        "Lityum aküler hakkında bilgi verir misin?",
+        "Güneş panelleri hakkında bilgi verir misin?",
+        "LiFePO4 akü nedir?",
+    ]
+    for soru in teknik_konu_sorulari:
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("media_query") is not True, (
+            f"Teknik bilgi sorusu TMDb medya sorgusuna yönlendirildi: {soru} -> {sonuc}"
         )
 
 
