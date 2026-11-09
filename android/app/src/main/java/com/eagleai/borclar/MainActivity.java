@@ -98,13 +98,13 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // EagleAI koyu tema sistem çubukları
-        getWindow().setStatusBarColor(Color.rgb(8, 16, 29));
-        getWindow().setNavigationBarColor(Color.rgb(8, 16, 29));
+        // Açık tema: şampanya altın durum çubuğu, açık gezinme çubuğu
+        getWindow().setStatusBarColor(Color.rgb(232, 213, 163));
+        getWindow().setNavigationBarColor(Color.rgb(250, 249, 246));
         getWindow().getDecorView().setSystemUiVisibility(
                 getWindow().getDecorView().getSystemUiVisibility()
-                        & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-                        & ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                        | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                        | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
         );
 
         arayuzOlustur();
@@ -115,7 +115,7 @@ public class MainActivity extends Activity {
 
         LinearLayout ana = new LinearLayout(this);
         ana.setOrientation(LinearLayout.VERTICAL);
-        ana.setBackgroundColor(Color.rgb(8, 16, 29));
+        ana.setBackgroundColor(Color.rgb(250, 249, 246));
 
           // ===== MODERN EAGLE-AI ÜST BAŞLIK =====
         LinearLayout ustBar = new LinearLayout(this);
@@ -123,21 +123,21 @@ public class MainActivity extends Activity {
         ustBar.setGravity(Gravity.CENTER_VERTICAL);
         ustBar.setPadding(10, 10, 12, 10);
         ustBar.setBackground(yuvarlakArkaPlan(
-                Color.rgb(3, 25, 40),
-                Color.rgb(0, 115, 135),
+                Color.rgb(232, 213, 163),
+                Color.rgb(224, 198, 132),
                 0
         ));
 
         Button menuBtn = new Button(this);
         menuBtn.setText("☰");
         menuBtn.setTextSize(25);
-        menuBtn.setTextColor(Color.WHITE);
+        menuBtn.setTextColor(Color.rgb(42, 48, 59));
         menuBtn.setAllCaps(false);
         menuBtn.setGravity(Gravity.CENTER);
         menuBtn.setPadding(0, 0, 0, 0);
         menuBtn.setBackground(yuvarlakArkaPlan(
-                Color.rgb(10, 47, 65),
-                Color.rgb(0, 160, 180),
+                Color.rgb(211, 183, 122),
+                Color.rgb(184, 151, 87),
                 24
         ));
 
@@ -148,7 +148,7 @@ public class MainActivity extends Activity {
         kartalLogo.setTextSize(40);
         kartalLogo.setGravity(Gravity.CENTER);
         kartalLogo.setShadowLayer(
-                8f, 0f, 0f, Color.rgb(0, 190, 210)
+                8f, 0f, 0f, Color.rgb(157, 126, 67)
         );
 
         LinearLayout.LayoutParams logoLp =
@@ -166,12 +166,12 @@ public class MainActivity extends Activity {
         baslik.setTypeface(
                 Typeface.create("sans-serif", Typeface.BOLD)
         );
-        baslik.setTextColor(Color.WHITE);
+        baslik.setTextColor(Color.rgb(42, 48, 59));
 
         TextView altBaslik = new TextView(this);
         altBaslik.setText("Her zaman yanınızda...");
         altBaslik.setTextSize(11);
-        altBaslik.setTextColor(Color.rgb(130, 205, 215));
+        altBaslik.setTextColor(Color.rgb(105, 86, 54));
 
         baslikAlani.addView(baslik);
         baslikAlani.addView(altBaslik);
@@ -188,12 +188,12 @@ public class MainActivity extends Activity {
         Button sesBtn = new Button(this);
         sesBtn.setText(sesAcik ? "🔊" : "🔇");
         sesBtn.setTextSize(19);
-        sesBtn.setTextColor(Color.WHITE);
+        sesBtn.setTextColor(Color.rgb(42, 48, 59));
         sesBtn.setAllCaps(false);
         sesBtn.setPadding(0, 0, 0, 0);
         sesBtn.setBackground(yuvarlakArkaPlan(
-                Color.rgb(10, 47, 65),
-                Color.rgb(0, 160, 180),
+                Color.rgb(211, 183, 122),
+                Color.rgb(184, 151, 87),
                 24
         ));
 
@@ -248,8 +248,8 @@ public class MainActivity extends Activity {
         alt.setGravity(Gravity.CENTER_VERTICAL);
         alt.setPadding(8, 7, 8, 7);
         alt.setBackground(yuvarlakArkaPlan(
-                Color.rgb(8, 25, 40),
-                Color.rgb(0, 125, 145),
+                Color.rgb(244, 242, 235),
+                Color.rgb(222, 213, 193),
                 24
         ));
         alt.setElevation(8f);
@@ -259,10 +259,10 @@ public class MainActivity extends Activity {
           Button dosya = new Button(this);
           dosya.setText("+");
           dosya.setTextSize(24);
-          dosya.setTextColor(Color.WHITE);
+          dosya.setTextColor(Color.rgb(42, 58, 72));
           dosya.setAllCaps(false);
           dosya.setGravity(Gravity.CENTER);
-          dosya.setBackground(yuvarlakArkaPlan(Color.rgb(30, 57, 70), Color.rgb(65, 111, 124), 18));
+          dosya.setBackground(yuvarlakArkaPlan(Color.rgb(226, 234, 239), Color.rgb(194, 211, 221), 18));
           dosya.setPadding(0, 0, 0, 0);
 
           LinearLayout.LayoutParams dosyaLp =
@@ -280,11 +280,11 @@ public class MainActivity extends Activity {
         mesajKutusu.setMaxLines(30);
         mesajKutusu.setGravity(Gravity.TOP | Gravity.START);
         mesajKutusu.setPadding(14, 10, 14, 10);
-        mesajKutusu.setTextColor(Color.WHITE);
-        mesajKutusu.setHintTextColor(Color.rgb(166, 190, 198));
+        mesajKutusu.setTextColor(Color.rgb(35, 48, 64));
+        mesajKutusu.setHintTextColor(Color.rgb(125, 137, 148));
         mesajKutusu.setBackground(yuvarlakArkaPlan(
-                Color.rgb(18, 39, 55),
-                Color.rgb(43, 83, 99),
+                Color.rgb(255, 255, 255),
+                Color.rgb(211, 222, 231),
                 20
         ));
         mesajKutusu.setVerticalScrollBarEnabled(false);
@@ -316,7 +316,7 @@ public class MainActivity extends Activity {
         mikrofon.setTextColor(Color.WHITE);
         mikrofon.setAllCaps(false);
         mikrofon.setGravity(Gravity.CENTER);
-        mikrofon.setBackground(yuvarlakArkaPlan(Color.rgb(30, 57, 70), Color.rgb(65, 111, 124), 18));
+        mikrofon.setBackground(yuvarlakArkaPlan(Color.rgb(226, 234, 239), Color.rgb(194, 211, 221), 18));
         mikrofon.setPadding(0, 0, 0, 0);
 
         LinearLayout.LayoutParams mikrofonLp =
@@ -333,7 +333,7 @@ public class MainActivity extends Activity {
         gonder.setAllCaps(false);
         gonder.setGravity(Gravity.CENTER);
         gonder.setPadding(0, 0, 0, 0);
-        gonder.setBackground(yuvarlakArkaPlan(Color.rgb(0, 184, 190), Color.rgb(100, 224, 220), 18));
+        gonder.setBackground(yuvarlakArkaPlan(Color.rgb(48, 111, 130), Color.rgb(34, 88, 108), 18));
 
         LinearLayout.LayoutParams gonderLp =
                 new LinearLayout.LayoutParams(48, 48);
@@ -346,7 +346,7 @@ public class MainActivity extends Activity {
         onizlemeAlani.setOrientation(LinearLayout.HORIZONTAL);
         onizlemeAlani.setGravity(Gravity.CENTER_VERTICAL);
         onizlemeAlani.setPadding(12, 8, 12, 8);
-        onizlemeAlani.setBackground(yuvarlakArkaPlan(Color.rgb(24, 43, 61), Color.rgb(55, 91, 105), 16));
+        onizlemeAlani.setBackground(yuvarlakArkaPlan(Color.rgb(244, 247, 250), Color.rgb(211, 222, 232), 16));
         onizlemeAlani.setVisibility(View.GONE);
 
         onizlemeResmi = new ImageView(this);
@@ -358,7 +358,7 @@ public class MainActivity extends Activity {
 
         TextView onizlemeYazi = new TextView(this);
         onizlemeYazi.setText("📷 Fotoğraf eklendi");
-        onizlemeYazi.setTextColor(Color.rgb(232, 244, 246));
+        onizlemeYazi.setTextColor(Color.rgb(42, 55, 70));
         LinearLayout.LayoutParams onizlemeYaziLp =
                 new LinearLayout.LayoutParams(
                         0,
@@ -954,40 +954,63 @@ public class MainActivity extends Activity {
             int kod = baglanti.getResponseCode();
               android.util.Log.d("EAGLE_NET", "HTTP cevap kodu alındı: " + kod);
 
-            BufferedReader reader;
+            String contentType = baglanti.getContentType();
+            InputStream yanitAkisi = (kod >= 200 && kod < 300)
+                    ? baglanti.getInputStream()
+                    : baglanti.getErrorStream();
 
-            if (kod >= 200 && kod < 300) {
+            StringBuilder sonuc = new StringBuilder();
 
-                reader = new BufferedReader(
+            if (yanitAkisi != null) {
+                try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(
-                                baglanti.getInputStream(),
+                                yanitAkisi,
                                 StandardCharsets.UTF_8
                         )
-                );
-
-            } else {
-
-                reader = new BufferedReader(
-                        new InputStreamReader(
-                                baglanti.getErrorStream(),
-                                StandardCharsets.UTF_8
-                        )
-                );
+                )) {
+                    String satir;
+                    while ((satir = reader.readLine()) != null) {
+                        sonuc.append(satir);
+                    }
+                }
             }
 
-            StringBuilder sonuc =
-                    new StringBuilder();
+            String yanitMetni = sonuc.toString().trim();
 
-            String satir;
+            if (yanitMetni.isEmpty()) {
+                android.util.Log.e(
+                        "EAGLE_NET",
+                        "API boş yanıt döndürdü. HTTP=" + kod
+                                + " Content-Type=" + contentType
+                );
 
-            while ((satir = reader.readLine()) != null) {
-                sonuc.append(satir);
+                ApiCevap hataCevap = new ApiCevap();
+                hataCevap.answer = "API boş yanıt döndürdü. HTTP kodu: " + kod;
+                return hataCevap;
             }
 
-            reader.close();
+            JSONObject cevapJson;
 
-            JSONObject cevapJson =
-                    new JSONObject(sonuc.toString());
+            try {
+                cevapJson = new JSONObject(yanitMetni);
+            } catch (org.json.JSONException jsonHatasi) {
+                String onizleme = yanitMetni.substring(
+                        0, Math.min(300, yanitMetni.length())
+                );
+
+                android.util.Log.e(
+                        "EAGLE_NET",
+                        "API geçersiz JSON döndürdü. HTTP=" + kod
+                                + " Content-Type=" + contentType
+                                + " Yanıt=" + onizleme,
+                        jsonHatasi
+                );
+
+                ApiCevap hataCevap = new ApiCevap();
+                hataCevap.answer = "API geçersiz yanıt döndürdü. HTTP kodu: "
+                        + kod + " (" + jsonHatasi.getClass().getSimpleName() + ")";
+                return hataCevap;
+            }
 
             if (kod >= 200 &&
                     kod < 300 &&
@@ -1426,13 +1449,13 @@ private void sohbetYukle(String id) {
             String token = tokenMatcher.group();
             int color;
             if (token.startsWith("#")) {
-                color = Color.rgb(132, 174, 151);
+                color = Color.rgb(69, 119, 83);
             } else if (token.startsWith("\"") || token.startsWith("'")) {
-                color = Color.rgb(255, 184, 130);
+                color = Color.rgb(164, 91, 35);
             } else if (Character.isDigit(token.charAt(0))) {
-                color = Color.rgb(76, 218, 218);
+                color = Color.rgb(22, 119, 128);
             } else {
-                color = Color.rgb(157, 180, 255);
+                color = Color.rgb(75, 91, 155);
             }
             styled.setSpan(new ForegroundColorSpan(color), tokenMatcher.start(), tokenMatcher.end(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -1606,7 +1629,7 @@ private void sohbetYukle(String id) {
         }
 
         tv.setTextSize(16);
-        tv.setTextColor(Color.rgb(231, 241, 245));
+        tv.setTextColor(Color.rgb(35, 48, 64));
         tv.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
         tv.setLineSpacing(2f, 1.05f);
         tv.setTextIsSelectable(true);
@@ -1640,13 +1663,13 @@ private void sohbetYukle(String id) {
         devamBtn.setText("Daha fazlasını göster");
         devamBtn.setTextSize(14);
         devamBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        devamBtn.setTextColor(Color.rgb(75, 218, 220));
+        devamBtn.setTextColor(Color.rgb(39, 103, 120));
         devamBtn.setGravity(Gravity.CENTER);
         devamBtn.setPadding(18, 12, 18, 12);
 
         GradientDrawable kenarlik = new GradientDrawable();
         kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 174, 185));
+        kenarlik.setStroke(2, Color.rgb(177, 205, 211));
         kenarlik.setCornerRadius(24);
         devamBtn.setBackground(kenarlik);
 
@@ -1695,7 +1718,7 @@ private void sohbetYukle(String id) {
 
         TextView dilEtiketi = new TextView(this);
         dilEtiketi.setText("Kod");
-        dilEtiketi.setTextColor(Color.rgb(130, 190, 202));
+        dilEtiketi.setTextColor(Color.rgb(75, 99, 115));
         dilEtiketi.setTextSize(13);
         LinearLayout.LayoutParams dilLp = new LinearLayout.LayoutParams(
                 0,
@@ -1725,7 +1748,7 @@ private void sohbetYukle(String id) {
             dialogTv.setText(renklendirKod(kodTrim), TextView.BufferType.SPANNABLE);
             dialogTv.setTypeface(Typeface.MONOSPACE);
             dialogTv.setTextSize(15);
-            dialogTv.setTextColor(Color.rgb(231, 241, 245));
+            dialogTv.setTextColor(Color.rgb(35, 48, 64));
             dialogTv.setPadding(24, 24, 24, 24);
             dialogTv.setTextIsSelectable(true);
 
@@ -1746,7 +1769,7 @@ private void sohbetYukle(String id) {
         TextView tv = new TextView(this);
         tv.setText(renklendirKod(kodTrim), TextView.BufferType.SPANNABLE);
         tv.setTextSize(13);
-        tv.setTextColor(Color.rgb(231, 241, 245));
+        tv.setTextColor(Color.rgb(35, 48, 64));
         tv.setTypeface(Typeface.MONOSPACE);
         tv.setTextIsSelectable(true);
 
@@ -2071,13 +2094,13 @@ private void sohbetYukle(String id) {
         devamBtn.setText("Daha fazlasını göster");
         devamBtn.setTextSize(14);
         devamBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        devamBtn.setTextColor(Color.rgb(75, 218, 220));
+        devamBtn.setTextColor(Color.rgb(39, 103, 120));
         devamBtn.setGravity(Gravity.CENTER);
         devamBtn.setPadding(18, 14, 18, 14);
 
         GradientDrawable kenarlik = new GradientDrawable();
         kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 174, 185));
+        kenarlik.setStroke(2, Color.rgb(177, 205, 211));
         kenarlik.setCornerRadius(24);
         devamBtn.setBackground(kenarlik);
 
@@ -3143,8 +3166,8 @@ JSONObject item = new JSONObject();
         kimlik.setTextSize(11);
         kimlik.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         kimlik.setTextColor(kullaniciMesaji
-                ? Color.rgb(225, 205, 170)
-                : Color.rgb(105, 220, 225));
+                ? Color.rgb(145, 105, 45)
+                : Color.rgb(39, 103, 120));
 
         LinearLayout.LayoutParams kimlikLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -3173,7 +3196,7 @@ JSONObject item = new JSONObject();
                         .format(new Date())
         );
         saat.setTextSize(11);
-        saat.setTextColor(Color.rgb(142, 174, 185));
+        saat.setTextColor(Color.rgb(119, 132, 145));
         LinearLayout.LayoutParams saatLp = new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -3246,13 +3269,13 @@ JSONObject item = new JSONObject();
         devamBtn.setTypeface(
                 Typeface.create("sans-serif-medium", Typeface.NORMAL)
         );
-        devamBtn.setTextColor(Color.rgb(75, 218, 220));
+        devamBtn.setTextColor(Color.rgb(39, 103, 120));
         devamBtn.setGravity(Gravity.CENTER);
         devamBtn.setPadding(18, 12, 18, 12);
 
         GradientDrawable kenarlik = new GradientDrawable();
         kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 174, 185));
+        kenarlik.setStroke(2, Color.rgb(177, 205, 211));
         kenarlik.setCornerRadius(24);
         devamBtn.setBackground(kenarlik);
 
