@@ -85,7 +85,10 @@ def afet_koordinasyon_cevabi(mesaj):
     hazir = _durum_sayisi_bul(soru, "hazir")
 
     yeni_kirmizi_eslesme = re.search(
-        r"(?<!\d)(\d+)\s+yeni\s+kirmizi\s+triyajli\s+yarali\b",
+        r"(?<!\d)(\d+)\s+yeni\s+"
+        r"(?:kirmizi\s+)?"
+        r"(?:(?:triyajli|triyaj)\s+)?"
+        r"(?:yarali(?:lar)?|hasta(?:si|lar(?:i)?)?)\b",
         soru
     )
     yeni_kirmizi = (
@@ -149,12 +152,12 @@ def afet_koordinasyon_cevabi(mesaj):
 
     if yeni_kirmizi is not None:
         dinamik_satirlar.append(
-            f"**Yeni bildirilen kırmızı triyajlı yaralı:** {yeni_kirmizi}"
+            f"**Yeni bildirilen kırmızı triyajlı hasta/yaralı:** {yeni_kirmizi}"
         )
         dinamik_satirlar.append(
-            "- Bu sayı toplam yaralı sayısına otomatik eklenmemiştir; "
-            "yeni bildirim mi, mevcut toplamın içindeki bir grup mu olduğu "
-            "sahadan teyit edilmelidir."
+            "- Bu sayı 3.000 toplam yaralıya otomatik eklenmemiştir. "
+            "Mükerrer kayıt kontrolü ve saha teyidi tamamlanmadan toplam "
+            "yaralı sayısı değiştirilmemelidir."
         )
 
     dinamik_senaryo = (
