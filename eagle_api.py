@@ -3647,17 +3647,17 @@ def eagle_karar_motoru(mesaj, gecmis=None):
     ]
 
     program_hedefi_var = any(
-        re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+        re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", k)
         for x in program_yazma_hedefleri
     )
 
     program_fili_var = any(
-        re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+        re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", k)
         for x in program_yazma_filleri
     )
 
     kapsam_istegi = any(
-        re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+        re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", k)
         for x in kapsam_terimleri
     ) and program_fili_var
 
@@ -3753,7 +3753,15 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
-    if any(
+    # Açıkça kod kullanılmadan açıklama isteniyorsa genel kod
+    # analizine yönlendirme yapma.
+    kod_yazmadan_aciklama = bool(re.search(
+        r"\bkod\s+(?:yazmadan|üretmeden|uretmeden|kullanmadan|olmadan|"
+        r"yazmaksızın|kullanmaksızın)\b",
+        k
+    ))
+
+    if not kod_yazmadan_aciklama and any(
         re.search(
             r"(?<!\w)" + re.escape(x) + r"(?!\w)",
             k
