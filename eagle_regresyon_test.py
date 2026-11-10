@@ -753,6 +753,43 @@ def karar_motoru_test():
         f"RSS üretim aracı seçilmedi: {rss}"
     )
 
+    # Kod yazılmamasını isteyen açıklama sorusu program üretimine düşmemeli.
+    deprem = eagle_api.eagle_karar_motoru(
+        "Bir deprem anında hastaneler ve ambulanslar nasıl koordine edilmelidir? Kod yazmadan açıkla.",
+        []
+    )
+    assert deprem.get("intent") != "program_yazma", (
+        f"Kod yazmadan açıklama isteği yanlışlıkla program üretimine yönlendi: {deprem}"
+    )
+    assert deprem.get("arac") != "program_yazma", (
+        f"Program üretme aracı yanlış seçildi: {deprem}"
+    )
+    assert deprem.get("intent") != "kod_hata", (
+        f"Kod yazmadan açıklama isteği kod hatası olarak sınıflandırıldı: {deprem}"
+    )
+    assert deprem.get("arac") != "kod_analiz", (
+        f"Kod yazmadan açıklama isteğinde kod analiz aracı seçildi: {deprem}"
+    )
+
+    kod_yazmadan = eagle_api.eagle_karar_motoru("Kod yazmadan anlat", [])
+    assert kod_yazmadan.get("intent") != "kod_hata", (
+        f"Kod yazmadan anlat isteği kod hatası sayıldı: {kod_yazmadan}"
+    )
+    assert kod_yazmadan.get("arac") != "kod_analiz", (
+        f"Kod yazmadan anlat isteğinde kod analiz aracı seçildi: {kod_yazmadan}"
+    )
+
+    # Gerçek program üretme isteği çalışmaya devam etmeli.
+    program = eagle_api.eagle_karar_motoru(
+        "Python ile basit bir program yaz", []
+    )
+    assert program.get("intent") == "program_yazma", (
+        f"Gerçek program isteği yanlış yönlendirildi: {program}"
+    )
+    assert program.get("arac") == "program_yazma", (
+        f"Program üretme aracı seçilmedi: {program}"
+    )
+
     guncel = eagle_api.eagle_karar_motoru("Son dakika haberleri var mı?", [])
     assert guncel.get("intent") == "guncel_bilgi", (
         f"Güncel haber isteği bozuldu: {guncel}"
@@ -1256,9 +1293,73 @@ def merkez_finans_bos_web_verisi_test():
 
 def api_fonksiyon_test():
     import eagle_api
+    from unittest.mock import patch
 
     assert hasattr(eagle_api, "sohbet")
     assert hasattr(eagle_api, "app")
+
+    class SahteProgramMotoru:
+        cagri_sayisi = 0
+
+        def uret(self, mesaj):
+            type(self).cagri_sayisi += 1
+            return {
+                "ok": False,
+                "error": "TEST_PROGRAM_SENTINEL",
+            }
+
+    SahteProgramMotoru.cagri_sayisi = 0
+
+    with (
+        patch.object(eagle_api, "hava_durumu_getir", return_value={"ok": False}),
+        patch.object(eagle_api, "web_arastir", return_value=[]),
+        patch.object(
+            eagle_api.merkez_motor,
+            "calistir",
+            return_value={
+                "ok": True,
+                "cevap": "TEST: Deprem koordinasyonu açıklama zincirine ulaştı.",
+            },
+        ),
+        patch.object(
+            eagle_api,
+            "EagleProgramUretmeMotoru",
+            SahteProgramMotoru,
+        ),
+    ):
+        istemci = eagle_api.app.test_client()
+
+        deprem = istemci.post(
+            "/api/sohbet",
+            json={
+                "message": (
+                    "Bir deprem anında hastaneler ve ambulanslar "
+                    "nasıl koordine edilmelidir? Kod yazmadan açıkla."
+                )
+            },
+        )
+
+        assert deprem.status_code == 200, deprem.get_data(as_text=True)
+        deprem_data = deprem.get_json() or {}
+        assert deprem_data.get("ok") is True, deprem_data
+        assert "Program üretilemedi" not in deprem_data.get("answer", ""), deprem_data
+        assert deprem_data.get("program_yazma") is not True, deprem_data
+        assert SahteProgramMotoru.cagri_sayisi == 0, (
+            "Kod yazmadan açıklama isteğinde program üreticisi çağrıldı."
+        )
+
+        program = istemci.post(
+            "/api/sohbet",
+            json={"message": "Python ile basit bir program yaz."},
+        )
+
+        assert program.status_code == 200, program.get_data(as_text=True)
+        program_data = program.get_json() or {}
+        assert program_data.get("program_yazma") is True, program_data
+        assert "TEST_PROGRAM_SENTINEL" in program_data.get("answer", ""), program_data
+        assert SahteProgramMotoru.cagri_sayisi == 1, (
+            "Açık program isteğinde program üreticisi tam bir kez çağrılmalı."
+        )
 
 
 def genel_soru_algilama_test():
@@ -1486,7 +1587,7 @@ test("TCMB XML döviz alış/satış doğrulaması", finans_tcmb_xml_dogrulama_t
 test("Gram altın iki kaynak doğrulaması", finans_gram_altin_dogrulama_test)
 test("Genel altın sorgusu ürün eşiği", finans_genel_altin_esik_test)
 test("Finans API veri ayrıştırma", finans_api_veri_ayristirma_test)
-test("API /api/sohbet altyapısı", api_fonksiyon_test)
+test("API kod yazmadan açıklama ve program üretimi yönlendirmesi", api_fonksiyon_test)
 test("Genel bilgi soru algılama", genel_soru_algilama_test)
 
 print()
