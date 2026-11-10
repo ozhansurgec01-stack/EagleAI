@@ -2069,8 +2069,11 @@ def bilgi_bankasi_ara(mesaj):
         durak = {
             "bir", "ve", "veya", "ile", "için", "icin", "nasıl", "nasil",
             "ne", "nedir", "kaç", "kac", "hangi", "olan", "olarak",
-            "bu", "şu", "da", "de", "mi", "mı", "mu", "mü"
-            'örnek', 'örnekler', 'günlük', 'hayattan', 'basitçe', 'açıkla', 'ver', 'verir', 'verin', 'iki'
+            "bu", "şu", "da", "de", "mi", "mı", "mu", "mü",
+            "örnek", "örnekler", "günlük", "hayattan", "basitçe",
+            "açıkla", "acikla", "anlat", "ver", "verir", "verin",
+            "iki", "göre", "gore", "kod", "yazmadan", "birkaç",
+            "birkaçını", "sonrasında", "sonrası", "nasıl", "nasil"
         }
 
         sorgu_kelime = {
@@ -12523,6 +12526,28 @@ def sohbet():
     elif hava_verisi and not hava_verisi.get("ok"):
         hava_metni = f"⚠️ {hava_verisi.get('error', 'Hava verisi alınamadı.')}"
 
+    # Ayrıntılı analiz ve çözüm planı isteklerini genel web aramasına gönderme.
+    mesaj_analiz_kucuk = str(mesaj or "").casefold()
+    analitik_istek_mi = any(
+        ifade in mesaj_analiz_kucuk
+        for ifade in (
+            "kod yazmadan açıkla",
+            "kod yazmadan anlat",
+            "analiz et",
+            "analizini yap",
+            "analiz yap",
+            "değerlendir",
+            "yorumla",
+            "olası nedenleri",
+            "finansal riskleri",
+            "kontrol edilmesi gereken göstergeler",
+            "çözüm planı",
+            "uygulanabilir çözüm",
+            "90 günlük",
+        )
+    )
+
+
     # 🧠 Eagle teknik bilgi bankası — doğrudan cevap
     bilgi_sonuclari = []
     if karar.get("arac") not in (
@@ -12537,7 +12562,7 @@ def sohbet():
     ) and not autofix_istegi and not finans_fiyat_sorgusu_mu(mesaj):
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
-    if bilgi_sonuclari:
+    if bilgi_sonuclari and not analitik_istek_mi:
         cevap = "🦅 EAGLE BİLGİ BANKASI\n\n" + "\n".join(
             f"• {madde}" for madde in bilgi_sonuclari
         )
@@ -12605,28 +12630,6 @@ def sohbet():
     )
 
     genel_konu_istegi = tanitim_istegi or tek_konu_istegi
-
-    # Ayrıntılı analiz ve çözüm planı isteklerini genel web aramasına gönderme.
-    mesaj_analiz_kucuk = str(mesaj or "").casefold()
-    analitik_istek_mi = any(
-        ifade in mesaj_analiz_kucuk
-        for ifade in (
-            "kod yazmadan açıkla",
-            "kod yazmadan anlat",
-            "analiz et",
-            "analizini yap",
-            "analiz yap",
-            "değerlendir",
-            "yorumla",
-            "olası nedenleri",
-            "finansal riskleri",
-            "kontrol edilmesi gereken göstergeler",
-            "çözüm planı",
-            "uygulanabilir çözüm",
-            "90 günlük",
-        )
-    )
-
 
     if (
         karar.get("intent") in ("basit_sohbet", "sohbet")
