@@ -3221,6 +3221,14 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             })
             return karar
 
+    # Açıkça kod kullanılmadan açıklama isteniyorsa program/kod
+    # üretimi yönlendirmelerini devre dışı bırak.
+    kod_yazmadan_aciklama = bool(re.search(
+        r"\bkod\s+(?:yazmadan|üretmeden|uretmeden|kullanmadan|olmadan|"
+        r"yazmaksızın|kullanmaksızın)\b",
+        k
+    ))
+
     # Basit sohbet ve hafıza yönlendirmesi ayrı modülde.
     erken_karar = erken_sohbet_karari(metin, karar)
     if erken_karar is not None:
@@ -3335,29 +3343,93 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         return karar
 
     # 💳 BORÇ
-    borc_kelimeleri = [
-        "borç", "borc", "borcum",
-        "ödeme", "odeme", "ödedim", "odedim",
-        "yatırdım", "yatirdim",
-        "kredi kartı", "kredi karti",
-        "kredi borcu", "borç raporu", "borc raporu"
-    ]
+    # Borç kelimesi tek başına finansal analiz isteğini borç modülüne göndermez.
+    borc_norm = k.translate(str.maketrans("ıüğşöç", "iugsoc"))
+    borc_referansi = "borc" in borc_norm
 
-    borc_dogal_dil = any(x in k for x in [
-        "borcu bitti", "borcu bitmiş", "borcu bitmis",
-        "artık borç değil", "artik borc degil",
-        "ödemesi bitti", "odemesi bitti",
-        "sil artık", "sil artik",
-        "artık gerek yok", "artik gerek yok",
-        "gerek kalmadı", "gerek kalmadi",
-        "temizle", "kaldır artık", "kaldir artik"
-    ])
+    borc_liste_istegi = any(x in borc_norm for x in (
+        "borclarimi goster",
+        "kalan borc",
+        "borc listesi",
+        "borclarim",
+    ))
 
-    if borc_dogal_dil or any(x in k for x in borc_kelimeleri):
+    borc_toplam_istegi = any(x in borc_norm for x in (
+        "borclarimin toplami",
+        "toplam borc ne kadar",
+    ))
+
+    borc_ekleme_istegi = (
+        "borcum var" in borc_norm
+        or "borc ekle" in borc_norm
+        or (
+            borc_referansi
+            and re.search(r"(?<!\w)ekle(?!\w)", borc_norm)
+            and bool(re.search(r"\d", metin))
+        )
+    )
+
+    odeme_ifadeleri = (
+        "odedim", "odendi", "odeme yaptim", "odeme yapildi",
+        "yatirdim", "yatirildi", "para verdim", "parasini verdim",
+    )
+    fatura_referansi = any(x in borc_norm for x in (
+        "elektrik", "su fatur", "internet", "telefon",
+        "d-smart", "dsmart",
+    ))
+    borc_odeme_istegi = (
+        any(x in borc_norm for x in odeme_ifadeleri)
+        and (borc_referansi or fatura_referansi)
+    )
+
+    borc_durum_istegi = (
+        borc_referansi
+        and any(x in borc_norm for x in (
+            "borcu bitti", "borcu bitmis",
+            "artik borc degil", "borc kapandi",
+            "borc kapanmis", "odemesi bitti",
+        ))
+    )
+
+    borc_silme_istegi = (
+        borc_referansi
+        and any(x in borc_norm for x in (
+            "sil", "kaldir", "temizle", "gereksiz",
+            "gerek yok", "gerek kalmadi",
+            "artik istemiyorum", "artik kullanmiyorum",
+        ))
+    )
+
+    borc_ozel_istegi = any(x in borc_norm for x in (
+        "borc raporu", "kredi karti borcu", "kredi borcu",
+    ))
+
+    # Açık bir program üretim talebi, borç işleminden önce değerlendirilir.
+    program_dili_var = any(
+        re.search(r"(?<!\w)" + re.escape(dil) + r"(?!\w)", borc_norm)
+        for dil in ("python", "java", "javascript", "typescript", "html", "css")
+    )
+    program_fili_var = any(
+        re.search(r"(?<!\w)" + re.escape(fiil) + r"(?!\w)", borc_norm)
+        for fiil in ("yaz", "olustur", "uret", "gelistir", "hazirla", "yap")
+    )
+    acik_program_istegi = program_dili_var and program_fili_var
+
+    borc_islemi = (
+        borc_liste_istegi
+        or borc_toplam_istegi
+        or borc_ekleme_istegi
+        or borc_odeme_istegi
+        or borc_durum_istegi
+        or borc_silme_istegi
+        or borc_ozel_istegi
+    )
+
+    if borc_islemi and not acik_program_istegi:
         karar.update({
             "intent": "borc",
             "guven": "yüksek",
-            "neden": "Borç işlemi algılandı.",
+            "neden": "Açık borç veya fatura işlemi algılandı.",
             "arac": "borc_modulu",
             "islem": "veri_getir",
             "dogrulama": True
@@ -3706,7 +3778,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             or kod_dili_uretim_istegi
             or uygulama_uretim_istegi
         )
-        and not uygulama_bilgi_sorusu
+        and not uygulama_bilgi_sorusu and not kod_yazmadan_aciklama
     )
 
     if program_yazma_istegi:
@@ -3752,14 +3824,6 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             "arac": "kod_analiz"
         })
         return karar
-
-    # Açıkça kod kullanılmadan açıklama isteniyorsa genel kod
-    # analizine yönlendirme yapma.
-    kod_yazmadan_aciklama = bool(re.search(
-        r"\bkod\s+(?:yazmadan|üretmeden|uretmeden|kullanmadan|olmadan|"
-        r"yazmaksızın|kullanmaksızın)\b",
-        k
-    ))
 
     if not kod_yazmadan_aciklama and any(
         re.search(
@@ -4072,14 +4136,16 @@ def web_arastirma_gerekli(mesaj):
         "ne oldu",
         "araştır", "arastir",
         "araştırır mısın",
-        "bul", "bulur musun",
+        "bulur musun",
         "nedir", "ne demek", "ne işe yarar", "ne ise yarar",
-        "açıkla", "acikla", "nasıl çalışır", "nasil calisir"
+        "nasıl çalışır", "nasil calisir"
     ]
 
     mesaj_kucuk = str(mesaj or "").casefold()
 
     if any(k in mesaj_kucuk for k in kelimeler):
+        return True
+    if re.search(r"(?<!\w)bul(?!\w)", mesaj_kucuk):
         return True
 
     # Yıl ve tarihsel olay içeren bilgi başlıkları.
@@ -12540,11 +12606,34 @@ def sohbet():
 
     genel_konu_istegi = tanitim_istegi or tek_konu_istegi
 
+    # Ayrıntılı analiz ve çözüm planı isteklerini genel web aramasına gönderme.
+    mesaj_analiz_kucuk = str(mesaj or "").casefold()
+    analitik_istek_mi = any(
+        ifade in mesaj_analiz_kucuk
+        for ifade in (
+            "kod yazmadan açıkla",
+            "kod yazmadan anlat",
+            "analiz et",
+            "analizini yap",
+            "analiz yap",
+            "değerlendir",
+            "yorumla",
+            "olası nedenleri",
+            "finansal riskleri",
+            "kontrol edilmesi gereken göstergeler",
+            "çözüm planı",
+            "uygulanabilir çözüm",
+            "90 günlük",
+        )
+    )
+
+
     if (
         karar.get("intent") in ("basit_sohbet", "sohbet")
         and karar.get("arac") == "eagle_sohbet"
         and not web_verisi
         and not kimlik_sorusu
+        and not analitik_istek_mi
         and (
             _soru_gibi_mi(str(mesaj or "").casefold().strip())
             or genel_konu_istegi

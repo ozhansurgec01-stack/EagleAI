@@ -779,6 +779,31 @@ def karar_motoru_test():
         f"Kod yazmadan anlat isteğinde kod analiz aracı seçildi: {kod_yazmadan}"
     )
 
+    assert deprem.get("arac") != "web_arastirma", (
+        f"Ambulans kelimesi yanlışlıkla web aramasını tetikledi: {deprem}"
+    )
+    assert not eagle_api.web_arastirma_gerekli(
+        "Bir deprem anında hastaneler ve ambulanslar nasıl koordine edilmelidir? Kod yazmadan açıkla."
+    ), "Genel deprem açıklaması web araştırmasına yönlendirilmemeli."
+
+    finans_kodsuz = eagle_api.eagle_karar_motoru(
+        "Bir şirketin gelirleri %30 artarken nakit akışı %40 düşmüş, "
+        "kısa vadeli borçları %50 yükselmiş ve stokları %60 birikmiş. "
+        "Bu çelişkiyi analiz et. Olası nedenleri, finansal riskleri, "
+        "kontrol edilmesi gereken göstergeleri ve 90 günlük uygulanabilir "
+        "çözüm planını hazırla. Kod yazmadan açıkla.",
+        []
+    )
+    assert finans_kodsuz.get("arac") != "program_yazma", (
+        f"Kodsuz finansal analiz program üretimine yönlendirildi: {finans_kodsuz}"
+    )
+    assert finans_kodsuz.get("arac") != "borc_modulu", (
+        f"Finansal analiz borç modülüne yönlendirildi: {finans_kodsuz}"
+    )
+    assert finans_kodsuz.get("arac") != "web_arastirma", (
+        f"Genel finansal analiz gereksiz web aramasına yönlendirildi: {finans_kodsuz}"
+    )
+
     # Gerçek program üretme isteği çalışmaya devam etmeli.
     program = eagle_api.eagle_karar_motoru(
         "Python ile basit bir program yaz", []
@@ -793,6 +818,34 @@ def karar_motoru_test():
     guncel = eagle_api.eagle_karar_motoru("Son dakika haberleri var mı?", [])
     assert guncel.get("intent") == "guncel_bilgi", (
         f"Güncel haber isteği bozuldu: {guncel}"
+    )
+
+    # Gerçek borç işlemleri borç modülüne gitmeye devam etmeli.
+    borc_sorulari = (
+        "Borçlarımı göster",
+        "Toplam borç ne kadar?",
+        "5000 TL borç ekle",
+        "Elektrik faturası ödendi",
+    )
+    for soru in borc_sorulari:
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("arac") == "borc_modulu", (
+            f"Borç/fatura işlemi yanlış yönlendirildi: {soru} -> {sonuc}"
+        )
+
+    # Borç kelimesi içeren Python proje isteği program üretimine gitmeli.
+    risk_programi = (
+        "Python ile bir finansal risk analiz sistemi geliştir. "
+        "Sistem CSV dosyasından gelir, gider, nakit akışı, borç ve stok "
+        "verilerini okusun. Risk puanı hesaplasın, kritik durumları "
+        "tespit etsin ve anlaşılır rapor oluştursun."
+    )
+    risk_karari = eagle_api.eagle_karar_motoru(risk_programi, [])
+    assert risk_karari.get("intent") == "program_yazma", (
+        f"Finansal risk sistemi yanlış yönlendirildi: {risk_karari}"
+    )
+    assert risk_karari.get("arac") == "program_yazma", (
+        f"Program üreticisi seçilmedi: {risk_karari}"
     )
 
     # Soru işareti içermeyen genel bilgi başlıkları web'e yönlenmeli.
@@ -1348,6 +1401,81 @@ def api_fonksiyon_test():
             "Kod yazmadan açıklama isteğinde program üreticisi çağrıldı."
         )
 
+        # Finansal analiz: açıklama isteği program, borç veya web modülüne sapmamalı.
+        finans_merkez_cagrilari = []
+        finans_web_cagrilari = []
+        finans_borc_cagrilari = []
+
+        def finans_merkez_sahte(*args, **kwargs):
+            finans_merkez_cagrilari.append((args, kwargs))
+            return {
+                "ok": True,
+                "cevap": "TEST: Finansal analiz merkez motoruna ulaştı.",
+            }
+
+        def finans_web_sahte(*args, **kwargs):
+            finans_web_cagrilari.append((args, kwargs))
+            return []
+
+        def finans_borc_sahte(*args, **kwargs):
+            finans_borc_cagrilari.append((args, kwargs))
+            return None, None
+
+        def finans_borc_mesaji_sahte(*args, **kwargs):
+            finans_borc_cagrilari.append((args, kwargs))
+            return "TEST_BORC_MODULU_CAGRILDI"
+
+        with (
+            patch.object(
+                eagle_api.merkez_motor,
+                "calistir",
+                side_effect=finans_merkez_sahte,
+            ),
+            patch.object(
+                eagle_api,
+                "web_arastir",
+                side_effect=finans_web_sahte,
+            ),
+            patch.object(
+                eagle_api.borc_modulu,
+                "akilli_borc_isle",
+                side_effect=finans_borc_sahte,
+            ),
+            patch.object(
+                eagle_api.borc_modulu,
+                "borc_mesaji_isle",
+                side_effect=finans_borc_mesaji_sahte,
+            ),
+        ):
+            finans = istemci.post(
+                "/api/sohbet",
+                json={
+                    "message": (
+                        "Bir şirketin gelirleri %30 artarken nakit akışı %40 düşmüş, "
+                        "kısa vadeli borçları %50 yükselmiş ve stokları %60 birikmiş. "
+                        "Bu çelişkiyi analiz et. Olası nedenleri, finansal riskleri, "
+                        "kontrol edilmesi gereken göstergeleri ve 90 günlük "
+                        "uygulanabilir çözüm planını hazırla. Kod yazmadan açıkla."
+                    )
+                },
+            )
+
+        assert finans.status_code == 200, finans.get_data(as_text=True)
+        finans_data = finans.get_json() or {}
+        assert finans_data.get("ok") is True, finans_data
+        assert finans_data.get("merkez_motor") is True, finans_data
+        assert "TEST: Finansal analiz merkez motoruna ulaştı." in finans_data.get("answer", ""), finans_data
+        assert len(finans_merkez_cagrilari) == 1, finans_merkez_cagrilari
+        assert len(finans_web_cagrilari) == 0, (
+            "Kod yazmadan finansal analiz isteğinde web araştırması çağrıldı."
+        )
+        assert len(finans_borc_cagrilari) == 0, (
+            "Genel finansal analiz isteğinde borç modülü çağrıldı."
+        )
+        assert SahteProgramMotoru.cagri_sayisi == 0, (
+            "Kod yazmadan finansal analiz isteğinde program üreticisi çağrıldı."
+        )
+
         program = istemci.post(
             "/api/sohbet",
             json={"message": "Python ile basit bir program yaz."},
@@ -1359,6 +1487,25 @@ def api_fonksiyon_test():
         assert "TEST_PROGRAM_SENTINEL" in program_data.get("answer", ""), program_data
         assert SahteProgramMotoru.cagri_sayisi == 1, (
             "Açık program isteğinde program üreticisi tam bir kez çağrılmalı."
+        )
+
+        risk_programi = istemci.post(
+            "/api/sohbet",
+            json={
+                "message": (
+                    "Python ile bir finansal risk analiz sistemi geliştir. "
+                    "Sistem CSV dosyasından gelir, gider, nakit akışı, borç ve stok "
+                    "verilerini okusun. Risk puanı hesaplasın, kritik durumları "
+                    "tespit etsin ve anlaşılır rapor oluştursun."
+                )
+            },
+        )
+        assert risk_programi.status_code == 200, risk_programi.get_data(as_text=True)
+        risk_data = risk_programi.get_json() or {}
+        assert risk_data.get("program_yazma") is True, risk_data
+        assert "TEST_PROGRAM_SENTINEL" in risk_data.get("answer", ""), risk_data
+        assert SahteProgramMotoru.cagri_sayisi == 2, (
+            "Finansal risk sistemi isteğinde program üreticisi çağrılmadı."
         )
 
 
