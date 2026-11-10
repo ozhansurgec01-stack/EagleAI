@@ -1421,12 +1421,13 @@ def api_fonksiyon_test():
         assert deprem.status_code == 200, deprem.get_data(as_text=True)
         deprem_data = deprem.get_json() or {}
         assert deprem_data.get("ok") is True, deprem_data
-        assert (
-            "TEST: Deprem koordinasyonu açıklama zincirine ulaştı."
-            in deprem_data.get("answer", "")
-        ), deprem_data
-        assert deprem_merkez_mock.call_count == 1, (
-            "Deprem senaryosu bilgi bankasında kalmamalı, merkez motora ulaşmalı."
+        assert "Afet koordinasyon ve müdahale planı" in deprem_data.get("answer", ""), deprem_data
+        assert deprem_data.get("afet_koordinasyon") is True, deprem_data
+        assert deprem_data.get("web_search") is False, deprem_data
+        assert deprem_data.get("eagle_direct") is True, deprem_data
+        assert deprem_data.get("merkez_motor") is False, deprem_data
+        assert deprem_merkez_mock.call_count == 0, (
+            "Afet senaryosu doğrudan yerel modülde yanıtlanmalı."
         )
         assert "Program üretilemedi" not in deprem_data.get("answer", ""), deprem_data
         assert deprem_data.get("program_yazma") is not True, deprem_data
@@ -1573,7 +1574,7 @@ def api_gercek_afet_uçtan_uça_test():
             patch.object(
                 eagle_api, "hava_durumu_getir",
                 return_value={"ok": False}
-            ),
+            ) as hava_mock,
             patch.object(
                 eagle_api, "web_sayfa_oku", return_value=""
             ),
@@ -1600,12 +1601,16 @@ def api_gercek_afet_uçtan_uça_test():
 
         assert yanit.status_code == 200, veri
         assert veri.get("ok") is True, veri
-        assert veri.get("merkez_motor") is True, veri
+        assert veri.get("web_search") is False, veri
+        assert veri.get("eagle_direct") is True, veri
+        assert veri.get("afet_koordinasyon") is True, veri
+        assert veri.get("merkez_motor") is False, veri
         assert "3.000 yaralı" in cevap, cevap
         assert "Triyaj" in cevap, cevap
         assert "Haberleşme" in cevap, cevap
         assert "EAGLE BİLGİ BANKASI" not in cevap, cevap
         assert web_mock.call_count == 0, web_mock.call_count
+        assert hava_mock.call_count == 0, hava_mock.call_count
 
     finally:
         if json_vardi:

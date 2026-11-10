@@ -11065,6 +11065,61 @@ def sohbet():
             borc_modulu_sonucu = f"Borç modülü çalıştırılırken hata oluştu: {e}"
             print(f"❌ BORÇ MODÜLÜ HATASI: {e}", flush=True)
 
+    # Afet isteğini modülden bağımsız algıla.
+    # Normal sohbetlerde afet modülünü yüklemeye gerek yoktur.
+    import unicodedata
+
+    afet_soru = unicodedata.normalize(
+        "NFKD", str(mesaj or "").lower()
+    )
+    afet_soru = "".join(
+        c for c in afet_soru if not unicodedata.combining(c)
+    ).replace("ı", "i")
+
+    def afet_isareti_var(isaret):
+        return re.search(
+            r"(?<!\w)" + re.escape(isaret) + r"\w*(?!\w)",
+            afet_soru
+        ) is not None
+
+    afet_istegi = (
+        any(afet_isareti_var(x) for x in (
+            "deprem", "afet", "enkaz", "yarali"
+        ))
+        or "toplu yaralanma" in afet_soru
+        or "sahra hastanesi" in afet_soru
+    ) and any(afet_isareti_var(x) for x in (
+        "triyaj", "aciliyet", "hastane",
+        "ambulans", "kaynak", "siniflandir", "yonlendir"
+    ))
+
+    if afet_istegi:
+        try:
+            from eagle_afet_koordinasyon import afet_koordinasyon_cevabi
+            afet_cevap = afet_koordinasyon_cevabi(mesaj)
+            if not afet_cevap:
+                raise RuntimeError("Afet isteği algılandı ancak modül yanıt üretmedi.")
+        except Exception as e:
+            print(f"❌ AFET KOORDİNASYON MODÜLÜ HATASI: {e}", flush=True)
+            return jsonify({
+                "ok": False,
+                "answer": "Afet koordinasyon modülü güvenli biçimde yanıt üretemedi. Yerel koordinasyon desteği şu anda kullanılamıyor.",
+                "web_search": False,
+                "eagle_direct": True,
+                "afet_koordinasyon": True,
+                "merkez_motor": False,
+            }), 503
+
+        return jsonify({
+            "ok": True,
+            "answer": afet_cevap,
+            "web_search": False,
+            "eagle_direct": True,
+            "afet_koordinasyon": True,
+            "merkez_motor": False,
+            "memory_count": len(hafiza_yukle()),
+        })
+
     hava_verisi = hava_durumu_getir(mesaj)
 
     # 🌐 Güncel bilgi gerekiyorsa ücretsiz web araştırması yap
