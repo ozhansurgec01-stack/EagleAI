@@ -2011,9 +2011,107 @@ private void sohbetYukle(String id) {
         kutu.addView(kart, lp);
     }
 
+    private boolean sonucKartiEkle(LinearLayout kutu, String metin) {
+        if (metin == null || metin.trim().isEmpty()) return false;
+
+        String alt = metin.toLowerCase(Locale.ROOT).trim();
+        if (alt.contains("```")) return false;
+
+        boolean sadeceSayi = alt.matches("(?i)[+-]?\\d[\\d.,]*\\s*(tl)?");
+        boolean matematik =
+                sadeceSayi
+                || alt.contains("hesaplama")
+                || alt.contains("hesap sonucu")
+                || alt.contains("indirim")
+                || alt.contains("yüzde")
+                || alt.contains("zam")
+                || alt.contains("işlem sonucu")
+                || (alt.contains("tl") && (alt.contains("=") || alt.contains("×")));
+
+        boolean hata =
+                alt.contains("hata")
+                || alt.contains("yanlış")
+                || alt.contains("başarısız")
+                || alt.contains("geçersiz");
+
+        boolean uyari =
+                alt.contains("uyarı")
+                || alt.contains("dikkat")
+                || alt.contains("kontrol edilmeli")
+                || alt.contains("emin değil");
+
+        boolean basari =
+                alt.contains("başarılı")
+                || alt.contains("tamamlandı")
+                || alt.contains("doğru sonuç");
+
+        if (!matematik && !hata && !uyari && !basari) return false;
+
+        int arkaPlan;
+        int kenarlik;
+        int vurgu;
+        String baslik;
+        String simge;
+
+        if (hata) {
+            arkaPlan = Color.rgb(255, 240, 240);
+            kenarlik = Color.rgb(220, 85, 85);
+            vurgu = Color.rgb(170, 35, 45);
+            baslik = "HATA / BAŞARISIZ";
+            simge = "✕";
+        } else if (uyari || (matematik && alt.matches("(?s).*\\d\\.\\d{6,}.*"))) {
+            arkaPlan = Color.rgb(255, 247, 230);
+            kenarlik = Color.rgb(224, 157, 55);
+            vurgu = Color.rgb(151, 91, 20);
+            baslik = matematik ? "HESAPLAMA - HASSASİYET UYARISI" : "DİKKAT / UYARI";
+            simge = "⚠";
+        } else if (basari) {
+            arkaPlan = Color.rgb(235, 249, 239);
+            kenarlik = Color.rgb(67, 164, 104);
+            vurgu = Color.rgb(35, 119, 69);
+            baslik = "BAŞARILI";
+            simge = "✓";
+        } else {
+            arkaPlan = Color.rgb(235, 246, 250);
+            kenarlik = Color.rgb(65, 151, 177);
+            vurgu = Color.rgb(35, 103, 133);
+            baslik = "HESAPLAMA SONUCU";
+            simge = "∑";
+        }
+
+        float yogunluk = getResources().getDisplayMetrics().density;
+        int bosluk = (int) (12 * yogunluk + 0.5f);
+
+        LinearLayout kart = new LinearLayout(this);
+        kart.setOrientation(LinearLayout.VERTICAL);
+        kart.setPadding(bosluk, bosluk, bosluk, bosluk);
+        kart.setBackground(yuvarlakArkaPlan(arkaPlan, kenarlik, 14));
+
+        TextView baslikTv = new TextView(this);
+        baslikTv.setText(simge + "  " + baslik);
+        baslikTv.setTextSize(12);
+        baslikTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        baslikTv.setTextColor(vurgu);
+        baslikTv.setPadding(0, 0, 0, (int) (7 * yogunluk));
+        kart.addView(baslikTv);
+
+        TextView sonucTv = normalMetinOlustur(metin.trim());
+        sonucTv.setTextColor(Color.rgb(42, 53, 65));
+        kart.addView(sonucTv);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.bottomMargin = (int) (10 * yogunluk);
+        kutu.addView(kart, lp);
+        return true;
+    }
+
     private void mesajIcerigiEkle(LinearLayout kutu, String metin) {
         if (superLigPuanKartlariEkle(kutu, metin)) return;
         if (voleybolSonucKartlariEkle(kutu, metin)) return;
+        if (sonucKartiEkle(kutu, metin)) return;
         Pattern blockPattern = Pattern.compile("```[a-zA-Z]*\\n([\\s\\S]*?)```");
         Matcher blockMatcher = blockPattern.matcher(metin);
 

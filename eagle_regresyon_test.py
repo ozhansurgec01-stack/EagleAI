@@ -724,6 +724,48 @@ def matematik_test():
         )
 
 
+    # Ardışık indirim + zam ve Türkçe binlik ayıracı testi.
+    zincir_soru = (
+        "Bir ürünün fiyatı 2.400 TL. Önce %25 indirim yapılıyor, "
+        "ardından indirimli fiyat üzerine %20 zam uygulanıyor. "
+        "Son fiyat kaç TL olur? İşlemleri adım adım göster."
+    )
+    zincir_karar = eagle_api.eagle_karar_motoru(zincir_soru, [])
+    assert zincir_karar.get("intent") == "matematik", (
+        f"Zincirli hesap matematik olarak algılanmadı: {zincir_karar!r}"
+    )
+    zincir = zincir_karar.get("matematik_zinciri", {})
+    assert zincir.get("baslangic") == "2400", (
+        f"2.400 binlik ayıracı yanlış çözümlendi: {zincir_karar!r}"
+    )
+    assert zincir.get("islemler") == [
+        {"oran": "25", "tur": "indirim"},
+        {"oran": "20", "tur": "zam"},
+    ], f"İşlem sırası hatalı: {zincir!r}"
+
+    zincir_ok, zincir_sonuc = eagle_api.guvenli_hesapla(
+        zincir_karar["matematik_ifadesi"]
+    )
+    assert zincir_ok and abs(zincir_sonuc - 2160) < 1e-9, (
+        f"2.160 TL bekleniyordu: {zincir_ok}, {zincir_sonuc!r}"
+    )
+
+    # Alternatif ifade sırası: "2400 TL fiyatına önce..."
+    alternatif_soru = (
+        "2400 TL fiyatına önce %25 indirim sonra %20 zam "
+        "gelirse son fiyat kaç olur?"
+    )
+    alternatif_karar = eagle_api.eagle_karar_motoru(
+        alternatif_soru, []
+    )
+    assert alternatif_karar.get("yuzde_turu") == "zincirli_fiyat", (
+        f"Alternatif fiyat ifadesi zincirli algılanmadı: {alternatif_karar!r}"
+    )
+    assert alternatif_karar.get("matematik_zinciri", {}).get("islemler") == [
+        {"oran": "25", "tur": "indirim"},
+        {"oran": "20", "tur": "zam"},
+    ], f"Alternatif ifade işlem sırası hatalı: {alternatif_karar!r}"
+
 def karar_motoru_test():
     import eagle_api
 

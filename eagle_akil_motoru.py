@@ -38,6 +38,9 @@ class EagleAkilKarari:
             "history_devam": self.baglam_kullanildi,
             "denklem_coz": self.denklem_coz,
             "denklem_aciklama": self.denklem_aciklama,
+            "matematik_ifadesi": self.matematik_ifadesi,
+            "matematik_zinciri": self.matematik_zinciri,
+            "yuzde_turu": self.yuzde_turu,
         }
         return eslesme.get(anahtar, varsayilan)
     arac: str = "eagle_sohbet"
@@ -50,6 +53,8 @@ class EagleAkilKarari:
     denklem_coz: bool = False
     denklem_aciklama: bool = False
     matematik_ifadesi: str = ""
+    matematik_zinciri: Optional[Dict[str, Any]] = None
+    yuzde_turu: str = ""
 
 
 class EagleAkilMotoru:
@@ -191,6 +196,13 @@ class EagleAkilMotoru:
                         ),
                         matematik_ifadesi=ham_karar.get(
                             "matematik_ifadesi",
+                            ""
+                        ),
+                        matematik_zinciri=ham_karar.get(
+                            "matematik_zinciri"
+                        ),
+                        yuzde_turu=ham_karar.get(
+                            "yuzde_turu",
                             ""
                         )
                     )

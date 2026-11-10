@@ -50,6 +50,7 @@ from sympy.parsing.sympy_parser import (
     convert_xor,
 )
 import operator
+from decimal import Decimal, ROUND_HALF_UP
 import subprocess
 import sys
 from pathlib import Path
@@ -3436,6 +3437,70 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             "arac": "borc_modulu",
             "islem": "veri_getir",
             "dogrulama": True
+        })
+        return karar
+
+    # 🧮 ARDIŞIK ZAM / İNDİRİM HESABI
+    # Türkçe binlik ayraçlarını ve işlem sırasını korur.
+    zincir_fiyat = re.search(
+        r"(?:fiyat[ıi]|ücret[ıi]?|tutar[ıi]?)\s*"
+        r"(\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?)\s*(?:tl|₺)",
+        metin,
+        re.IGNORECASE
+    )
+
+    # Alternatif doğal Türkçe kullanım:
+    # "2400 TL fiyatına önce %25 indirim, sonra %20 zam"
+    if not zincir_fiyat:
+        zincir_fiyat = re.search(
+            r"(\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?)"
+            r"\s*(?:tl|₺)\s*fiyat(?:ına|ina|ı|i)?",
+            metin,
+            re.IGNORECASE
+        )
+
+    zincir_islemler = list(re.finditer(
+        r"(?:%|yüzde)\s*(\d+(?:[,.]\d+)?)\s*(indirim|zam|artış|artis)",
+        metin,
+        re.IGNORECASE
+    ))
+
+    if zincir_fiyat and len(zincir_islemler) >= 2:
+        ham_fiyat = zincir_fiyat.group(1).replace(" ", "")
+        if "," in ham_fiyat and "." in ham_fiyat:
+            ham_fiyat = ham_fiyat.replace(".", "").replace(",", ".")
+        elif "," in ham_fiyat:
+            ham_fiyat = ham_fiyat.replace(",", ".")
+        elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", ham_fiyat):
+            ham_fiyat = ham_fiyat.replace(".", "")
+
+        islemler = []
+        ifade_parcalari = [ham_fiyat]
+
+        for eslesme in zincir_islemler:
+            oran = eslesme.group(1).replace(",", ".")
+            tur = "indirim" if eslesme.group(2).lower() == "indirim" else "zam"
+            islemler.append({"oran": oran, "tur": tur})
+            carpan = (
+                f"(1 - ({oran} / 100))"
+                if tur == "indirim"
+                else f"(1 + ({oran} / 100))"
+            )
+            ifade_parcalari.append(carpan)
+
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Ardışık zam/indirim işlemleri sırasıyla algılandı.",
+            "arac": "guvenli_hesaplama",
+            "islem": "hesapla",
+            "dogrulama": True,
+            "matematik_ifadesi": " * ".join(ifade_parcalari),
+            "matematik_zinciri": {
+                "baslangic": ham_fiyat,
+                "islemler": islemler
+            },
+            "yuzde_turu": "zincirli_fiyat"
         })
         return karar
 
@@ -12487,17 +12552,64 @@ def sohbet():
     if ifade:
         ifade = ifade.replace("%", "/100")
         ok, sonuc_hesap = guvenli_hesapla(ifade)
+
         if ok:
-            yuzde_turu = karar.get("yuzde_turu", "")
-            if yuzde_turu == "zam":
-                hesaplama_metni = f"Yeni fiyat: {sonuc_hesap} TL"
-            elif yuzde_turu == "indirim":
-                hesaplama_metni = f"İndirim sonrası fiyat: {sonuc_hesap} TL"
-            elif yuzde_turu == "zam_miktari":
-                hesaplama_metni = f"Zam miktarı: {sonuc_hesap} TL"
-            elif yuzde_turu == "indirim_miktari":
-                hesaplama_metni = f"İndirim miktarı: {sonuc_hesap} TL"
-            hesaplama_metni = str(sonuc_hesap)
+            zincir = karar.get("matematik_zinciri")
+
+            def _tl_yaz(deger):
+                deger = Decimal(str(deger)).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                return (
+                    f"{deger:,.2f}"
+                    .replace(",", "_")
+                    .replace(".", ",")
+                    .replace("_", ".")
+                )
+
+            if zincir:
+                mevcut = Decimal(zincir["baslangic"])
+                adimlar = [
+                    f"Başlangıç fiyatı: {_tl_yaz(mevcut)} TL"
+                ]
+
+                for sira, islem in enumerate(zincir["islemler"], 1):
+                    oran = Decimal(islem["oran"])
+                    onceki = mevcut
+                    if islem["tur"] == "indirim":
+                        carpan = Decimal("1") - oran / Decimal("100")
+                        ad = "indirim"
+                    else:
+                        carpan = Decimal("1") + oran / Decimal("100")
+                        ad = "zam"
+
+                    mevcut = (mevcut * carpan).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                    oran_yazisi = islem["oran"].replace(".", ",")
+                    adimlar.append(
+                        f"{sira}. adım — %{oran_yazisi} {ad}: "
+                        f"{_tl_yaz(onceki)} × {_tl_yaz(carpan)} "
+                        f"= {_tl_yaz(mevcut)} TL"
+                    )
+
+                adimlar.append(f"SON FİYAT: {_tl_yaz(mevcut)} TL")
+                hesaplama_metni = "\n".join(adimlar)
+
+            else:
+                yuzde_turu = karar.get("yuzde_turu", "")
+                sonuc_yazisi = _tl_yaz(sonuc_hesap)
+
+                if yuzde_turu == "zam":
+                    hesaplama_metni = f"Yeni fiyat: {sonuc_yazisi} TL"
+                elif yuzde_turu == "indirim":
+                    hesaplama_metni = f"İndirim sonrası fiyat: {sonuc_yazisi} TL"
+                elif yuzde_turu == "zam_miktari":
+                    hesaplama_metni = f"Zam miktarı: {sonuc_yazisi} TL"
+                elif yuzde_turu == "indirim_miktari":
+                    hesaplama_metni = f"İndirim miktarı: {sonuc_yazisi} TL"
+                else:
+                    hesaplama_metni = str(sonuc_hesap)
 
     mantiksal_metni = ""
     ok, sonuc_mantiksal = guvenli_mantiksal_hesapla(mesaj)
