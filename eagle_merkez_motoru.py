@@ -19,6 +19,7 @@ Mevcut eagle_api.py motorlarını değiştirmez.
 import re
 from collections import Counter
 from urllib.parse import urlparse
+from eagle_afet_koordinasyon import afet_koordinasyon_cevabi
 
 
 class EagleMerkezSonuc:
@@ -4693,6 +4694,19 @@ class EagleMerkezMotoru:
                 gemini_gerekli=False,
                 kaynak_goster=True,
                 neden="Kullanıcı kaynakları açıkça istedi."
+            )
+
+        # Afet koordinasyonu: mevcut cevap ve kaynak isteği önceliği korunur.
+        afet_cevap = afet_koordinasyon_cevabi(mesaj)
+        if afet_cevap:
+            return EagleMerkezSonuc(
+                ok=True,
+                cevap=afet_cevap,
+                guven=0.90,
+                kaynak_sayisi=0,
+                gemini_gerekli=False,
+                kaynak_goster=False,
+                neden="Afet koordinasyon modülü yerel karar desteği üretti."
             )
 
         # Finans sorguları kendi ek web aramalarını yapabilmelidir.

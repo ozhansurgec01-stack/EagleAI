@@ -47,6 +47,28 @@ def bilgi_bankasi_test():
     print(f"       Python soru/cevap kaydı: {len(dict_maddeleri)}")
 
 
+
+def bilgi_bankasi_alakasiz_eslesme_test():
+    from eagle_api import bilgi_bankasi_ara
+
+    deprem_sorusu = (
+        "Bir deprem sonrasında 5 hastane, 20 ambulans ve 3.000 yaralı var. "
+        "Elektrik ve internet kesilmiş. Hastaları aciliyetlerine göre "
+        "sınıflandırır, ambulansları yönlendirir ve kaynakları dağıtırsın. "
+        "Karar algoritması ve örnek senaryo ver. Kod yazmadan açıkla."
+    )
+
+    sonuc = bilgi_bankasi_ara(deprem_sorusu)
+    assert not any("Yapay zekâ nedir?" in madde for madde in sonuc), (
+        f"Alakasız yapay zekâ kaydı döndürüldü: {sonuc}"
+    )
+
+    dogrudan_soru = bilgi_bankasi_ara("Yapay zekâ nedir?")
+    assert any("Yapay zekâ nedir?" in madde for madde in dogrudan_soru), (
+        "Doğrudan yapay zekâ bilgi bankası cevabı kayboldu."
+    )
+
+
 def python_syntax_test():
     kodlar = [
         "x = 10\nprint(x)",
@@ -1373,7 +1395,7 @@ def api_fonksiyon_test():
                 "ok": True,
                 "cevap": "TEST: Deprem koordinasyonu açıklama zincirine ulaştı.",
             },
-        ),
+        ) as deprem_merkez_mock,
         patch.object(
             eagle_api,
             "EagleProgramUretmeMotoru",
@@ -1386,8 +1408,12 @@ def api_fonksiyon_test():
             "/api/sohbet",
             json={
                 "message": (
-                    "Bir deprem anında hastaneler ve ambulanslar "
-                    "nasıl koordine edilmelidir? Kod yazmadan açıkla."
+                    "Bir deprem sonrasında 5 hastane, 20 ambulans ve "
+                    "3.000 yaralı var. Elektrik ve internet kesilmiş. "
+                    "Hastaları aciliyetlerine göre nasıl sınıflandırır, "
+                    "ambulansları nasıl yönlendirir ve kaynakları nasıl "
+                    "dağıtırsın? Karar algoritması ve örnek senaryo ver. "
+                    "Kod yazmadan açıkla."
                 )
             },
         )
@@ -1395,6 +1421,13 @@ def api_fonksiyon_test():
         assert deprem.status_code == 200, deprem.get_data(as_text=True)
         deprem_data = deprem.get_json() or {}
         assert deprem_data.get("ok") is True, deprem_data
+        assert (
+            "TEST: Deprem koordinasyonu açıklama zincirine ulaştı."
+            in deprem_data.get("answer", "")
+        ), deprem_data
+        assert deprem_merkez_mock.call_count == 1, (
+            "Deprem senaryosu bilgi bankasında kalmamalı, merkez motora ulaşmalı."
+        )
         assert "Program üretilemedi" not in deprem_data.get("answer", ""), deprem_data
         assert deprem_data.get("program_yazma") is not True, deprem_data
         assert SahteProgramMotoru.cagri_sayisi == 0, (
@@ -1507,6 +1540,79 @@ def api_fonksiyon_test():
         assert SahteProgramMotoru.cagri_sayisi == 2, (
             "Finansal risk sistemi isteğinde program üreticisi çağrılmadı."
         )
+
+
+
+
+def api_gercek_afet_uçtan_uça_test():
+    import eagle_api
+    from pathlib import Path
+    from unittest.mock import patch
+
+    soru = (
+        "Bir deprem sonrasında 5 hastane, 20 ambulans ve "
+        "3.000 yaralı var. Elektrik ve internet kesilmiş. "
+        "Hastaları aciliyetlerine göre nasıl sınıflandırır, "
+        "ambulansları nasıl yönlendirir ve kaynakları nasıl "
+        "dağıtırsın? Karar algoritması ve örnek senaryo ver. "
+        "Kod yazmadan açıkla."
+    )
+
+    json_dosyasi = (
+        Path(eagle_api.__file__).resolve().parent
+        / "eagle_sohbet_baglam.json"
+    )
+    json_vardi = json_dosyasi.exists()
+    json_once = json_dosyasi.read_bytes() if json_vardi else None
+
+    try:
+        with (
+            patch.object(
+                eagle_api, "web_arastir", return_value=[]
+            ) as web_mock,
+            patch.object(
+                eagle_api, "hava_durumu_getir",
+                return_value={"ok": False}
+            ),
+            patch.object(
+                eagle_api, "web_sayfa_oku", return_value=""
+            ),
+            patch.object(
+                eagle_api.requests, "get",
+                side_effect=AssertionError(
+                    "Test sırasında dış GET isteği engellendi."
+                )
+            ),
+            patch.object(
+                eagle_api.requests, "post",
+                side_effect=AssertionError(
+                    "Test sırasında dış POST isteği engellendi."
+                )
+            ),
+        ):
+            yanit = eagle_api.app.test_client().post(
+                "/api/sohbet",
+                json={"message": soru},
+            )
+
+        veri = yanit.get_json() or {}
+        cevap = str(veri.get("answer", ""))
+
+        assert yanit.status_code == 200, veri
+        assert veri.get("ok") is True, veri
+        assert veri.get("merkez_motor") is True, veri
+        assert "3.000 yaralı" in cevap, cevap
+        assert "Triyaj" in cevap, cevap
+        assert "Haberleşme" in cevap, cevap
+        assert "EAGLE BİLGİ BANKASI" not in cevap, cevap
+        assert web_mock.call_count == 0, web_mock.call_count
+
+    finally:
+        if json_vardi:
+            if not json_dosyasi.exists() or json_dosyasi.read_bytes() != json_once:
+                json_dosyasi.write_bytes(json_once)
+        elif json_dosyasi.exists():
+            json_dosyasi.unlink()
 
 
 def genel_soru_algilama_test():
@@ -1811,6 +1917,54 @@ def genel_stok_uretimi_koruma_test():
     assert not plan.get("finansal_risk_csv")
     assert "stok" in plan["varliklar"]
 
+
+
+def afet_koordinasyon_regresyon_test():
+    from eagle_afet_koordinasyon import afet_koordinasyon_cevabi
+
+    soru = (
+        "Bir deprem sonrasında 5 hastane, 20 ambulans ve 3.000 yaralı var. "
+        "Elektrik ve internet kesilmiş. Hastaları aciliyetlerine göre "
+        "sınıflandırır, ambulansları yönlendirir ve kaynakları dağıtırsın. "
+        "Karar algoritması ve örnek senaryo ver. Kod yazmadan açıkla."
+    )
+
+    cevap = afet_koordinasyon_cevabi(soru)
+    assert cevap, "Afet talebi tanınmadı."
+    assert "5 hastane" in cevap
+    assert "20 ambulans" in cevap
+    assert "3.000 yaralı" in cevap
+    assert "Triyaj" in cevap
+    assert "Haberleşme" in cevap
+
+    assert afet_koordinasyon_cevabi("Python'da liste nasıl sıralanır?") is None
+    assert afet_koordinasyon_cevabi("Boş ambulanslar için rota planla.") is None
+
+
+def afet_merkez_motoru_cagri_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    motor = EagleMerkezMotoru()
+    soru = (
+        "Bir deprem sonrasında 5 hastane, 20 ambulans ve 3.000 yaralı var. "
+        "Elektrik ve internet kesilmiş. Hastaları aciliyetlerine göre "
+        "sınıflandırır, ambulansları yönlendirir ve kaynakları dağıtırsın. "
+        "Karar algoritması ve örnek senaryo ver. Kod yazmadan açıkla."
+    )
+
+    sonuc = motor.calistir(mesaj=soru, karar={}, web_verisi=[])
+    assert sonuc.ok is True
+    assert "3.000 yaralı" in sonuc.cevap
+    assert "Triyaj" in sonuc.cevap
+
+    mevcut = motor.calistir(
+        mesaj=soru,
+        karar={},
+        web_verisi=[],
+        mevcut_cevap="MEVCUT CEVAP KORUNDU"
+    )
+    assert mevcut.cevap == "MEVCUT CEVAP KORUNDU"
+
 print("===== EAGLEAI REGRESYON TEST =====")
 print()
 
@@ -1821,6 +1975,7 @@ test("Finansal CSV uygulama üretimi ve doğrulaması", finansal_csv_uretici_tes
 test("Genel stok üretimi korunuyor", genel_stok_uretimi_koruma_test)
 test("Altın sorgusunda doğrulanmamış tekil sayı engeli", finans_altin_genel_sayisal_engeli_test)
 test("Bilgi bankası JSON ve 49 yeni Python kaydı", bilgi_bankasi_test)
+test("Bilgi bankası alakasız eşleşme engeli", bilgi_bankasi_alakasiz_eslesme_test)
 test("Python syntax temel testleri", python_syntax_test)
 test("Program üretme regresyonu", program_uretme_regresyon_test)
 test("Yağmur ormanı web araması", yagmur_ormani_web_test)
@@ -1854,6 +2009,9 @@ test("Genel altın sorgusu ürün eşiği", finans_genel_altin_esik_test)
 test("Finans API veri ayrıştırma", finans_api_veri_ayristirma_test)
 test("API kod yazmadan açıklama ve program üretimi yönlendirmesi", api_fonksiyon_test)
 test("Genel bilgi soru algılama", genel_soru_algilama_test)
+test("Gerçek Flask afet API uçtan uca", api_gercek_afet_uçtan_uça_test)
+test("Afet koordinasyon modülü", afet_koordinasyon_regresyon_test)
+test("Afet koordinasyon merkez motoru entegrasyonu", afet_merkez_motoru_cagri_test)
 
 print()
 print("===== SONUÇ =====")
