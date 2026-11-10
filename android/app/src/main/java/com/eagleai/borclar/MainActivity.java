@@ -74,6 +74,11 @@ public class MainActivity extends Activity {
     private static final String MEMORY_URL =
             "https://eagleai-8p9b4.faable.link/api/hafiza";
 
+    private static final int PROJE_ZIP_KAYDET = 8741;
+    private JSONObject bekleyenProjeDosyalari;
+    private String bekleyenProjeAdi = "eagle_project";
+
+
     private LinearLayout mesajAlani;
     private EditText mesajKutusu;
     private Uri secilenDosyaUri;
@@ -547,6 +552,8 @@ public class MainActivity extends Activity {
             final String bitcoinUsd = apiCevap.bitcoinUsd;
             final String bitcoinUpdatedAt = apiCevap.bitcoinUpdatedAt;
             final JSONObject finansVerisi = apiCevap.financeData;
+            final JSONObject projeDosyalari = apiCevap.projectFiles;
+            final String projeAdi = apiCevap.projectName;
 
             runOnUiThread(() -> {
                 mesajAlani.removeView(durum);
@@ -558,6 +565,12 @@ public class MainActivity extends Activity {
                                     ? finansKartlariOlustur(finansVerisi)
                                     : mesajOlustur("🦅\n\n" + cevapGosterim);
                 mesajAlani.addView(cevapKarti);
+
+                if (projeDosyalari != null && projeDosyalari.length() > 0) {
+                    projeZipIndirmeButonuEkle(
+                            cevapKarti, projeDosyalari, projeAdi
+                    );
+                }
 
                 if (gonderilecekResim == null) {
                     if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
@@ -874,6 +887,8 @@ public class MainActivity extends Activity {
         String bitcoinUsd = "";
         String bitcoinUpdatedAt = "";
         JSONObject financeData;
+        JSONObject projectFiles;
+        String projectName = "eagle_project";
     }
 
     private ApiCevap geminiIstek(String mesaj, Uri resimUri) {
@@ -1027,6 +1042,10 @@ public class MainActivity extends Activity {
                 apiCevap.bitcoinUsd = cevapJson.optString("bitcoin_usd", "");
                 apiCevap.bitcoinUpdatedAt = cevapJson.optString("bitcoin_updated_at", "");
                 apiCevap.financeData = cevapJson.optJSONObject("finance_data");
+                apiCevap.projectFiles = cevapJson.optJSONObject("dosyalar");
+                apiCevap.projectName = cevapJson.optString(
+                        "proje_adi", "eagle_project"
+                );
                 JSONObject medya = cevapJson.optJSONObject("media_images");
                 if (medya != null) {
                     JSONArray gorseller = new JSONArray();
@@ -3607,6 +3626,137 @@ JSONObject item = new JSONObject();
                 .show();
     }
 
+    private String guvenliProjeAdi(String ad) {
+        if (ad == null || ad.trim().isEmpty()) {
+            return "eagle_project";
+        }
+        String temiz = ad.trim().replaceAll("[^A-Za-z0-9._-]", "_");
+        if (temiz.isEmpty() || temiz.equals(".") || temiz.equals("..")) {
+            return "eagle_project";
+        }
+        return temiz;
+    }
+
+    private void projeZipIndirmeButonuEkle(
+            LinearLayout kart, JSONObject dosyalar, String projeAdi) {
+
+        Button kaydetBtn = new Button(this);
+        kaydetBtn.setText("📦 Projeyi ZIP olarak kaydet");
+        kaydetBtn.setAllCaps(false);
+        kaydetBtn.setTextColor(Color.rgb(42, 58, 72));
+        kaydetBtn.setBackground(yuvarlakArkaPlan(
+                Color.rgb(226, 234, 239),
+                Color.rgb(194, 211, 221),
+                14
+        ));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.setMargins(12, 8, 12, 12);
+        kart.addView(kaydetBtn, lp);
+
+        kaydetBtn.setOnClickListener(v -> {
+            bekleyenProjeDosyalari = dosyalar;
+            bekleyenProjeAdi = guvenliProjeAdi(projeAdi);
+
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/zip");
+            intent.putExtra(
+                    Intent.EXTRA_TITLE,
+                    bekleyenProjeAdi + ".zip"
+            );
+
+            try {
+                startActivityForResult(intent, PROJE_ZIP_KAYDET);
+            } catch (Exception e) {
+                bekleyenProjeDosyalari = null;
+                Toast.makeText(
+                        this,
+                        "Dosya kaydetme ekranı açılamadı",
+                        Toast.LENGTH_LONG
+                ).show();
+            }
+        });
+    }
+
+    private void projeZipDosyasiniKaydet(Uri hedef) {
+        if (hedef == null || bekleyenProjeDosyalari == null) {
+            Toast.makeText(this, "Kaydedilecek proje bulunamadı",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            OutputStream raw = getContentResolver().openOutputStream(hedef);
+            if (raw == null) {
+                throw new IOException("Dosya akışı açılamadı");
+            }
+
+            int eklenen = 0;
+            try (java.util.zip.ZipOutputStream zip =
+                         new java.util.zip.ZipOutputStream(raw)) {
+
+                java.util.Iterator<String> keys =
+                        bekleyenProjeDosyalari.keys();
+
+                while (keys.hasNext()) {
+                    String yol = keys.next();
+
+                    if (yol == null || yol.trim().isEmpty()
+                            || yol.startsWith("/")
+                            || yol.contains("\\")
+                            || yol.matches("(^|/)\\.\\.(/|$)")
+                            || yol.matches("^[A-Za-z]:.*")) {
+                        continue;
+                    }
+
+                    Object deger = bekleyenProjeDosyalari.opt(yol);
+                    if (!(deger instanceof String)) {
+                        continue;
+                    }
+
+                    String icerik = (String) deger;
+                    String zipYolu = guvenliProjeAdi(bekleyenProjeAdi)
+                            + "/" + yol;
+
+                    zip.putNextEntry(new java.util.zip.ZipEntry(zipYolu));
+                    zip.write(icerik.getBytes(StandardCharsets.UTF_8));
+                    zip.closeEntry();
+                    eklenen++;
+                }
+
+                zip.finish();
+            }
+
+            if (eklenen == 0) {
+                throw new IOException("ZIP içine yazılabilir dosya bulunamadı");
+            }
+
+            Toast.makeText(
+                    this,
+                    "📦 " + eklenen + " dosya ZIP olarak kaydedildi",
+                    Toast.LENGTH_LONG
+            ).show();
+
+        } catch (Exception e) {
+            android.util.Log.e(
+                    "EAGLE_PROJECT",
+                    "ZIP kaydedilemedi: " + e.getMessage(),
+                    e
+            );
+            Toast.makeText(
+                    this,
+                    "ZIP kaydedilemedi: " + e.getMessage(),
+                    Toast.LENGTH_LONG
+            ).show();
+        } finally {
+            bekleyenProjeDosyalari = null;
+        }
+    }
+
     private void galeriAc() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -3633,6 +3783,15 @@ JSONObject item = new JSONObject();
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == PROJE_ZIP_KAYDET) {
+            if (resultCode == RESULT_OK && data != null) {
+                projeZipDosyasiniKaydet(data.getData());
+            } else {
+                bekleyenProjeDosyalari = null;
+            }
+            return;
+        }
 
         if (requestCode == 1002) {
             if (resultCode == RESULT_OK && data != null && data.getExtras() != null) {
