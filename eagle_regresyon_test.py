@@ -1945,6 +1945,32 @@ def afet_koordinasyon_regresyon_test():
     assert afet_koordinasyon_cevabi("Python'da liste nasıl sıralanır?") is None
     assert afet_koordinasyon_cevabi("Boş ambulanslar için rota planla.") is None
 
+    dinamik_soru = (
+        "İlk durum: 5 hastane, 20 ambulans ve 3.000 yaralı var. "
+        "H1 ve H2 hasar nedeniyle hasta kabul etmiyor. "
+        "H3'ün yoğun bakım kapasitesi dolu. "
+        "H4 ve H5 hizmet vermeye devam ediyor. "
+        "8 ambulans görevde, 4 ambulans yakıtsız, 8 ambulans hazır. "
+        "100 yeni kırmızı triyajlı yaralı bildirildi. "
+        "Bu verileri değerlendir ve planı güncelle."
+    )
+    dinamik_cevap = afet_koordinasyon_cevabi(dinamik_soru)
+
+    assert "5 hastane" in dinamik_cevap
+    assert "20 ambulans" in dinamik_cevap
+    assert "3.000 yaralı" in dinamik_cevap
+    assert "H1, H2" in dinamik_cevap
+    assert "H3" in dinamik_cevap
+    assert "H4, H5" in dinamik_cevap
+    assert "Görevde: 8" in dinamik_cevap
+    assert "Yakıtsız: 4" in dinamik_cevap
+    assert "Göreve hazır: 8" in dinamik_cevap
+    assert "Yeni göreve atanabilecek bildirilen ambulans: 8" in dinamik_cevap
+    assert "100" in dinamik_cevap
+    assert "kapasitesi ayrıca doğrulanmalıdır" in dinamik_cevap
+
+    print("[OK] Dinamik afet senaryosu ayrıştırma ve hesaplama")
+
 
 def afet_merkez_motoru_cagri_test():
     from eagle_merkez_motoru import EagleMerkezMotoru

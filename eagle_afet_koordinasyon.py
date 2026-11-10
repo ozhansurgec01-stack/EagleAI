@@ -21,6 +21,42 @@ def _sayi_bul(metin, terimler):
     return "belirtilmemiş"
 
 
+
+def _durum_sayisi_bul(metin, durum):
+    eslesme = re.search(
+        r"(?<!\d)(\d+)\s+ambulans(?:lar)?\s+" + re.escape(durum) + r"\b",
+        metin
+    )
+    return int(eslesme.group(1)) if eslesme else None
+
+
+def _hastane_durumlarini_bul(metin):
+    durumlar = {
+        "kapali": [],
+        "yogun_bakim_dolu": [],
+        "hizmette": [],
+    }
+
+    for cumle in re.split(r"[.;\n]+", metin):
+        kodlar = list(dict.fromkeys(
+            re.findall(r"\bH\d+\b", cumle.upper())
+        ))
+        if not kodlar:
+            continue
+
+        if re.search(r"hasta kabul etmiyor|kabul etmiyor|hizmet vermiyor", cumle):
+            durumlar["kapali"].extend(kodlar)
+        elif re.search(r"yogun bakim.*dolu|yogun bakim kapasitesi dolu", cumle):
+            durumlar["yogun_bakim_dolu"].extend(kodlar)
+        elif re.search(r"hizmet vermeye devam ediyor|hasta kabul ediyor|hizmette", cumle):
+            durumlar["hizmette"].extend(kodlar)
+
+    for anahtar in durumlar:
+        durumlar[anahtar] = list(dict.fromkeys(durumlar[anahtar]))
+
+    return durumlar
+
+
 def afet_koordinasyon_cevabi(mesaj):
     soru = _normalize(mesaj)
 
@@ -43,9 +79,99 @@ def afet_koordinasyon_cevabi(mesaj):
     ambulans = _sayi_bul(soru, ("ambulans", "ambulanslar"))
     yarali = _sayi_bul(soru, ("yarali", "yaralilar", "hasta", "hastalar"))
 
+    hastane_durumlari = _hastane_durumlarini_bul(soru)
+    gorevde = _durum_sayisi_bul(soru, "gorevde")
+    yakitsiz = _durum_sayisi_bul(soru, "yakitsiz")
+    hazir = _durum_sayisi_bul(soru, "hazir")
+
+    yeni_kirmizi_eslesme = re.search(
+        r"(?<!\d)(\d+)\s+yeni\s+kirmizi\s+triyajli\s+yarali\b",
+        soru
+    )
+    yeni_kirmizi = (
+        int(yeni_kirmizi_eslesme.group(1))
+        if yeni_kirmizi_eslesme else None
+    )
+
+    dinamik_satirlar = []
+
+    if any(hastane_durumlari.values()):
+        dinamik_satirlar.append("**Hastane durumları:**")
+        if hastane_durumlari["kapali"]:
+            dinamik_satirlar.append(
+                "- Hasta kabul etmeyen hastaneler: "
+                + ", ".join(hastane_durumlari["kapali"])
+            )
+        if hastane_durumlari["yogun_bakim_dolu"]:
+            dinamik_satirlar.append(
+                "- Yoğun bakım kapasitesi dolu hastaneler: "
+                + ", ".join(hastane_durumlari["yogun_bakim_dolu"])
+            )
+        if hastane_durumlari["hizmette"]:
+            dinamik_satirlar.append(
+                "- Hizmet verdiği bildirilen hastaneler: "
+                + ", ".join(hastane_durumlari["hizmette"])
+            )
+        if hastane_durumlari["hizmette"]:
+            hizmette = ", ".join(hastane_durumlari["hizmette"])
+            dinamik_satirlar.append(
+                f"- {hizmette} için gerçek yatak, personel, uzmanlık ve "
+                "acil kabul kapasitesi ayrıca doğrulanmalıdır."
+            )
+
+    if any(x is not None for x in (gorevde, yakitsiz, hazir)):
+        dinamik_satirlar.append("**Ambulans durumları:**")
+        if gorevde is not None:
+            dinamik_satirlar.append(f"- Görevde: {gorevde}")
+        if yakitsiz is not None:
+            dinamik_satirlar.append(f"- Yakıtsız: {yakitsiz}")
+        if hazir is not None:
+            dinamik_satirlar.append(f"- Göreve hazır: {hazir}")
+            dinamik_satirlar.append(
+                f"- Yeni göreve atanabilecek bildirilen ambulans: {hazir}"
+            )
+
+        bilinen_durumlar = [
+            x for x in (gorevde, yakitsiz, hazir) if x is not None
+        ]
+        if len(bilinen_durumlar) == 3:
+            toplam_durum = sum(bilinen_durumlar)
+            dinamik_satirlar.append(
+                f"- Durum dağılımı toplamı: {toplam_durum} ambulans."
+            )
+            if ambulans != "belirtilmemiş":
+                toplam_ambulans = int(ambulans.replace(".", ""))
+                if toplam_durum != toplam_ambulans:
+                    dinamik_satirlar.append(
+                        f"- UYARI: Bildirilen durum toplamı ile toplam "
+                        f"ambulans sayısı uyuşmuyor ({toplam_durum}/{toplam_ambulans})."
+                    )
+
+    if yeni_kirmizi is not None:
+        dinamik_satirlar.append(
+            f"**Yeni bildirilen kırmızı triyajlı yaralı:** {yeni_kirmizi}"
+        )
+        dinamik_satirlar.append(
+            "- Bu sayı toplam yaralı sayısına otomatik eklenmemiştir; "
+            "yeni bildirim mi, mevcut toplamın içindeki bir grup mu olduğu "
+            "sahadan teyit edilmelidir."
+        )
+
+    dinamik_senaryo = (
+        "\n### Güncel senaryo değerlendirmesi\n"
+        + "\n".join(dinamik_satirlar)
+        + "\n\n"
+        + "**Karar sınırı:** Hastane kabulü, klinik uygunluk, yol güvenliği "
+        "ve ekip durumu teyit edilmeden kesin sevk veya hasta dağılımı "
+        "belirlenmez.\n"
+        if dinamik_satirlar else ""
+    )
+
     return f"""## Afet koordinasyon ve müdahale planı
 
 **Senaryo girdileri:** {hastane} hastane, {ambulans} ambulans, {yarali} yaralı.
+
+{dinamik_senaryo}
 
 Bu plan karar desteğidir. Tıbbi triyaj ve sevk kararları yetkili sağlık ekipleri ve yürürlükteki afet protokolleri tarafından verilmelidir.
 
