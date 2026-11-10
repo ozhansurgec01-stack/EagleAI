@@ -3770,6 +3770,10 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "gelistir",
         "hazırla",
         "hazirla",
+        "tasarla",
+        "tasarlayin",
+        "tasarımını yap",
+        "tasarimini yap",
         "yap",
     ]
 
