@@ -1966,8 +1966,19 @@ def afet_koordinasyon_regresyon_test():
     assert "Yakıtsız: 4" in dinamik_cevap
     assert "Göreve hazır: 8" in dinamik_cevap
     assert "Yeni göreve atanabilecek bildirilen ambulans: 8" in dinamik_cevap
-    assert "100" in dinamik_cevap
+    assert "**Yeni bildirilen kırmızı triyajlı hasta/yaralı:** 100" in dinamik_cevap
+    assert "Mükerrer kayıt kontrolü" in dinamik_cevap
+    assert "3.000 toplam yaralıya otomatik eklenmemiştir" in dinamik_cevap
     assert "kapasitesi ayrıca doğrulanmalıdır" in dinamik_cevap
+
+    # Canlı istekte kullanılan "kırmızı triyaj hastası" kalıbı da tanınmalı.
+    alternatif_soru = (
+        "Depremde 5 hastane ve 20 ambulans var. "
+        "100 yeni kırmızı triyaj hastası bildirildi."
+    )
+    alternatif_cevap = afet_koordinasyon_cevabi(alternatif_soru)
+    assert "**Yeni bildirilen kırmızı triyajlı hasta/yaralı:** 100" in alternatif_cevap
+    assert "Mükerrer kayıt kontrolü" in alternatif_cevap
 
     print("[OK] Dinamik afet senaryosu ayrıştırma ve hesaplama")
 
