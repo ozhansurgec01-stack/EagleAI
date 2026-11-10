@@ -31,6 +31,10 @@ class EagleProgramUretmeMotoru:
         # 🦅 EAGLE YEREL KAPSAMLI ÜRETİM
         # Proje / modül / şablon istekleri mevcut basit şablonlardan
         # önce ayrıştırılır.
+        veri_akisi_sonucu = self._akilli_veri_akisi_uret(mesaj)
+        if veri_akisi_sonucu is not None:
+            return veri_akisi_sonucu
+
         kapsamli_sonuc = self._yerel_kapsamli_uret(mesaj)
         if kapsamli_sonuc is not None and kapsamli_sonuc.get("ok"):
             return kapsamli_sonuc
@@ -636,6 +640,319 @@ class EagleProgramUretmeMotoru:
         dil = dil_eslemesi.get(etiket, etiket or "bilinmiyor")
         return kod, dil
 
+    @staticmethod
+    def _akilli_veri_akisi_uret(mesaj):
+        'Çoklu üretici/tüketicili bellek kontrollü frekans sayacı üretir.'
+        k = str(mesaj or "").lower().replace("\u0307", "")
+        eszamanlilik = any(x in k for x in (
+            "producer", "consumer", "çoklu üretici", "coklu uretici",
+            "çoklu tüketici", "coklu tuketici", "thread-safe",
+            "thread safe", "iş parçacığı", "is parcacigi",
+        ))
+        frekans = any(x in k for x in (
+            "frekans", "en sık", "en sik", "top 100",
+            "en çok tekrar", "en cok tekrar",
+        ))
+        akis = any(x in k for x in (
+            "veri akışı", "veri akisi", "stream", "10 milyon",
+        ))
+        if not (eszamanlilik and frekans and akis):
+            return None
+
+        kod = r'''#!/usr/bin/env python3
+from collections import Counter
+import os
+import sqlite3
+import tempfile
+from queue import Queue
+from threading import Lock, Thread
+from typing import Iterable
+
+
+class StreamProcessingError(RuntimeError):
+    pass
+
+
+class ConcurrentFrequencyCounter:
+    def __init__(
+        self,
+        producer_count: int = 4,
+        worker_count: int = 4,
+        queue_size: int = 2048,
+    ) -> None:
+        for name, value in (
+            ("producer_count", producer_count),
+            ("worker_count", worker_count),
+            ("queue_size", queue_size),
+        ):
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                raise ValueError(f"{name} pozitif tamsayı olmalıdır.")
+        self.producer_count = producer_count
+        self.worker_count = worker_count
+        self.queue_size = queue_size
+
+    def process(
+        self, values: Iterable[int], top_n: int = 100
+    ) -> list[tuple[int, int]]:
+        if not isinstance(top_n, int) or isinstance(top_n, bool) or top_n < 1:
+            raise ValueError("top_n pozitif tamsayı olmalıdır.")
+
+        try:
+            iterator = iter(values)
+        except TypeError as exc:
+            raise StreamProcessingError("Geçersiz veri akışı.") from exc
+
+        queue: Queue[object] = Queue(maxsize=self.queue_size)
+        iterator_lock = Lock()
+        error_lock = Lock()
+        errors: list[Exception] = []
+        sentinel = object()
+        batch_size = 512
+
+        def record_error(exc: Exception) -> None:
+            with error_lock:
+                errors.append(exc)
+
+        def producer() -> None:
+            while True:
+                batch: list[int] = []
+                exhausted = False
+
+                with iterator_lock:
+                    for _ in range(batch_size):
+                        try:
+                            value = next(iterator)
+                        except StopIteration:
+                            exhausted = True
+                            break
+                        except Exception as exc:
+                            record_error(exc)
+                            exhausted = True
+                            break
+
+                        if not isinstance(value, int) or isinstance(value, bool):
+                            record_error(
+                                TypeError("Akış yalnızca tamsayı içermelidir.")
+                            )
+                            exhausted = True
+                            break
+
+                        batch.append(value)
+
+                if batch:
+                    queue.put(batch)
+
+                if exhausted:
+                    return
+
+        db_fd, db_path = tempfile.mkstemp(
+            prefix="eagle-stream-", suffix=".sqlite3"
+        )
+        os.close(db_fd)
+
+        init_db = sqlite3.connect(db_path, timeout=30)
+        try:
+            init_db.execute("PRAGMA journal_mode=WAL")
+            init_db.execute("PRAGMA synchronous=NORMAL")
+            init_db.execute("PRAGMA temp_store=FILE")
+            init_db.execute("PRAGMA cache_size=-4096")
+            init_db.execute(
+                "CREATE TABLE frequencies ("
+                "value INTEGER PRIMARY KEY, frequency INTEGER NOT NULL)"
+            )
+            init_db.commit()
+        finally:
+            init_db.close()
+
+        def consumer(database_path: str) -> None:
+            connection = None
+            try:
+                try:
+                    connection = sqlite3.connect(
+                        database_path, timeout=30
+                    )
+                    connection.execute("PRAGMA busy_timeout=30000")
+                    connection.execute("PRAGMA synchronous=NORMAL")
+                    connection.execute("PRAGMA temp_store=FILE")
+                    connection.execute("PRAGMA cache_size=-4096")
+                except Exception as exc:
+                    record_error(exc)
+
+                while True:
+                    item = queue.get()
+                    try:
+                        if item is sentinel:
+                            return
+                        if isinstance(item, list) and connection is not None:
+                            batch_counts = Counter(item)
+                            try:
+                                connection.executemany(
+                                    "INSERT INTO frequencies(value, frequency) "
+                                    "VALUES (?, ?) "
+                                    "ON CONFLICT(value) DO UPDATE SET "
+                                    "frequency = frequency + excluded.frequency",
+                                    batch_counts.items(),
+                                )
+                                connection.commit()
+                            except Exception as exc:
+                                record_error(exc)
+                                connection.close()
+                                connection = None
+                    finally:
+                        queue.task_done()
+            except Exception as exc:
+                record_error(exc)
+            finally:
+                if connection is not None:
+                    connection.close()
+
+        consumers = [
+            Thread(
+                target=consumer,
+                args=(db_path,),
+                name=f"eagle-consumer-{i}",
+            )
+            for i in range(self.worker_count)
+        ]
+        producers = [
+            Thread(target=producer, name=f"eagle-producer-{i}")
+            for i in range(self.producer_count)
+        ]
+
+        for thread in consumers:
+            thread.start()
+        for thread in producers:
+            thread.start()
+        for thread in producers:
+            thread.join()
+
+        for _ in consumers:
+            queue.put(sentinel)
+
+        queue.join()
+        for thread in consumers:
+            thread.join()
+
+        try:
+            if errors:
+                raise StreamProcessingError(str(errors[0])) from errors[0]
+
+            with sqlite3.connect(db_path, timeout=30) as result_db:
+                result_db.execute("PRAGMA temp_store=FILE")
+                result_db.execute("PRAGMA cache_size=-4096")
+                rows = result_db.execute(
+                    "SELECT value, frequency FROM frequencies "
+                    "ORDER BY frequency DESC, value ASC LIMIT ?",
+                    (top_n,),
+                ).fetchall()
+
+            return [(int(value), int(frequency)) for value, frequency in rows]
+        finally:
+            for suffix in ("", "-wal", "-shm"):
+                try:
+                    os.remove(db_path + suffix)
+                except FileNotFoundError:
+                    pass
+
+
+def generate_example_values() -> Iterable[int]:
+    for number in range(10_000_000):
+        yield number % 1000
+
+
+def main() -> None:
+    processor = ConcurrentFrequencyCounter(4, 4, 2048)
+    result = processor.process(generate_example_values(), top_n=100)
+    for value, frequency in result:
+        print(f"{value}: {frequency}")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+        test_kodu = r'''import pytest
+from stream_processor import ConcurrentFrequencyCounter, StreamProcessingError
+
+
+def test_frekans_sayimi():
+    p = ConcurrentFrequencyCounter(2, 3, 8)
+    assert p.process([1, 2, 1, 3, 2, 1]) == [(1, 3), (2, 2), (3, 1)]
+
+
+def test_coklu_is_parcacigi():
+    p = ConcurrentFrequencyCounter(4, 4, 16)
+    result = p.process((n % 10 for n in range(10000)))
+    assert result == [(n, 1000) for n in range(10)]
+
+
+def test_top_n():
+    p = ConcurrentFrequencyCounter(2, 2, 4)
+    assert p.process([1, 1, 2, 2, 3], top_n=2) == [(1, 2), (2, 2)]
+
+
+def test_bos_akis():
+    assert ConcurrentFrequencyCounter().process(iter(())) == []
+
+
+def test_gecersiz_veri():
+    with pytest.raises(StreamProcessingError):
+        ConcurrentFrequencyCounter().process(iter([1, "hatalı", 2]))
+
+
+def test_kaynak_hatasi():
+    def broken():
+        yield 1
+        raise OSError("kaynak hatası")
+    with pytest.raises(StreamProcessingError):
+        ConcurrentFrequencyCounter().process(broken())
+
+
+def test_gecersiz_kuyruk():
+    with pytest.raises(ValueError):
+        ConcurrentFrequencyCounter(queue_size=0)
+'''
+
+        compile(kod, "stream_processor.py", "exec")
+        compile(test_kodu, "test_stream_processor.py", "exec")
+
+        namespace = {"__name__": "eagle_stream_test"}
+        exec(compile(kod, "stream_processor.py", "exec"), namespace)
+        processor = namespace["ConcurrentFrequencyCounter"](3, 4, 8)
+        actual = processor.process((n % 7 for n in range(700)), 7)
+        expected = [(n, 100) for n in range(7)]
+        if actual != expected:
+            return {"ok": False, "error": f"İşlevsel test başarısız: {actual}"}
+
+        files = {
+            "stream_processor.py": kod,
+            "tests/test_stream_processor.py": test_kodu,
+        }
+        return {
+            "ok": True,
+            "dil": "python",
+            "kod": kod,
+            "ana_dosya": "stream_processor.py",
+            "cikti_turu": "proje",
+            "proje_adi": "eagle_stream_processor",
+            "dosyalar": files,
+            "syntax_ok": True,
+            "functional_ok": True,
+            "aciklama": (
+                "Üreticiler veriyi sınırlı paketlerle kuyruğa aktarır. "
+                "Her tüketici kendi Counter nesnesini günceller; sayaçlar "
+                "frekanslar SQLite üzerinde toplu olarak saklanır. "
+                "Yedi pytest testi içerir. İşleme beklenen O(N), "
+                "sonuç seçimi veritabanı sıralamasına bağlıdır. "
+                "RAM kullanımı farklı değer sayısından bağımsız olarak "
+                "sınırlı kuyruk, paketler ve SQLite önbelleğiyle kontrol edilir; "
+                "disk kullanımı O(U) düzeyindedir. "
+                "U farklı değer sayısıdır. "
+                "Çalıştırma: python stream_processor.py. "
+                "Test: python -m pytest tests/test_stream_processor.py -q."
+            ),
+            "analiz": [],
+        }
     @staticmethod
     def _yerel_program_uret(mesaj):
         """

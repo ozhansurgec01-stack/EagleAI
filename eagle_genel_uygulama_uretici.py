@@ -711,6 +711,7 @@ def test_csv_dosya_boyutu_limiti():
         konu = str(konu).translate(cevir)
         konu = re.sub(r"[^a-zA-Z0-9_]+", "_", konu.lower()).strip("_")
         konu = re.sub(r"_+", "_", konu)
+        konu = konu[:48].rstrip("_")
         return konu or "genel_uygulama"
 
     @staticmethod

@@ -115,6 +115,44 @@ def program_uretme_regresyon_test():
     assert "json" in ast_sonuc.get("kod", "").lower()
 
 
+def python_veri_akisi_uretim_test():
+    import eagle_api
+    from eagle_program_uretme_motoru import EagleProgramUretmeMotoru
+
+    soru = (
+        "Python 3.11 ile 10 milyon tamsayı içeren veri akışını RAM'e "
+        "yüklemeden işleyen, çoklu producer-consumer kullanan, "
+        "thread-safe frekans sayımı ve en sık 100 değeri bulan bir "
+        "sistem tasarla. Güvenli kapanış, özel exception, type hints "
+        "ve en az 5 pytest testi içeren eksiksiz kodu üret."
+    )
+    karar = eagle_api.eagle_karar_motoru(soru, [])
+    assert karar.get("arac") == "program_yazma", karar
+
+    sonuc = EagleProgramUretmeMotoru().uret(soru)
+    assert sonuc.get("ok") is True, sonuc
+    assert sonuc.get("functional_ok") is True, sonuc
+    assert sonuc.get("ana_dosya") == "stream_processor.py"
+    files = sonuc["dosyalar"]
+    compile(files["stream_processor.py"], "stream_processor.py", "exec")
+    compile(files["tests/test_stream_processor.py"], "test_stream_processor.py", "exec")
+    assert files["tests/test_stream_processor.py"].count("def test_") >= 7
+    assert "count_lock" not in files["stream_processor.py"]
+    assert "batch_size = 512" in files["stream_processor.py"]
+    assert "sqlite3.connect" in files["stream_processor.py"]
+    assert "CREATE TABLE frequencies" in files["stream_processor.py"]
+    assert "ON CONFLICT(value) DO UPDATE" in files["stream_processor.py"]
+    assert "ORDER BY frequency DESC, value ASC LIMIT ?" in files["stream_processor.py"]
+    assert "os.remove(db_path + suffix)" in files["stream_processor.py"]
+
+    bilgi = eagle_api.eagle_karar_motoru(
+        "Python'da try/except ne işe yarar?", []
+    )
+    assert bilgi.get("arac") != "program_yazma", bilgi
+
+    print("[OK] Python veri akışı üretimi")
+
+
 def yagmur_ormani_web_test():
     from eagle_merkez_motoru import EagleMerkezMotoru
 
@@ -2062,6 +2100,7 @@ test("Bilgi bankası JSON ve 49 yeni Python kaydı", bilgi_bankasi_test)
 test("Bilgi bankası alakasız eşleşme engeli", bilgi_bankasi_alakasiz_eslesme_test)
 test("Python syntax temel testleri", python_syntax_test)
 test("Program üretme regresyonu", program_uretme_regresyon_test)
+test("Python veri akışı üretimi", python_veri_akisi_uretim_test)
 test("Yağmur ormanı web araması", yagmur_ormani_web_test)
 test("Web URL tekilleştirme", web_url_tekillestirme_test)
 test("Atlas Okyanusu sayfa içeriği önceliği", atlas_okyanusu_sayfa_onceligi_test)
