@@ -1712,6 +1712,82 @@ class EagleMerkezMotoru:
         if not mesaj:
             return "", 0.0
 
+        # EAGLEAI_FINANSAL_CELISKI_ANALIZI_V1
+        try:
+            finans_metin = cls.normalize(mesaj)
+            finans_gostergeleri = (
+                ("gelir", ("gelir", "ciro", "satis")),
+                ("gider", ("gider", "masraf", "maliyet")),
+                ("nakit", ("nakit akisi", "nakit akışı", "nakit akis", "nakit akış", "cash flow")),
+                ("borc", ("borc", "borç", "kisa vadeli borc", "kısa vadeli borç")),
+                ("stok", ("stok", "envanter")),
+                ("alacak", ("alacak", "tahsilat", "ticari alacak")),
+                ("marj", ("kar marji", "kâr marjı", "brut kar", "brüt kâr")),
+            )
+            bulunan_gostergeler = [
+                ad for ad, terimler in finans_gostergeleri
+                if any(terim in finans_metin for terim in terimler)
+            ]
+            finans_analiz_niyeti = any(x in finans_metin for x in (
+                "analiz", "acikla", "açıkla", "degerlendir", "değerlendir",
+                "neden", "risk", "cozum", "çözüm", "plan", "yorumla",
+                "celiski", "çelişki",
+            ))
+            if len(bulunan_gostergeler) >= 3 and finans_analiz_niyeti:
+                cevap = (
+                    "## Finansal durum analizi\n\n"
+                    "**Ön değerlendirme:** Gelir artarken nakit akışının düşmesi, "
+                    "kısa vadeli borcun ve stokların yükselmesi; büyümenin nakde "
+                    "dönüşmediğine ve işletme sermayesi baskısına işaret eder. "
+                    "Tek başına bu veriler kesin nedeni kanıtlamaz.\n\n"
+                    "**Olası nedenler**\n"
+                    "- Vadeli satışların artması ve alacak tahsilatının gecikmesi. "
+                    "Ciro muhasebeleşirken nakit henüz tahsil edilmemiş olabilir.\n"
+                    "- Stok alımlarının satışlardan hızlı artması; yavaş dönen, "
+                    "fazla veya modası geçen stokların depoda birikmesi.\n"
+                    "- Tedarikçi ödemeleri, ücretler ve diğer işletme giderlerinin "
+                    "tahsilatlardan önce yapılması.\n"
+                    "- Kısa vadeli kredi kullanımı, kredi yenileme veya borç "
+                    "vadesinin yakın dönemde yoğunlaşması.\n"
+                    "- İskonto, ürün karması veya maliyet artışı nedeniyle "
+                    "kârlılığın nakit üretimini desteklememesi.\n\n"
+                    "**Başlıca finansal riskler**\n"
+                    "- Likidite açığı ve maaş/tedarikçi ödemelerinde gecikme.\n"
+                    "- Kısa vadeli borçların çevrilememesi ve faiz yükünün artması.\n"
+                    "- Stok değer düşüklüğü, bozulma ve elde tutma maliyeti.\n"
+                    "- Tahsil edilemeyen alacaklar ve büyüyen işletme sermayesi ihtiyacı.\n\n"
+                    "**Kontrol edilecek göstergeler**\n"
+                    "- Alacak tahsil süresi (DSO), stokta kalma süresi (DIO) ve "
+                    "borç ödeme süresi (DPO).\n"
+                    "- Nakit dönüşüm döngüsü: DSO + DIO - DPO.\n"
+                    "- Cari oran, asit-test oranı, net işletme sermayesi ve "
+                    "13 haftalık nakit akış tahmini.\n"
+                    "- Faaliyet nakit akışı / net kâr, brüt kâr marjı, "
+                    "stok devir hızı ve vadesi gelen borç takvimi.\n\n"
+                    "**90 günlük uygulanabilir plan**\n"
+                    "1. **İlk 0-15 gün:** Günlük nakit pozisyonu ve 13 haftalık "
+                    "nakit tahmini oluşturun. Vadesi geçen alacakları müşteri "
+                    "bazında sıralayın; kritik olmayan harcamaları ve yeni stok "
+                    "alımlarını gözden geçirin.\n"
+                    "2. **16-30 gün:** Büyük alacaklar için sorumlu ve tahsilat "
+                    "takvimi belirleyin. Yavaş dönen stokları ürün bazında ayırın; "
+                    "satın alma limitlerini gerçek satış hızına bağlayın.\n"
+                    "3. **31-60 gün:** Tedarikçilerle ödeme vadelerini, bankalarla "
+                    "borç vade dağılımını görüşün. Kârlılığı düşük ürünleri, "
+                    "iskontoları ve müşteri bazlı ödeme koşullarını inceleyin.\n"
+                    "4. **61-90 gün:** DSO, DIO, DPO, nakit dönüşüm döngüsü ve "
+                    "kısa vadeli borç oranını haftalık izleyin. Hedeflerden sapma "
+                    "için sorumlu ve düzeltici aksiyon atayın.\n\n"
+                    "**Öncelik:** Önce nakit tahsilatı ve stok kontrolü, ardından "
+                    "borç vade yapısı. Yüzde değişimleri tek başına yeterli değildir; "
+                    "tutarlar, dönemler, sektör ve bilanço kalemleri birlikte "
+                    "incelenmelidir. Bu değerlendirme ön analizdir, denetim veya "
+                    "yatırım tavsiyesi değildir."
+                )
+                return cevap, 0.96
+        except Exception:
+            pass
+
         # EAGLEAI_YAPILANDIRILMIS_WEB_BILGISI_V1
         # Web sayfalarındaki etiket-değer alanlarından doğrudan cevap üret.
         try:
