@@ -1698,9 +1698,127 @@ def finans_altin_genel_sayisal_engeli_test():
         cevap, guven = motor.net_sayisal_cevap(soru, veriler)
         assert cevap is None and guven == 0.0, (soru, cevap, guven)
 
+
+
+def finansal_celiski_dogrudan_analiz_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    soru = (
+        "Bir şirketin gelirleri %30 artarken nakit akışı %40 düşmüş, "
+        "kısa vadeli borçları %50 yükselmiş ve stokları %60 birikmiş. "
+        "Bu çelişkiyi analiz et. Olası nedenleri, finansal riskleri, "
+        "kontrol edilmesi gereken göstergeleri ve 90 günlük uygulanabilir "
+        "çözüm planını hazırla. Kod yazmadan açıkla."
+    )
+    cevap, guven = EagleMerkezMotoru.genel_web_cevabi(soru, [])
+    assert cevap and guven >= 0.9, (cevap, guven)
+    for ifade in ("DSO", "DIO", "DPO", "90 günlük", "Likidite"):
+        assert ifade.lower() in cevap.lower(), ifade
+
+
+
+def finansal_celiski_cagri_zinciri_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    motor = EagleMerkezMotoru()
+    soru = (
+        "Bir şirketin gelirleri %30 artarken nakit akışı %40 düşmüş, "
+        "kısa vadeli borçları %50 yükselmiş ve stokları %60 birikmiş. "
+        "Bu çelişkiyi analiz et. Olası nedenleri, finansal riskleri, "
+        "kontrol edilmesi gereken göstergeleri ve 90 günlük uygulanabilir "
+        "çözüm planını hazırla. Kod yazmadan açıkla."
+    )
+
+    senaryolar = {
+        "bos_web_verisi": [],
+        "web_verisi_var": [
+            {
+                "title": "Şirket finansal göstergeleri",
+                "snippet": (
+                    "Gelir, gider, nakit akışı, kısa vadeli borç ve stok değişimleri."
+                ),
+                "url": "https://example.com/finans",
+            }
+        ],
+    }
+
+    for ad, veriler in senaryolar.items():
+        sonuc = motor.calistir(
+            mesaj=soru,
+            karar={"intent": "genel"},
+            web_verisi=veriler,
+        )
+        assert sonuc.ok, (ad, sonuc)
+        assert sonuc.guven >= 0.9, (ad, sonuc.guven)
+        assert sonuc.gemini_gerekli is False, (ad, sonuc.gemini_gerekli)
+
+        cevap = (sonuc.cevap or "").lower()
+        for ifade in ("dso", "dio", "dpo", "90 günlük", "likidite"):
+            assert ifade in cevap, (ad, ifade, sonuc.cevap)
+
+
+def finansal_csv_planlayici_test():
+    from eagle_uygulama_planlayici import EagleUygulamaPlanlayici
+
+    soru = (
+        "Python ile finansal risk analiz sistemi geliştir. CSV dosyasından "
+        "gelir, gider, nakit akışı, borç ve stok verilerini okuyup risk "
+        "puanı hesaplasın."
+    )
+    plan = EagleUygulamaPlanlayici().planla(soru)
+    assert plan is not None
+    assert plan.get("finansal_risk_csv") is True, plan
+    assert plan.get("csv_girdisi") is True
+    assert plan["varliklar"] == ["finansal_kayit"]
+    assert plan["alanlar"]["finansal_kayit"] == [
+        "id", "tarih", "gelir", "gider", "nakit_akisi", "borc", "stok"
+    ]
+
+
+def finansal_csv_uretici_test():
+    from eagle_uygulama_planlayici import EagleUygulamaPlanlayici
+    from eagle_genel_uygulama_uretici import EagleGenelUygulamaUretici
+
+    soru = (
+        "Python ile finansal risk analiz sistemi geliştir. CSV dosyasından "
+        "gelir, gider, nakit akışı, borç ve stok verilerini okuyup risk "
+        "puanı hesaplasın."
+    )
+    plan = EagleUygulamaPlanlayici().planla(soru)
+    sonuc = EagleGenelUygulamaUretici().uret(plan)
+    assert sonuc["validation_ok"], sonuc
+    assert sonuc["profil"] == "finansal_risk_csv"
+    assert "csv.DictReader" in sonuc["dosyalar"]["app.py"]
+    assert "/api/analiz" in sonuc["dosyalar"]["app.py"]
+    assert "test_csv_analiz_risk_puani" in sonuc["dosyalar"]["tests/test_core.py"]
+    app_kodu = sonuc["dosyalar"]["app.py"]
+    test_kodu = sonuc["dosyalar"]["tests/test_core.py"]
+    assert 'MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024' in app_kodu
+    assert "MAX_CSV_ROWS = 10000" in app_kodu
+    assert "Belirsiz sayı biçimi" in app_kodu
+    assert "test_csv_belirsiz_sayi_reddedilir" in test_kodu
+    assert "test_csv_satir_limiti" in test_kodu
+    assert "test_csv_dosya_boyutu_limiti" in test_kodu
+
+
+def genel_stok_uretimi_koruma_test():
+    from eagle_uygulama_planlayici import EagleUygulamaPlanlayici
+
+    plan = EagleUygulamaPlanlayici().planla(
+        "Stok takip sistemi geliştir, ürün miktarlarını listele."
+    )
+    assert plan is not None
+    assert not plan.get("finansal_risk_csv")
+    assert "stok" in plan["varliklar"]
+
 print("===== EAGLEAI REGRESYON TEST =====")
 print()
 
+test("Kodsuz finansal çelişki doğrudan analizi", finansal_celiski_dogrudan_analiz_test)
+test("Finansal çelişki merkezi motor çağrı zinciri", finansal_celiski_cagri_zinciri_test)
+test("Finansal CSV planlayıcı profili", finansal_csv_planlayici_test)
+test("Finansal CSV uygulama üretimi ve doğrulaması", finansal_csv_uretici_test)
+test("Genel stok üretimi korunuyor", genel_stok_uretimi_koruma_test)
 test("Altın sorgusunda doğrulanmamış tekil sayı engeli", finans_altin_genel_sayisal_engeli_test)
 test("Bilgi bankası JSON ve 49 yeni Python kaydı", bilgi_bankasi_test)
 test("Python syntax temel testleri", python_syntax_test)

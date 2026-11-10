@@ -12,6 +12,9 @@ class EagleGenelUygulamaUretici:
         if not plan:
             return None
 
+        if plan.get("finansal_risk_csv"):
+            return self._finansal_risk_csv_uret(plan)
+
         konu = str(plan.get("konu") or "genel uygulama").strip()
         paket = self._paket_adi(konu)
         bilesenler = set(plan.get("bilesenler") or ())
@@ -344,6 +347,358 @@ print("__EAGLE_GENERATED_TESTS_OK__")
             "http_ok": http_ok,
             "http_hatalari": http_hatalari,
         }
+
+
+    def _finansal_risk_csv_uret(self, plan):
+        konu = str(plan.get("konu") or "Finansal Risk Analiz Sistemi")
+        alanlar = {
+            "finansal_kayit": [
+                "id", "tarih", "gelir", "gider",
+                "nakit_akisi", "borc", "stok",
+            ]
+        }
+        plan = dict(plan)
+        plan.update({
+            "finansal_risk_csv": True,
+            "varliklar": ["finansal_kayit"],
+            "alanlar": alanlar,
+            "islemler": ["csv_oku", "analiz", "risk_puani"],
+        })
+
+        app_code = r'''
+import csv
+import io
+from flask import Flask, jsonify, request
+
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
+MAX_CSV_ROWS = 10000
+KAYITLAR = []
+SONRAKI_ID = 1
+GEREKLI = ("tarih", "gelir", "gider", "nakit_akisi", "borc", "stok")
+
+def baslik_norm(deger):
+    ceviri = str.maketrans({
+        "ç": "c", "ğ": "g", "ı": "i", "ö": "o",
+        "ş": "s", "ü": "u", "İ": "i",
+    })
+    return str(deger or "").strip().lower().translate(ceviri).replace(" ", "_").replace("-", "_")
+
+ALIAS = {
+    "date": "tarih",
+    "revenue": "gelir",
+    "income": "gelir",
+    "expense": "gider",
+    "expenses": "gider",
+    "cash_flow": "nakit_akisi",
+    "cashflow": "nakit_akisi",
+    "debt": "borc",
+    "inventory": "stok",
+    "stock": "stok",
+}
+
+def sayi(deger):
+    metin = str(deger or "").strip().replace(" ", "")
+    if not metin:
+        raise ValueError("Boş sayısal alan")
+
+    if "," in metin and "." in metin:
+        ondalik = "," if metin.rfind(",") > metin.rfind(".") else "."
+        binlik = "." if ondalik == "," else ","
+        if metin.count(ondalik) != 1:
+            raise ValueError("Geçersiz sayı biçimi")
+        metin = metin.replace(binlik, "")
+        if ondalik == ",":
+            metin = metin.replace(",", ".")
+    elif "," in metin or "." in metin:
+        ayirac = "," if "," in metin else "."
+        parcalar = metin.split(ayirac)
+        if len(parcalar) > 2:
+            if all(len(x) == 3 and x.isdigit() for x in parcalar[1:]):
+                metin = "".join(parcalar)
+            else:
+                raise ValueError("Geçersiz binlik ayırıcı")
+        else:
+            if len(parcalar[1]) == 3 and parcalar[1].isdigit():
+                raise ValueError(
+                    "Belirsiz sayı biçimi; binlik ve ondalık ayırıcıyı açık yazın"
+                )
+            metin = parcalar[0] + "." + parcalar[1]
+
+    try:
+        sonuc = float(metin)
+    except (TypeError, ValueError):
+        raise ValueError("Geçersiz sayısal değer")
+    if sonuc != sonuc or sonuc in (float("inf"), float("-inf")):
+        raise ValueError("Geçersiz sayısal değer")
+    return sonuc
+
+def csv_analiz(icerik):
+    try:
+        metin = icerik.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise ValueError("CSV dosyası UTF-8 biçiminde olmalıdır")
+    okuyucu = csv.DictReader(io.StringIO(metin))
+    if not okuyucu.fieldnames:
+        raise ValueError("CSV başlık satırı bulunamadı")
+    esleme = {}
+    for baslik in okuyucu.fieldnames:
+        norm = baslik_norm(baslik)
+        esleme[ALIAS.get(norm, norm)] = baslik
+    eksik = [alan for alan in GEREKLI if alan not in esleme]
+    if eksik:
+        raise ValueError("Eksik CSV sütunları: " + ", ".join(eksik))
+
+    satirlar = []
+    for no, satir in enumerate(okuyucu, start=2):
+        if no > MAX_CSV_ROWS + 1:
+            raise ValueError(f"CSV en fazla {MAX_CSV_ROWS} veri satırı içerebilir")
+        try:
+            kayit = {"tarih": str(satir.get(esleme["tarih"], "")).strip()}
+            for alan in GEREKLI[1:]:
+                kayit[alan] = sayi(satir.get(esleme[alan]))
+            satirlar.append(kayit)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{no}. satır hatalı: {exc}")
+    if not satirlar:
+        raise ValueError("CSV içinde analiz edilecek kayıt yok")
+
+    adet = len(satirlar)
+    ort = {
+        alan: sum(x[alan] for x in satirlar) / adet
+        for alan in GEREKLI[1:]
+    }
+    puan = 0
+    nedenler = []
+    if ort["nakit_akisi"] <= 0:
+        puan += 35
+        nedenler.append("Ortalama nakit akışı sıfır veya negatif")
+    if ort["gelir"] <= 0:
+        puan += 15
+        nedenler.append("Gelir sıfır veya negatif")
+    else:
+        if ort["borc"] / ort["gelir"] >= 0.50:
+            puan += 20
+            nedenler.append("Borç / gelir oranı en az %50")
+        if ort["stok"] / ort["gelir"] >= 0.50:
+            puan += 15
+            nedenler.append("Stok / gelir oranı en az %50")
+        if ort["gider"] / ort["gelir"] >= 0.90:
+            puan += 15
+            nedenler.append("Gider / gelir oranı en az %90")
+    puan = min(100, puan)
+    seviye = "düşük" if puan < 30 else ("orta" if puan < 60 else "yüksek")
+    return {
+        "ok": True,
+        "kayit_sayisi": adet,
+        "ortalama": ort,
+        "risk_puani": puan,
+        "risk_seviyesi": seviye,
+        "risk_nedenleri": nedenler,
+        "uyari": "Kural tabanlı ön analizdir; finansal denetim veya yatırım tavsiyesi değildir.",
+    }
+
+@app.get("/")
+def index():
+    return (
+        "<h1>Finansal Risk Analiz Sistemi</h1>"
+        "<form action='/api/analiz' method='post' enctype='multipart/form-data'>"
+        "<input type='file' name='dosya' accept='.csv' required>"
+        "<button type='submit'>CSV Analiz Et</button></form>"
+    )
+
+@app.get("/api/durum")
+def durum():
+    return jsonify({"ok": True, "uygulama": "finansal_risk_csv"})
+
+@app.route("/api/kayitlar", methods=["GET", "POST"])
+def kayitlar():
+    global SONRAKI_ID
+    if request.method == "GET":
+        return jsonify({"ok": True, "kayitlar": KAYITLAR})
+    veri = request.get_json(silent=True) or {}
+    kayit = dict(veri)
+    kayit["id"] = SONRAKI_ID
+    SONRAKI_ID += 1
+    KAYITLAR.append(kayit)
+    return jsonify({"ok": True, "id": kayit["id"], "kayit": kayit}), 201
+
+@app.route("/api/kayitlar/<int:kayit_id>", methods=["GET", "PUT", "DELETE"])
+def kayit_detay(kayit_id):
+    kayit = next((x for x in KAYITLAR if x["id"] == kayit_id), None)
+    if kayit is None:
+        return jsonify({"ok": False}), 404
+    if request.method == "GET":
+        return jsonify({"ok": True, "kayit": kayit})
+    if request.method == "PUT":
+        kayit.update(request.get_json(silent=True) or {})
+        kayit["id"] = kayit_id
+        return jsonify({"ok": True, "kayit": kayit})
+    KAYITLAR.remove(kayit)
+    return jsonify({"ok": True})
+
+@app.post("/api/analiz")
+def analiz():
+    dosya = request.files.get("dosya") or request.files.get("file")
+    if dosya is None or not dosya.filename:
+        return jsonify({"ok": False, "hata": "CSV dosyası yükleyin"}), 400
+    try:
+        return jsonify(csv_analiz(dosya.read()))
+    except (ValueError, UnicodeError) as exc:
+        return jsonify({"ok": False, "hata": str(exc)}), 400
+
+@app.get("/detail/<int:kayit_id>")
+def detail(kayit_id):
+    return jsonify({"ok": False}), 404
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+'''
+
+        test_code = r'''
+import io
+from app import app
+
+def test_csv_analiz_risk_puani():
+    client = app.test_client()
+    veri = (
+        "tarih,gelir,gider,nakit_akisi,borc,stok\n"
+        "2026-01-01,1000,950,-100,600,700\n"
+        "2026-02-01,1200,1100,-50,700,800\n"
+    ).encode()
+    r = client.post(
+        "/api/analiz",
+        data={"dosya": (io.BytesIO(veri), "finans.csv")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200, r.get_json()
+    sonuc = r.get_json()
+    assert sonuc["ok"] is True
+    assert sonuc["kayit_sayisi"] == 2
+    assert 0 <= sonuc["risk_puani"] <= 100
+    assert sonuc["risk_seviyesi"] == "yüksek"
+
+def test_csv_eksik_sutun():
+    client = app.test_client()
+    veri = b"tarih,gelir,gider\n2026-01-01,100,80\n"
+    r = client.post(
+        "/api/analiz",
+        data={"dosya": (io.BytesIO(veri), "eksik.csv")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 400
+    assert "Eksik CSV sütunları" in r.get_json()["hata"]
+
+def test_csv_gecersiz_sayi():
+    client = app.test_client()
+    veri = (
+        "tarih,gelir,gider,nakit_akisi,borc,stok\n"
+        "2026-01-01,bozuk,80,10,20,30\n"
+    ).encode()
+    r = client.post(
+        "/api/analiz",
+        data={"dosya": (io.BytesIO(veri), "bozuk.csv")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 400
+    assert "satır hatalı" in r.get_json()["hata"]
+
+def test_csv_belirsiz_sayi_reddedilir():
+    client = app.test_client()
+    veri = (
+        "tarih,gelir,gider,nakit_akisi,borc,stok\n"
+        '2026-01-01,"1,234",80,10,20,30\n'
+    ).encode()
+    r = client.post(
+        "/api/analiz",
+        data={"dosya": (io.BytesIO(veri), "belirsiz.csv")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 400
+    assert "Belirsiz sayı biçimi" in r.get_json()["hata"]
+
+
+def test_csv_satir_limiti():
+    client = app.test_client()
+    baslik = "tarih,gelir,gider,nakit_akisi,borc,stok\n"
+    satir = "2026-01-01,100,80,20,30,40\n"
+    veri = (baslik + satir * 10001).encode()
+    r = client.post(
+        "/api/analiz",
+        data={"dosya": (io.BytesIO(veri), "cok_satir.csv")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 400
+    assert "en fazla 10000" in r.get_json()["hata"]
+
+
+def test_csv_dosya_boyutu_limiti():
+    onceki = app.config["MAX_CONTENT_LENGTH"]
+    app.config["MAX_CONTENT_LENGTH"] = 1024
+    try:
+        client = app.test_client()
+        veri = b"x" * 4096
+        r = client.post(
+            "/api/analiz",
+            data={"dosya": (io.BytesIO(veri), "buyuk.csv")},
+            content_type="multipart/form-data",
+        )
+        assert r.status_code == 413
+    finally:
+        app.config["MAX_CONTENT_LENGTH"] = onceki
+'''
+
+        readme = "\n".join([
+            "# Finansal Risk Analiz Sistemi",
+            "",
+            "## Kurulum",
+            "",
+            "```bash",
+            "python -m venv .venv",
+            "source .venv/bin/activate",
+            "pip install -r requirements.txt",
+            "python app.py",
+            "```",
+            "",
+            "Tarayıcı: http://127.0.0.1:5000",
+            "",
+            "## CSV sütunları",
+            "",
+            "`tarih,gelir,gider,nakit_akisi,borc,stok`",
+            "",
+            "Türkçe ondalık virgül ve İngilizce ondalık biçimleri desteklenir.",
+            "",
+            "## Risk puanlaması",
+            "",
+            "- Nakit akışı sıfır veya negatif: 35 puan",
+            "- Gelir sıfır veya negatif: 15 puan",
+            "- Borç / gelir en az 0,50: 20 puan",
+            "- Stok / gelir en az 0,50: 15 puan",
+            "- Gider / gelir en az 0,90: 15 puan",
+            "",
+            "0-29 düşük, 30-59 orta, 60-100 yüksek risk.",
+            "Bu araç kural tabanlı ön analizdir; denetim veya yatırım tavsiyesi değildir.",
+            "",
+        ])
+
+        dosyalar = {
+            "app.py": app_code,
+            "tests/test_core.py": test_code,
+            "README.md": readme,
+            "requirements.txt": "Flask>=3.0,<4\n",
+        }
+        dogrulama = self._dogrula(dosyalar, plan)
+        sonuc = {
+            "ok": bool(dogrulama["validation_ok"]),
+            "dosyalar": dosyalar,
+            "ana_dosya": "app.py",
+            "proje_adi": konu,
+            "cikti_turu": plan.get("cikti_turu", "proje"),
+            "profil": "finansal_risk_csv",
+        }
+        sonuc.update(dogrulama)
+        sonuc["ok"] = bool(dogrulama["validation_ok"])
+        return sonuc
 
     @staticmethod
     def _paket_adi(konu):
