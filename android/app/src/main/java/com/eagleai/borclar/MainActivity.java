@@ -583,8 +583,8 @@ public class MainActivity extends Activity {
                         commonsGorselleriEkle(cevapKarti, mesaj, cevapFinal);
                     }
                 }
-                gecmiseKaydet("🦅\n\n" + cevapGosterim);
-                  sohbeteMesajEkle("🦅\n\n" + cevapGosterim);
+                gecmiseKaydet("🦅\n\n" + cevapGosterim, medyaOnerileri);
+                  sohbeteMesajEkle("🦅\n\n" + cevapGosterim, medyaOnerileri);
                 metniSesliOku(cevapGosterim);
 
                 kaydirma.post(() ->
@@ -1166,15 +1166,60 @@ public class MainActivity extends Activity {
     private static final String GECMIS_PREF = "eagle_gecmis";
     private static final String GECMIS_KEY = "mesajlar";
 
+    private void mesajKaydiniEkle(
+            JSONArray mesajlar,
+            String metin,
+            JSONArray medyaOnerileri
+    ) {
+        if (medyaOnerileri == null || medyaOnerileri.length() == 0) {
+            mesajlar.put(metin);
+            return;
+        }
+
+        try {
+            JSONObject kayit = new JSONObject();
+            kayit.put("metin", metin);
+            kayit.put("media_items", new JSONArray(medyaOnerileri.toString()));
+            mesajlar.put(kayit);
+        } catch (Exception e) {
+            mesajlar.put(metin);
+        }
+    }
+
+    private void kayitliMesajiGoster(JSONArray mesajlar, int index) {
+        Object kayit = mesajlar.opt(index);
+        String metin;
+        JSONArray medyaOnerileri = null;
+
+        if (kayit instanceof JSONObject) {
+            JSONObject mesaj = (JSONObject) kayit;
+            metin = mesaj.optString("metin", "");
+            medyaOnerileri = mesaj.optJSONArray("media_items");
+        } else {
+            metin = mesajlar.optString(index, "");
+        }
+
+        LinearLayout kart = mesajOlustur(metin);
+        mesajAlani.addView(kart);
+
+        if (medyaOnerileri != null && medyaOnerileri.length() > 0) {
+            tmdbOneriKartlariEkle(kart, medyaOnerileri);
+        }
+    }
+
     private void gecmiseKaydet(String metin) {
+        gecmiseKaydet(metin, null);
+    }
+
+    private void gecmiseKaydet(String metin, JSONArray medyaOnerileri) {
         try {
             SharedPreferences sp = getSharedPreferences(GECMIS_PREF, MODE_PRIVATE);
             String mevcut = sp.getString(GECMIS_KEY, "[]");
             JSONArray dizi = new JSONArray(mevcut);
-            dizi.put(metin);
+            mesajKaydiniEkle(dizi, metin, medyaOnerileri);
             sp.edit().putString(GECMIS_KEY, dizi.toString()).apply();
         } catch (Exception e) {
-            // Kaydedilemezse sessizce geç, sohbeti bozmasın.
+            // Kaydedilemezse sessizce geç.
         }
     }
 
@@ -1185,8 +1230,7 @@ public class MainActivity extends Activity {
             JSONArray dizi = new JSONArray(mevcut);
 
             for (int i = 0; i < dizi.length(); i++) {
-                String metin = dizi.getString(i);
-                mesajAlani.addView(mesajOlustur(metin));
+                kayitliMesajiGoster(dizi, i);
             }
         } catch (Exception e) {
             // Yüklenemezse sessizce geç.
@@ -1298,9 +1342,7 @@ private void sohbetYukle(String id) {
 
                     if (mesajlar != null) {
                         for (int j = 0; j < mesajlar.length(); j++) {
-                            mesajAlani.addView(
-                                    mesajOlustur(mesajlar.getString(j))
-                            );
+                            kayitliMesajiGoster(mesajlar, j);
                         }
                     }
 
@@ -1378,6 +1420,10 @@ private void sohbetYukle(String id) {
       }
 
     private void sohbeteMesajEkle(String metin) {
+        sohbeteMesajEkle(metin, null);
+    }
+
+    private void sohbeteMesajEkle(String metin, JSONArray medyaOnerileri) {
         try {
             SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
             String mevcut = sp.getString(SOHBET_KEY, "[]");
@@ -1390,7 +1436,6 @@ private void sohbetYukle(String id) {
                 if (baslik.startsWith("Sen: ")) {
                     baslik = baslik.substring(5).trim();
                 }
-
                 if (baslik.length() > 45) {
                     baslik = baslik.substring(0, 45) + "...";
                 }
@@ -1407,7 +1452,7 @@ private void sohbetYukle(String id) {
                 );
 
                 JSONArray mesajlar = new JSONArray();
-                mesajlar.put(metin);
+                mesajKaydiniEkle(mesajlar, metin, medyaOnerileri);
                 sohbet.put("mesajlar", mesajlar);
 
                 JSONArray yeniSohbetler = new JSONArray();
@@ -1422,7 +1467,6 @@ private void sohbetYukle(String id) {
                         .apply();
 
                 aktifSohbetId = id;
-
             } else {
                 for (int i = 0; i < sohbetler.length(); i++) {
                     JSONObject sohbet = sohbetler.getJSONObject(i);
@@ -1435,8 +1479,7 @@ private void sohbetYukle(String id) {
                             sohbet.put("mesajlar", mesajlar);
                         }
 
-                        mesajlar.put(metin);
-
+                        mesajKaydiniEkle(mesajlar, metin, medyaOnerileri);
                         sohbet.put(
                                 "tarih",
                                 new SimpleDateFormat(
@@ -1444,7 +1487,6 @@ private void sohbetYukle(String id) {
                                         java.util.Locale.getDefault()
                                 ).format(new Date())
                         );
-
                         break;
                     }
                 }
@@ -1453,7 +1495,6 @@ private void sohbetYukle(String id) {
                         .putString(SOHBET_KEY, sohbetler.toString())
                         .apply();
             }
-
         } catch (Exception e) {
             Toast.makeText(
                     this,
