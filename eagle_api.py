@@ -10636,6 +10636,38 @@ def sohbet():
 
     print(f"🧠 EAGLE KARAR: {karar}", flush=True)
 
+    # Medya önerileri: son kararın ardından, web araştırmasından önce TMDb'ye yönlendir.
+    medya_soru = str(mesaj_orijinal or mesaj or "").strip()
+    if karar.get("media_recommendation") or _eagle_medya_oneri_istegi(medya_soru):
+        medya_items = _eagle_tmdb_medya_onerileri(medya_soru, limit=6)
+        satirlar = []
+        for sira, item in enumerate(medya_items, 1):
+            yil = str(item.get("release_date") or "")[:4]
+            baslik = str(item.get("title") or "Yapım")
+            ozet = str(item.get("overview") or "").strip()
+            satir = f"{sira}. **{baslik}**" + (f" ({yil})" if yil else "")
+            if ozet:
+                satir += f"\n{ozet[:220]}"
+            satirlar.append(satir)
+
+        cevap = (
+            "🎬 **TMDb doğrulamalı öneriler**\n\n" + "\n\n".join(satirlar)
+            if medya_items else
+            "İsteğine uygun, afişi doğrulanmış TMDb önerisi bulamadım. Yanlış veya uydurma yapım/afiş göstermiyorum."
+        )
+        return jsonify({
+            "ok": True,
+            "answer": cevap,
+            "web_search": True,
+            "eagle_direct": True,
+            "merkez_motor": False,
+            "media_query": True,
+            "media_items": medya_items,
+            "source": "https://www.themoviedb.org/",
+            "memory_count": len(hafiza_yukle()),
+        })
+
+
     def eagle_yapistirilmis_kod_mu(metin):
         """Doğrudan veya doğal dil içinde verilen Python kodunu algılar."""
         metin = str(metin or "").strip()
@@ -12286,36 +12318,6 @@ def sohbet():
                     "merkez_motor": False,
                     "memory_count": len(hafiza_yukle())
                 })
-
-        medya_soru = str(mesaj_orijinal or mesaj or "").strip()
-        if karar.get("media_recommendation") or _eagle_medya_oneri_istegi(medya_soru):
-            medya_items = _eagle_tmdb_medya_onerileri(medya_soru, limit=6)
-            satirlar = []
-            for sira, item in enumerate(medya_items, 1):
-                yil = str(item.get("release_date") or "")[:4]
-                baslik = str(item.get("title") or "Yapım")
-                ozet = str(item.get("overview") or "").strip()
-                satir = f"{sira}. **{baslik}**" + (f" ({yil})" if yil else "")
-                if ozet:
-                    satir += f"\n{ozet[:220]}"
-                satirlar.append(satir)
-
-            cevap = (
-                "🎬 **TMDb doğrulamalı öneriler**\n\n" + "\n\n".join(satirlar)
-                if medya_items else
-                "İsteğine uygun, afişi doğrulanmış TMDb önerisi bulamadım. Yanlış veya uydurma yapım/afiş göstermiyorum."
-            )
-            return jsonify({
-                "ok": True,
-                "answer": cevap,
-                "web_search": True,
-                "eagle_direct": True,
-                "merkez_motor": False,
-                "media_query": True,
-                "media_items": medya_items,
-                "source": "https://www.themoviedb.org/",
-                "memory_count": len(hafiza_yukle()),
-            })
 
     elif karar.get("arac") == "web_arastirma":
         # EAGLE_TMDB_FILM_TANITIM_V1

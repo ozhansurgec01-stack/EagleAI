@@ -2144,6 +2144,45 @@ def tmdb_yabanci_oneri_filtre_test():
     assert all(x["tmdb_id"] != 1 for x in sonuc)
 
 
+def tmdb_sohbet_api_uc_tan_uca_test():
+    import eagle_api
+    from unittest.mock import patch
+
+    sahte_items = [
+        {
+            "tmdb_id": 98765,
+            "media_type": "movie",
+            "title": "Test Yabancı Film",
+            "release_date": "2025-04-12",
+            "overview": "Uçtan uca test açıklaması.",
+            "poster_url": "https://image.tmdb.org/t/p/w500/test.jpg",
+        }
+    ]
+
+    with patch.object(
+        eagle_api,
+        "_eagle_tmdb_medya_onerileri",
+        return_value=sahte_items,
+    ) as tmdb_mock:
+        yanit = eagle_api.app.test_client().post(
+            "/api/sohbet",
+            json={"message": "Yabancı film öner", "history": []},
+        )
+
+    veri = yanit.get_json() or {}
+    assert yanit.status_code == 200, veri
+    assert veri.get("ok") is True, veri
+    assert veri.get("media_query") is True, veri
+    assert veri.get("eagle_direct") is True, veri
+    assert veri.get("merkez_motor") is False, veri
+    assert veri.get("web_search") is True, veri
+    assert veri.get("media_items") == sahte_items, veri
+    assert "Test Yabancı Film" in veri.get("answer", ""), veri
+    assert tmdb_mock.call_count == 1, tmdb_mock.call_count
+    assert tmdb_mock.call_args.args[0] == "Yabancı film öner"
+
+
+test("TMDb sohbet API uçtan uca yönlendirmesi", tmdb_sohbet_api_uc_tan_uca_test)
 test("Medya öneri niyeti ve yönlendirmesi", medya_oneri_algilama_test)
 test("TMDb yabancı yapım filtresi ve afiş tekilliği", tmdb_yabanci_oneri_filtre_test)
 

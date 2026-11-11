@@ -546,6 +546,7 @@ public class MainActivity extends Activity {
                     "(?i)\\s*\\|?\\s*Görsel\\s*:\\s*https://upload\\.wikimedia\\.org/[^\\s|<>\"']+",
                     ""
             ).replaceAll("[ \\t]+\\|[ \\t]*$", "").trim();
+            final JSONArray medyaOnerileri = apiCevap.mediaItems;
             final JSONArray medyaGorselleri = apiCevap.mediaImages;
             final boolean medyaSorusu = apiCevap.mediaQuery;
             final boolean bitcoinFiyati = apiCevap.bitcoinPrice;
@@ -573,7 +574,9 @@ public class MainActivity extends Activity {
                 }
 
                 if (gonderilecekResim == null) {
-                    if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
+                    if (medyaOnerileri != null && medyaOnerileri.length() > 0) {
+                        tmdbOneriKartlariEkle(cevapKarti, medyaOnerileri);
+                    } else if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
                         tmdbGorselleriEkle(cevapKarti, medyaGorselleri);
                     } else if (!bitcoinFiyati && finansVerisi == null && !medyaSorusu
                             && gorselAramasiUygunMu(mesaj, cevapFinal)) {
@@ -881,6 +884,7 @@ public class MainActivity extends Activity {
 
     private static class ApiCevap {
         String answer = "Eagle-AI cevap vermedi.";
+        JSONArray mediaItems;
         JSONArray mediaImages;
         boolean mediaQuery;
         boolean bitcoinPrice;
@@ -1037,6 +1041,7 @@ public class MainActivity extends Activity {
                         "Eagle-AI cevap vermedi."
                 );
 
+                apiCevap.mediaItems = cevapJson.optJSONArray("media_items");
                 apiCevap.mediaQuery = cevapJson.optBoolean("media_query", false);
                 apiCevap.bitcoinPrice = cevapJson.optBoolean("bitcoin_price", false);
                 apiCevap.bitcoinUsd = cevapJson.optString("bitcoin_usd", "");
@@ -2752,6 +2757,173 @@ JSONObject item = new JSONObject();
         });
     }
 
+
+
+    private void tmdbOneriKartlariEkle(LinearLayout kart, JSONArray oneriler) {
+        runOnUiThread(() -> {
+            if (isFinishing() || kart == null || kart.getParent() == null) return;
+
+            float yogunluk = getResources().getDisplayMetrics().density;
+            int dp = (int) (yogunluk + 0.5f);
+            LinearLayout liste = new LinearLayout(this);
+            liste.setOrientation(LinearLayout.VERTICAL);
+            liste.setPadding(0, 10 * dp, 0, 10 * dp);
+
+            TextView baslik = new TextView(this);
+            baslik.setText("🎬 Sana özel yapım önerileri");
+            baslik.setTextSize(15);
+            baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            baslik.setTextColor(Color.WHITE);
+            baslik.setPadding(0, 0, 0, 10 * dp);
+            liste.addView(baslik);
+
+            for (int i = 0; i < oneriler.length(); i++) {
+                JSONObject item = oneriler.optJSONObject(i);
+                if (item == null) continue;
+
+                String afisAdresi = item.optString("poster_url", "");
+                if (!afisAdresi.startsWith("https://image.tmdb.org/t/p/")) continue;
+
+                String ad = item.optString("title", "İsimsiz yapım").trim();
+                if (ad.isEmpty()) ad = "İsimsiz yapım";
+
+                String tarih = item.optString("release_date", "");
+                String yil = tarih.length() >= 4 ? tarih.substring(0, 4) : "";
+                String ozet = item.optString("overview", "").trim();
+                String kaynakAdresi = item.optString("source_url", "");
+
+                LinearLayout satir = new LinearLayout(this);
+                satir.setOrientation(LinearLayout.HORIZONTAL);
+                satir.setGravity(Gravity.TOP);
+                satir.setPadding(10 * dp, 10 * dp, 10 * dp, 10 * dp);
+                satir.setBackground(yuvarlakArkaPlan(
+                        Color.rgb(35, 43, 48),
+                        Color.rgb(75, 88, 94),
+                        12f
+                ));
+
+                LinearLayout.LayoutParams satirParams =
+                        new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                        );
+                satirParams.bottomMargin = 10 * dp;
+                liste.addView(satir, satirParams);
+
+                ImageView poster = new ImageView(this);
+                poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                poster.setImageResource(android.R.drawable.ic_menu_report_image);
+                poster.setContentDescription(ad + " afişi");
+
+                LinearLayout.LayoutParams posterParams =
+                        new LinearLayout.LayoutParams(92 * dp, 138 * dp);
+                posterParams.rightMargin = 12 * dp;
+                satir.addView(poster, posterParams);
+
+                LinearLayout metinler = new LinearLayout(this);
+                metinler.setOrientation(LinearLayout.VERTICAL);
+                satir.addView(metinler, new LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        1f
+                ));
+
+                TextView adView = new TextView(this);
+                adView.setText(ad);
+                adView.setTextSize(15);
+                adView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                adView.setTextColor(Color.WHITE);
+                metinler.addView(adView);
+
+                if (!yil.isEmpty()) {
+                    TextView yilView = new TextView(this);
+                    yilView.setText(yil);
+                    yilView.setTextSize(12);
+                    yilView.setTextColor(Color.LTGRAY);
+                    yilView.setPadding(0, 3 * dp, 0, 5 * dp);
+                    metinler.addView(yilView);
+                }
+
+                if (!ozet.isEmpty()) {
+                    TextView ozetView = new TextView(this);
+                    ozetView.setText(ozet);
+                    ozetView.setTextSize(12);
+                    ozetView.setTextColor(Color.rgb(220, 225, 228));
+                    ozetView.setMaxLines(5);
+                    ozetView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    ozetView.setLineSpacing(2 * dp, 1f);
+                    metinler.addView(ozetView);
+                }
+
+                if (kaynakAdresi.startsWith("https://www.themoviedb.org/")) {
+                    satir.setOnClickListener(v -> {
+                        try {
+                            startActivity(new Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(kaynakAdresi)
+                            ));
+                        } catch (Exception hata) {
+                            Toast.makeText(
+                                    this,
+                                    "TMDb sayfası açılamadı.",
+                                    Toast.LENGTH_SHORT
+                            ).show();
+                        }
+                    });
+                }
+
+                final String indirilecekAdres = afisAdresi;
+                gorselExecutor.execute(() -> {
+                    try {
+                        Bitmap bitmap = wikimediaGorselIndir(
+                                indirilecekAdres,
+                                indirilecekAdres
+                        );
+                        if (bitmap != null && !isFinishing()) {
+                            runOnUiThread(() -> {
+                                if (poster.getParent() != null) {
+                                    poster.setImageBitmap(bitmap);
+                                }
+                            });
+                        }
+                    } catch (Exception hata) {
+                        android.util.Log.e(
+                                "EagleTMDB",
+                                "Öneri afişi yüklenemedi: " + indirilecekAdres,
+                                hata
+                        );
+                    }
+                });
+            }
+
+            TextView kaynak = new TextView(this);
+            kaynak.setText("Yapım ve afiş verileri: TMDb");
+            kaynak.setTextSize(11);
+            kaynak.setTextColor(Color.GRAY);
+            kaynak.setPadding(0, 4 * dp, 0, 4 * dp);
+            kaynak.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://www.themoviedb.org/")
+                    ));
+                } catch (Exception ignored) {}
+            });
+            liste.addView(kaynak);
+
+            TextView atif = new TextView(this);
+            atif.setText(
+                    "This product uses the TMDB API but is not endorsed or certified by TMDB."
+            );
+            atif.setTextSize(10);
+            atif.setTextColor(Color.GRAY);
+            liste.addView(atif);
+
+            int index = Math.max(0, kart.getChildCount() - 1);
+            kart.addView(liste, index);
+            kaydirma.post(() -> kaydirma.fullScroll(View.FOCUS_DOWN));
+        });
+    }
 
     private void tmdbGorselleriEkle(LinearLayout kart, JSONArray gorseller) {
         runOnUiThread(() -> {
