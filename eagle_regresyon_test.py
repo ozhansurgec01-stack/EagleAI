@@ -2090,6 +2090,63 @@ def afet_merkez_motoru_cagri_test():
 print("===== EAGLEAI REGRESYON TEST =====")
 print()
 
+
+def medya_oneri_algilama_test():
+    import eagle_api
+    assert eagle_api._eagle_medya_oneri_istegi("Yabancı dizi öner")
+    assert eagle_api._eagle_dizi_sorgu_turu("Yabancı dizi öner") is None
+    karar = eagle_api.eagle_karar_motoru("Yabancı dizi öner", [])
+    assert karar.get("intent") == "medya_onerisi", karar
+    assert karar.get("media_recommendation") is True, karar
+    assert eagle_api._eagle_medya_oneri_istegi("Belgesel tavsiyesi")
+    assert not eagle_api._eagle_medya_oneri_istegi("Breaking Bad dizisi hakkında bilgi ver")
+
+
+def tmdb_yabanci_oneri_filtre_test():
+    import os
+    import eagle_api
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"results": [
+                {"id": 1, "name": "Türkiye Yapımı", "original_language": "tr",
+                 "origin_country": ["TR"], "poster_path": "/tr.jpg"},
+                {"id": 2, "name": "Foreign A", "original_language": "en",
+                 "origin_country": ["US"], "poster_path": "/a.jpg"},
+                {"id": 3, "name": "Foreign B", "original_language": "ko",
+                 "origin_country": ["KR"], "poster_path": "/b.jpg"},
+            ]}
+
+    class FakeSession:
+        def get(self, url, params=None, timeout=None):
+            assert "/discover/tv" in url
+            return FakeResponse()
+
+    eski_key = os.environ.get("TMDB_API_KEY")
+    eski_session = eagle_api.requests.Session
+    try:
+        os.environ["TMDB_API_KEY"] = "test-key"
+        eagle_api.requests.Session = FakeSession
+        sonuc = eagle_api._eagle_tmdb_medya_onerileri("Yabancı dizi öner")
+    finally:
+        eagle_api.requests.Session = eski_session
+        if eski_key is None:
+            os.environ.pop("TMDB_API_KEY", None)
+        else:
+            os.environ["TMDB_API_KEY"] = eski_key
+
+    assert len(sonuc) == 2, sonuc
+    assert all(x["media_type"] == "tv" for x in sonuc)
+    assert len({x["poster_url"] for x in sonuc}) == len(sonuc)
+    assert all(x["tmdb_id"] != 1 for x in sonuc)
+
+
+test("Medya öneri niyeti ve yönlendirmesi", medya_oneri_algilama_test)
+test("TMDb yabancı yapım filtresi ve afiş tekilliği", tmdb_yabanci_oneri_filtre_test)
+
 test("Kodsuz finansal çelişki doğrudan analizi", finansal_celiski_dogrudan_analiz_test)
 test("Finansal çelişki merkezi motor çağrı zinciri", finansal_celiski_cagri_zinciri_test)
 test("Finansal CSV planlayıcı profili", finansal_csv_planlayici_test)

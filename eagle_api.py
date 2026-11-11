@@ -2830,6 +2830,97 @@ def _eagle_tmdb_norm(metin):
     return re.sub(r"[^a-z0-9]+", " ", metin).strip()
 
 
+
+def _eagle_medya_oneri_istegi(metin):
+    """Film, dizi ve belgesel öneri niyetini algılar."""
+    norm = _eagle_tmdb_norm(metin)
+    medya = re.search(
+        r"\b(film|filmler|filmi|dizi|diziler|dizisi|belgesel|belgeseller|movie|movies|series|documentary|yapim|yapimlar)\b",
+        norm
+    )
+    oneri = re.search(r"\b(oner|oneri|tavsiye|tavsiyeler|benzer)\w*\b", norm)
+    return bool(medya and oneri)
+
+
+def _eagle_tmdb_medya_onerileri(metin, limit=6):
+    """TMDb keşif sonuçlarından afişi doğrulanmış önerileri seçer."""
+    api_key = os.getenv("TMDB_API_KEY", "").strip()
+    norm = _eagle_tmdb_norm(metin)
+    if not api_key or not norm:
+        return []
+
+    if re.search(r"\b(belgesel|belgeseller|documentary)\b", norm):
+        turler, tur_id = ("movie", "tv"), "99"
+    elif re.search(r"\b(dizi|diziler|dizisi|series)\b", norm):
+        turler, tur_id = ("tv",), None
+    elif re.search(r"\b(film|filmler|filmi|movie|movies)\b", norm):
+        turler, tur_id = ("movie",), None
+    else:
+        turler, tur_id = ("movie", "tv"), None
+
+    yabanci = bool(re.search(r"\byabanci\b", norm))
+    oturum = requests.Session()
+    sonuc, kimlikler, afisler = [], set(), set()
+
+    for tur in turler:
+        params = {
+            "api_key": api_key,
+            "language": "tr-TR",
+            "include_adult": "false",
+            "sort_by": "popularity.desc",
+            "page": 1,
+        }
+        if tur_id:
+            params["with_genres"] = tur_id
+
+        try:
+            yanit = oturum.get(
+                f"https://api.themoviedb.org/3/discover/{tur}",
+                params=params,
+                timeout=12,
+            )
+            yanit.raise_for_status()
+            adaylar = yanit.json().get("results", [])
+        except Exception:
+            continue
+
+        for aday in adaylar:
+            medya_id = aday.get("id")
+            poster = aday.get("poster_path")
+            if not medya_id or not poster:
+                continue
+            if tur_id and tur_id not in [str(x) for x in aday.get("genre_ids", [])]:
+                continue
+
+            dil = str(aday.get("original_language") or "").casefold()
+            ulkeler = aday.get("origin_country") or []
+            if isinstance(ulkeler, str):
+                ulkeler = [ulkeler]
+            if yabanci and (dil == "tr" or "TR" in ulkeler):
+                continue
+
+            kimlik = (tur, str(medya_id))
+            poster_url = "https://image.tmdb.org/t/p/w500" + str(poster)
+            if kimlik in kimlikler or poster_url in afisler:
+                continue
+
+            kimlikler.add(kimlik)
+            afisler.add(poster_url)
+            sonuc.append({
+                "provider": "TMDb",
+                "media_type": tur,
+                "tmdb_id": medya_id,
+                "title": aday.get("title") or aday.get("name") or "",
+                "overview": aday.get("overview") or "",
+                "release_date": aday.get("release_date") or aday.get("first_air_date") or "",
+                "poster_url": poster_url,
+                "source_url": f"https://www.themoviedb.org/{tur}/{medya_id}",
+            })
+            if len(sonuc) >= max(1, min(int(limit), 12)):
+                return sonuc
+
+    return sonuc
+
 def _eagle_tmdb_medya_bul(baslik, tur=None):
     """Tam başlık eşleşmesiyle TMDb yapım görsellerini ve oyuncu fotoğraflarını getirir."""
     api_key = os.getenv("TMDB_API_KEY", "").strip()
@@ -3055,6 +3146,8 @@ def _eagle_dizi_sorgu_turu(metin):
         c for c in norm if not unicodedata.combining(c)
     ).replace("ı", "i")
     norm = re.sub(r"[^a-z0-9]+", " ", norm)
+    if _eagle_medya_oneri_istegi(metin):
+        return None
     norm = re.sub(r"\s+", " ", norm).strip()
 
     # Dizi adı + bölüm numarası + yayın zamanı sorusu.
@@ -4146,6 +4239,17 @@ def eagle_karar_motoru(mesaj, gecmis=None):
                 "history_devam": True
             })
             return karar
+
+    if _eagle_medya_oneri_istegi(metin):
+        karar.update({
+            "intent": "medya_onerisi",
+            "guven": "yüksek",
+            "neden": "Medya önerisi TMDb keşif akışına yönlendirildi.",
+            "arac": "web_arastirma",
+            "ogrenme_adayi": False,
+            "media_recommendation": True,
+        })
+        return karar
 
     # Başlığı belirlenebilen film tanıtımlarını TMDb akışına yönlendir.
     film_sorgu_turu = _eagle_film_sorgu_turu(metin)
@@ -12182,6 +12286,36 @@ def sohbet():
                     "merkez_motor": False,
                     "memory_count": len(hafiza_yukle())
                 })
+
+        medya_soru = str(mesaj_orijinal or mesaj or "").strip()
+        if karar.get("media_recommendation") or _eagle_medya_oneri_istegi(medya_soru):
+            medya_items = _eagle_tmdb_medya_onerileri(medya_soru, limit=6)
+            satirlar = []
+            for sira, item in enumerate(medya_items, 1):
+                yil = str(item.get("release_date") or "")[:4]
+                baslik = str(item.get("title") or "Yapım")
+                ozet = str(item.get("overview") or "").strip()
+                satir = f"{sira}. **{baslik}**" + (f" ({yil})" if yil else "")
+                if ozet:
+                    satir += f"\n{ozet[:220]}"
+                satirlar.append(satir)
+
+            cevap = (
+                "🎬 **TMDb doğrulamalı öneriler**\n\n" + "\n\n".join(satirlar)
+                if medya_items else
+                "İsteğine uygun, afişi doğrulanmış TMDb önerisi bulamadım. Yanlış veya uydurma yapım/afiş göstermiyorum."
+            )
+            return jsonify({
+                "ok": True,
+                "answer": cevap,
+                "web_search": True,
+                "eagle_direct": True,
+                "merkez_motor": False,
+                "media_query": True,
+                "media_items": medya_items,
+                "source": "https://www.themoviedb.org/",
+                "memory_count": len(hafiza_yukle()),
+            })
 
     elif karar.get("arac") == "web_arastirma":
         # EAGLE_TMDB_FILM_TANITIM_V1
