@@ -804,6 +804,98 @@ def matematik_test():
         {"oran": "20", "tur": "zam"},
     ], f"Alternatif ifade işlem sırası hatalı: {alternatif_karar!r}"
 
+def spor_ekonomi_yonlendirme_regresyon_test():
+    import eagle_api
+
+    ekonomi_sorulari = [
+        "Bir ülkede enflasyon yıllık %60'tan %35'e düşerken halkın alım gücü neden hâlâ azalabilir? Türkiye güncel ekonomik verileriyle açıkla.",
+        "Enflasyonun düşmesinin ekonomik sonuçları nelerdir?",
+    ]
+
+    for soru in ekonomi_sorulari:
+        karar = eagle_api.eagle_karar_motoru(soru, [])
+        assert karar.get("intent") != "spor", (
+            f"Ekonomi sorusu yanlışlıkla spor algılandı: {soru} -> {karar}"
+        )
+        assert karar.get("arac") != "spor_kaynaklari", (
+            f"Ekonomi sorusu spor aracına yönlendirildi: {soru} -> {karar}"
+        )
+        assert not eagle_api.spor_sorgusu_mu(soru), (
+            f"Ekonomi sorusu spor sorgusu sayıldı: {soru}"
+        )
+
+    spor_sorulari = [
+        "Şampiyonlar Ligi maç sonuçları",
+        "Galatasaray'ın son maç sonucu ne?",
+    ]
+
+    for soru in spor_sorulari:
+        karar = eagle_api.eagle_karar_motoru(soru, [])
+        assert karar.get("intent") == "spor", (
+            f"Gerçek spor sorgusu spor olarak algılanmadı: {soru} -> {karar}"
+        )
+        assert karar.get("arac") == "spor_kaynaklari", karar
+        assert eagle_api.spor_sorgusu_mu(soru), (
+            f"Gerçek maç sorgusu spor sorgusu sayılmadı: {soru}"
+        )
+
+
+def ekonomi_sorusu_api_web_merkez_zinciri_test():
+    import eagle_api
+    from unittest.mock import patch
+
+    soru = (
+        "Bir ülkede enflasyon yıllık %60'tan %35'e düşerken "
+        "halkın alım gücü neden hâlâ azalabilir? "
+        "Türkiye güncel ekonomik verileriyle açıkla."
+    )
+    sahte_web_verisi = [{
+        "title": "Test ekonomik veri kaynağı",
+        "snippet": "Enflasyon, fiyat seviyesi ve satın alma gücü."
+    }]
+    merkez_cevabi = (
+        "TEST MERKEZ CEVABI: Enflasyon düşüşü fiyatların "
+        "azaldığı anlamına gelmez; fiyat artış hızı yavaşlar."
+    )
+
+    with (
+        patch.object(eagle_api, "sohbet_baglam_yukle", return_value={}),
+        patch.object(eagle_api, "web_arastir", return_value=sahte_web_verisi) as web_mock,
+        patch.object(eagle_api, "eagle_webden_ogren", return_value=False),
+        patch.object(
+            eagle_api.merkez_motor,
+            "calistir",
+            return_value={"ok": True, "cevap": merkez_cevabi},
+        ) as merkez_mock,
+        patch.object(
+            eagle_api,
+            "spor_skoru_direkt_cevapla",
+            side_effect=AssertionError("Ekonomi sorusu spor skoruna yönlendirildi."),
+        ),
+        patch.object(
+            eagle_api,
+            "spor_fikstur_direkt_cevapla",
+            side_effect=AssertionError("Ekonomi sorusu spor fikstürüne yönlendirildi."),
+        ),
+    ):
+        yanit = eagle_api.app.test_client().post(
+            "/api/sohbet",
+            json={"message": soru, "history": []},
+        )
+
+    veri = yanit.get_json() or {}
+    assert yanit.status_code == 200, veri
+    assert veri.get("ok") is True, veri
+    assert veri.get("merkez_motor") is True, veri
+    assert veri.get("eagle_direct") is True, veri
+    assert merkez_cevabi in veri.get("answer", ""), veri
+    assert web_mock.call_count == 1, web_mock.call_count
+    assert merkez_mock.call_count == 1, merkez_mock.call_count
+    assert merkez_mock.call_args.kwargs.get("web_verisi") == sahte_web_verisi
+    assert not veri.get("security_blocked"), veri
+    assert not veri.get("code_analysis"), veri
+
+
 def karar_motoru_test():
     import eagle_api
 
@@ -2212,6 +2304,8 @@ test("Python konu eşleşmesi", konu_eslesme_test)
 test("Temel Python soru-cevap kalitesi", temel_python_soru_cevap_test)
 test("Matematik bilgi bankası", matematik_test)
 test("Karar motoru", karar_motoru_test)
+test("Ekonomi ve spor yönlendirme ayrımı", spor_ekonomi_yonlendirme_regresyon_test)
+test("Ekonomi sorusu API web-merkez zinciri", ekonomi_sorusu_api_web_merkez_zinciri_test)
 test("Kod analiz motoru", kod_analiz_import_test)
 test("AutoFix", autofix_import_test)
 test("AssertionError doğrulama", assertion_autofix_regresyon_test)
