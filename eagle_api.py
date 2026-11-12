@@ -2446,7 +2446,6 @@ def spor_sorgusu_mu(mesaj):
         "kaç kaç", "kac kac",
         "kaç kaç bitti", "kac kac bitti",
         "maç sonucu", "mac sonucu",
-        "sonuç", "sonuc",
         "skor", "skorları", "skorlari"
     ]
 
@@ -4088,7 +4087,6 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "son maçında", "son macinda",
         "son oynadığı maç", "son oynadigi mac",
         "son karşılaşma", "son karsilasma",
-        "sonuç", "sonuc",
         "skor", "skorları", "skorlari",
         "fikstür", "fikstur",
         "oynayacak", "oynanacak",
