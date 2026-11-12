@@ -804,6 +804,47 @@ def matematik_test():
         {"oran": "20", "tur": "zam"},
     ], f"Alternatif ifade işlem sırası hatalı: {alternatif_karar!r}"
 
+def turkiye_alim_gucu_tcmb_verisi_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    soru = (
+        "Bir ülkede enflasyon yıllık %60'tan %35'e düşerken "
+        "halkın alım gücü neden hâlâ azalabilir? "
+        "Türkiye güncel ekonomik verileriyle açıkla."
+    )
+    resmi_veri = [{
+        "title": "TCMB - Tüketici Fiyatları (Ekim 2026)",
+        "snippet": (
+            "TÜFE Ekim 2026: yıllık değişim %29,77; "
+            "aylık değişim %2,58."
+        ),
+        "url": (
+            "https://www.tcmb.gov.tr/wps/wcm/connect/"
+            "TR/TCMB+TR/Main+Menu/Istatistikler/"
+            "Enflasyon+Verileri/Tuketici+Fiyatlari"
+        ),
+    }]
+
+    cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+        soru, resmi_veri
+    )
+    assert "%29,77" in cevap, cevap
+    assert "%2,58" in cevap, cevap
+    assert "fiyatların düştüğünü değil" in cevap, cevap
+    assert "reel satın alma gücü" in cevap, cevap
+    assert guven >= 0.90, guven
+
+    # Aynı veri üçüncü taraf alan adından gelirse güncel TÜFE diye kullanma.
+    sahte_veri = [{
+        **resmi_veri[0],
+        "url": "https://ornek-haber.example/ekonomi",
+    }]
+    sahte_cevap, _ = EagleMerkezMotoru.genel_web_cevabi(
+        soru, sahte_veri
+    )
+    assert "%29,77" not in sahte_cevap, sahte_cevap
+
+
 def spor_ekonomi_yonlendirme_regresyon_test():
     import eagle_api
 
@@ -892,6 +933,92 @@ def ekonomi_sorusu_api_web_merkez_zinciri_test():
     assert web_mock.call_count == 1, web_mock.call_count
     assert merkez_mock.call_count == 1, merkez_mock.call_count
     assert merkez_mock.call_args.kwargs.get("web_verisi") == sahte_web_verisi
+    assert not veri.get("security_blocked"), veri
+    assert not veri.get("code_analysis"), veri
+
+
+
+def tcmb_alim_gucu_api_gercek_motor_test():
+    import eagle_api
+    from unittest.mock import patch
+
+    soru = (
+        "Bir ülkede enflasyon yıllık %60'tan %35'e düşerken "
+        "halkın alım gücü neden hâlâ azalabilir? "
+        "Türkiye güncel ekonomik verileriyle açıkla."
+    )
+
+    tcmb_verisi = [{
+        "title": "TCMB - Tüketici Fiyatları (Ekim 2026)",
+        "snippet": (
+            "TÜFE Ekim 2026: yıllık değişim %29,77; "
+            "aylık değişim %2,58."
+        ),
+        "url": (
+            "https://www.tcmb.gov.tr/wps/wcm/connect/"
+            "TR/TCMB+TR/Main+Menu/Istatistikler/"
+            "Enflasyon+Verileri/Tuketici+Fiyatlari"
+        ),
+    }]
+
+    with (
+        patch.object(
+            eagle_api,
+            "sohbet_baglam_yukle",
+            return_value={},
+        ),
+        patch.object(
+            eagle_api,
+            "web_arastir",
+            return_value=tcmb_verisi,
+        ) as web_mock,
+        patch.object(
+            eagle_api,
+            "web_sayfa_oku",
+            return_value="",
+        ),
+        patch.object(
+            eagle_api,
+            "eagle_webden_ogren",
+            return_value=False,
+        ),
+        patch.object(
+            type(eagle_api.merkez_motor),
+            "net_sayisal_cevap",
+            return_value=("", 0.0),
+        ),
+        patch.object(
+            eagle_api,
+            "spor_skoru_direkt_cevapla",
+            side_effect=AssertionError(
+                "Ekonomi sorgusu spor skoruna yönlendirildi."
+            ),
+        ),
+        patch.object(
+            eagle_api,
+            "spor_fikstur_direkt_cevapla",
+            side_effect=AssertionError(
+                "Ekonomi sorgusu spor fikstürüne yönlendirildi."
+            ),
+        ),
+    ):
+        yanit = eagle_api.app.test_client().post(
+            "/api/sohbet",
+            json={"message": soru, "history": []},
+        )
+
+    veri = yanit.get_json() or {}
+    cevap = str(veri.get("answer", ""))
+
+    assert yanit.status_code == 200, veri
+    assert veri.get("ok") is True, veri
+    assert veri.get("merkez_motor") is True, veri
+    assert veri.get("eagle_direct") is True, veri
+    assert "%29,77" in cevap, cevap
+    assert "%2,58" in cevap, cevap
+    assert "fiyatların düştüğünü değil" in cevap, cevap
+    assert "reel satın alma gücü" in cevap, cevap
+    assert web_mock.call_count == 1, web_mock.call_count
     assert not veri.get("security_blocked"), veri
     assert not veri.get("code_analysis"), veri
 
@@ -2304,6 +2431,8 @@ test("Python konu eşleşmesi", konu_eslesme_test)
 test("Temel Python soru-cevap kalitesi", temel_python_soru_cevap_test)
 test("Matematik bilgi bankası", matematik_test)
 test("Karar motoru", karar_motoru_test)
+test("Türkiye alım gücü TCMB verisi", turkiye_alim_gucu_tcmb_verisi_test)
+test("TCMB alım gücü gerçek API ve merkez motoru", tcmb_alim_gucu_api_gercek_motor_test)
 test("Ekonomi ve spor yönlendirme ayrımı", spor_ekonomi_yonlendirme_regresyon_test)
 test("Ekonomi sorusu API web-merkez zinciri", ekonomi_sorusu_api_web_merkez_zinciri_test)
 test("Kod analiz motoru", kod_analiz_import_test)

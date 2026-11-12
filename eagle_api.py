@@ -6132,15 +6132,16 @@ def web_arastir(sorgu, limit=6):
 
         elif kaynak == "bing":
             for baslik in soup.select("li.b_algo h2"):
-                link = baslik.find("a")
-
-                # Bing güncel HTML yapısında bağlantı h2 içinde olmayabilir.
+                # Bing sonuç bağlantısı h2 etiketini saran a etiketindedir.
+                link = baslik.find_parent("a", href=True)
                 kapsayici = baslik.find_parent("li")
 
                 if not link and kapsayici:
+                    link = kapsayici.select_one(".b_algoheader a[href]")
+
+                if not link and kapsayici:
                     for aday in kapsayici.select("a[href]"):
-                        href = aday.get("href", "").strip()
-                        if href.startswith(("http://", "https://")):
+                        if aday.select_one("h2"):
                             link = aday
                             break
 
@@ -6197,12 +6198,23 @@ def web_arastir(sorgu, limit=6):
 
         if ekonomi_arama:
             soru_norm = str(sorgu).casefold()
+            turkiye_ekonomi_arama = bool(
+                re.search(
+                    r"\b(türkiye|turkiye|tcmb|tüik|tuik)\b",
+                    soru_norm,
+                )
+            )
 
             if re.search(r"\btaylor\b", soru_norm):
                 arama_sorgusu = (
                     '"Taylor rule" monetary policy '
                     '"inflation target" "policy rate" '
                     '"Federal Reserve" "St. Louis Fed"'
+                )
+            elif turkiye_ekonomi_arama:
+                arama_sorgusu = (
+                    "Türkiye güncel enflasyon TÜİK tüketici fiyat endeksi "
+                    "alım gücü reel ücret TCMB"
                 )
             elif (
                 re.search(r"\b(enflasyon|enflasyonu)\b", soru_norm)
@@ -6532,6 +6544,182 @@ def web_arastir(sorgu, limit=6):
                 flush=True
             )
 
+        # Türkiye ekonomi sorularında genel aramaya ek olarak
+        # doğrulanmış TCMB sorgularını ayrı ayrı dene.
+        # Sonuçların resmî kaynak ve konu kontrolü aşağıdaki
+        # mevcut filtreleme aşamasında yapılır.
+        if ekonomi_arama and turkiye_ekonomi_arama:
+            tcmb_hedefli_sorgular = [
+                'site:tcmb.gov.tr "Enflasyon Raporu" 2026',
+                'site:tcmb.gov.tr enflasyon beklentileri Kasım 2026',
+            ]
+
+            for hedefli_sorgu in tcmb_hedefli_sorgular:
+                try:
+                    hedefli_url = (
+                        "https://www.bing.com/search?q="
+                        + quote(hedefli_sorgu)
+                        + "&mkt=tr-TR&setLang=tr&count=10"
+                    )
+                    hedefli_cevap = requests.get(
+                        hedefli_url,
+                        headers=headers,
+                        timeout=15,
+                    )
+
+                    if hedefli_cevap.status_code != 200:
+                        print(
+                            "⚠️ TCMB hedefli arama HTTP "
+                            f"{hedefli_cevap.status_code}",
+                            flush=True,
+                        )
+                        continue
+
+                    hedefli_soup = BeautifulSoup(
+                        hedefli_cevap.text,
+                        "html.parser",
+                    )
+                    hedefli_sonuclar = sonuclari_ayikla(
+                        hedefli_soup,
+                        "bing",
+                    )
+
+                    if hedefli_sonuclar:
+                        tum_sonuclar.extend(hedefli_sonuclar)
+
+                    print(
+                        "🌐 TCMB hedefli arama: "
+                        f"{len(hedefli_sonuclar)} sonuç",
+                        flush=True,
+                    )
+
+                except Exception as e:
+                    print(
+                        f"⚠️ TCMB hedefli arama hatası: {e}",
+                        flush=True,
+                    )
+
+        # Türkiye ekonomi sorularında TCMB'nin yayımladığı
+        # TÜFE tablosundan en yeni dönemi doğrudan oku.
+        if ekonomi_arama and turkiye_ekonomi_arama:
+            tcmb_tufe_url = (
+                "https://www.tcmb.gov.tr/wps/wcm/connect/TR/"
+                "TCMB+TR/Main+Menu/Istatistikler/Enflasyon+Verileri/"
+                "Tuketici+Fiyatlari"
+            )
+
+            try:
+                tufe_cevap = requests.get(
+                    tcmb_tufe_url,
+                    headers=headers,
+                    timeout=15,
+                )
+
+                if tufe_cevap.status_code == 200:
+                    tufe_soup = BeautifulSoup(
+                        tufe_cevap.text,
+                        "html.parser",
+                    )
+
+                    ay_adlari = {
+                        1: "Ocak", 2: "Şubat", 3: "Mart",
+                        4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                        7: "Temmuz", 8: "Ağustos", 9: "Eylül",
+                        10: "Ekim", 11: "Kasım", 12: "Aralık",
+                    }
+
+                    tufe_verileri = []
+
+                    for tablo_satiri in tufe_soup.select("tr"):
+                        hucreler = [
+                            hucre.get_text(" ", strip=True)
+                            for hucre in tablo_satiri.find_all(["td", "th"])
+                        ]
+
+                        if len(hucreler) < 3:
+                            continue
+
+                        tarih_eslesmesi = re.fullmatch(
+                            r"\s*(\d{1,2})[-/.](20\d{2})\s*",
+                            hucreler[0],
+                        )
+                        if not tarih_eslesmesi:
+                            continue
+
+                        ay = int(tarih_eslesmesi.group(1))
+                        yil = int(tarih_eslesmesi.group(2))
+
+                        if not 1 <= ay <= 12:
+                            continue
+
+                        try:
+                            yillik = float(
+                                hucreler[1].replace("%", "").replace(",", ".")
+                            )
+                            aylik = float(
+                                hucreler[2].replace("%", "").replace(",", ".")
+                            )
+                        except (TypeError, ValueError):
+                            continue
+
+                        tufe_verileri.append(
+                            (yil, ay, yillik, aylik)
+                        )
+
+                    if tufe_verileri:
+                        yil, ay, yillik, aylik = max(
+                            tufe_verileri,
+                            key=lambda x: (x[0], x[1]),
+                        )
+
+                        ay_adi = ay_adlari[ay]
+                        yillik_metin = f"{yillik:.2f}".replace(".", ",")
+                        aylik_metin = f"{aylik:.2f}".replace(".", ",")
+
+                        tcmb_tufe_sonucu = {
+                            "title": (
+                                f"TCMB - Tüketici Fiyatları "
+                                f"({ay_adi} {yil})"
+                            ),
+                            "url": tcmb_tufe_url,
+                            "snippet": (
+                                f"TÜFE {ay_adi} {yil}: "
+                                f"yıllık değişim %{yillik_metin}; "
+                                f"aylık değişim %{aylik_metin}. "
+                                "Kaynak: Türkiye Cumhuriyet Merkez Bankası. "
+                                "Endeks verileri TÜİK tarafından yayımlanır."
+                            ),
+                        }
+
+                        # Aynı URL arama sonuçlarında da varsa,
+                        # doğrulanmış tablo verisi önce işlensin.
+                        tum_sonuclar.insert(0, tcmb_tufe_sonucu)
+
+                        print(
+                            "📊 TCMB TÜFE tablosu: "
+                            f"{ay_adi} {yil}, yıllık %{yillik_metin}, "
+                            f"aylık %{aylik_metin}",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            "⚠️ TCMB sayfası açıldı ancak TÜFE tablosu "
+                            "satırları ayrıştırılamadı.",
+                            flush=True,
+                        )
+                else:
+                    print(
+                        f"⚠️ TCMB TÜFE sayfası HTTP "
+                        f"{tufe_cevap.status_code}",
+                        flush=True,
+                    )
+
+            except Exception as e:
+                print(
+                    f"⚠️ TCMB TÜFE verisi alınamadı: {e}",
+                    flush=True,
+                )
+
         taylor_arama = bool(
             re.search(r"\btaylor\b", str(sorgu).casefold())
         )
@@ -6542,11 +6730,47 @@ def web_arastir(sorgu, limit=6):
             # Ekonomi sorularında arama motoruna gönderilen
             # İngilizce/ek bağlam da sonuç filtresine dahil edilir.
             filtre_sorgusu = (
-                arama_sorgusu
-                if ekonomi_arama
-                else sorgu
+                "Türkiye enflasyon tuik tcmb"
+                if ekonomi_arama and turkiye_ekonomi_arama
+                else (
+                    arama_sorgusu
+                    if ekonomi_arama
+                    else sorgu
+                )
             )
             soru = str(filtre_sorgusu or "").casefold()
+
+            def turkiye_ekonomi_resmi_sonucu_mu(sonuc):
+                if not (ekonomi_arama and turkiye_ekonomi_arama):
+                    return False
+
+                kaynak_url = web_kaynak_url(
+                    str(sonuc.get("url", "") or "")
+                )
+                kaynak_host = urlparse(kaynak_url).netloc.casefold().split(":")[0]
+                resmi_host = (
+                    kaynak_host == "tuik.gov.tr"
+                    or kaynak_host.endswith(".tuik.gov.tr")
+                    or kaynak_host == "tcmb.gov.tr"
+                    or kaynak_host.endswith(".tcmb.gov.tr")
+                )
+                if not resmi_host:
+                    return False
+
+                konu_metni = (
+                    f"{sonuc.get('title', '')} "
+                    f"{sonuc.get('snippet', '')}"
+                ).casefold()
+                return bool(re.search(
+                    r"tüfe|tufe|tüketici fiyat|tuketici fiyat|"
+                    r"enflasyon|fiyat endeksi|üretici fiyat|"
+                    r"uretici fiyat|sektörel enflasyon|"
+                    r"sektorel enflasyon|enflasyon beklenti|"
+                    r"reel ücret|reel ucret|satın alma gücü|"
+                    r"satin alma gucu",
+                    konu_metni,
+                ))
+
             sorgu_kelime = {
                 k for k in re.findall(r"[a-z0-9çğıöşü]+", soru)
                 if len(k) >= 4
@@ -6560,9 +6784,20 @@ def web_arastir(sorgu, limit=6):
                     f"{sonuc.get('snippet', '')}"
                 ).casefold()
 
-                if not _web_yagmur_ormani_sonucu_uygun_mu(sorgu, sonuc):
+                if turkiye_ekonomi_resmi_sonucu_mu(sonuc):
+                    kaynak_url = web_url_tekillestirme_anahtari(
+                        sonuc.get("url", "")
+                    )
+                    if kaynak_url and kaynak_url in gorulen_url_anahtarlari:
+                        continue
+                    if kaynak_url:
+                        gorulen_url_anahtarlari.add(kaynak_url)
+                    ilgili_sonuclar.append(sonuc)
                     continue
-                if _web_yagmur_ormani_sorgusu_mu(sorgu):
+
+                if not _web_yagmur_ormani_sonucu_uygun_mu(soru, sonuc):
+                    continue
+                if _web_yagmur_ormani_sorgusu_mu(soru):
                     ilgili_sonuclar.append(sonuc)
                     continue
                 # Taylor Kuralı sorgusunda yalnızca güvenilir
@@ -6583,7 +6818,7 @@ def web_arastir(sorgu, limit=6):
                     ):
                         continue
 
-                if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
+                if _web_sonucu_sorguyla_ilgili_mi(soru, sonuc):
                     kaynak_url = web_url_tekillestirme_anahtari(
                         sonuc.get("url", "")
                     )
@@ -6967,28 +7202,40 @@ def web_arastir(sorgu, limit=6):
 
             ilgili_ilk_sonuclar = [
                 sonuc for sonuc in ilk_sonuclar
-                if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc)
+                if (
+                    turkiye_ekonomi_resmi_sonucu_mu(sonuc)
+                    or _web_sonucu_sorguyla_ilgili_mi(filtre_sorgusu, sonuc)
+                )
             ]
             print(
                 f"🧠 Web toplam: {len(ilk_sonuclar)} sonuç; "
                 f"ilgili: {len(ilgili_ilk_sonuclar)} (çoklu kaynak)",
                 flush=True
             )
-            # Tam başlık eşleşen Türkçe Wikipedia maddesini öne al.
-            konu = _web_arama_sorgusunu_sadelestir(sorgu).casefold().strip()
-            ilgili_ilk_sonuclar.sort(
-                key=lambda x: (
-                    not (
-                        x.get("url", "").startswith(
-                            "https://tr.wikipedia.org/wiki/"
-                        )
-                        and x.get("title", "").casefold().strip() == konu
-                    ),
-                    not x.get("url", "").startswith(
-                        "https://tr.wikipedia.org/wiki/"
-                    ),
+            if ekonomi_arama and turkiye_ekonomi_arama:
+                # Türkiye ekonomi sorgularında resmî veri kaynakları öne alınır.
+                ilgili_ilk_sonuclar.sort(
+                    key=lambda x: (
+                        not turkiye_ekonomi_resmi_sonucu_mu(x),
+                        -baslik_puani(x),
+                    )
                 )
-            )
+            else:
+                # Genel aramalarda mevcut Wikipedia önceliğini koru.
+                konu = _web_arama_sorgusunu_sadelestir(sorgu).casefold().strip()
+                ilgili_ilk_sonuclar.sort(
+                    key=lambda x: (
+                        not (
+                            x.get("url", "").startswith(
+                                "https://tr.wikipedia.org/wiki/"
+                            )
+                            and x.get("title", "").casefold().strip() == konu
+                        ),
+                        not x.get("url", "").startswith(
+                            "https://tr.wikipedia.org/wiki/"
+                        ),
+                    )
+                )
             return ilgili_ilk_sonuclar
 
         return []
