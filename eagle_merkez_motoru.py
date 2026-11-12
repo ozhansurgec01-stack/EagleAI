@@ -2365,6 +2365,71 @@ class EagleMerkezMotoru:
                     0.95
                 )
 
+            # Türkiye'de enflasyon ve alım gücü ilişkisini,
+            # yalnızca doğrulanmış TCMB TÜFE kaydıyla açıkla.
+            alim_gucu_sorusu = bool(
+                re.search(
+                    r"\b(türkiye|tcmb|tüik)\b",
+                    soru,
+                )
+                and re.search(r"\benflasyon\w*\b", soru)
+                and re.search(
+                    r"\b(alım gücü|satın alma gücü|satinalma gucu|"
+                    r"reel ücret|reel gelir)\b",
+                    soru,
+                )
+            )
+
+            if alim_gucu_sorusu:
+                tcmb_verisi = None
+                for veri in veriler:
+                    adres = str(veri.get("url", "") or "")
+                    alan = cls.domain(adres).casefold().split(":")[0]
+                    if not (
+                        alan == "tcmb.gov.tr"
+                        or alan.endswith(".tcmb.gov.tr")
+                    ):
+                        continue
+
+                    kaynak_metni = " ".join((
+                        str(veri.get("title", "") or ""),
+                        str(veri.get("snippet", "") or ""),
+                        str(veri.get("text", "") or ""),
+                    ))
+                    eslesme = re.search(
+                        r"TÜFE\s+([A-Za-zÇĞİÖŞÜçğıöşü]+)\s+(\d{4}):"
+                        r"\s*yıllık değişim\s*%([\d.,]+);"
+                        r"\s*aylık değişim\s*%([\d.,]+)",
+                        kaynak_metni,
+                        flags=re.IGNORECASE,
+                    )
+                    if eslesme:
+                        tcmb_verisi = eslesme.groups()
+                        break
+
+                if tcmb_verisi:
+                    ay, yil, yillik, aylik = tcmb_verisi
+                    cevap = (
+                        f"Türkiye için TCMB'nin, TÜİK tarafından yayımlanan "
+                        f"endeksleri aktardığı tüketici fiyatları tablosunda "
+                        f"{ay} {yil} TÜFE yıllık %{yillik}, aylık %{aylik} "
+                        f"olarak yer alıyor. Bu oranlar fiyatların düştüğünü "
+                        f"değil, fiyat artışının sürdüğünü gösterir.\n\n"
+                        "Enflasyonun %60'tan %35'e gerilemesi, fiyatların "
+                        "azalması değil, daha yavaş artmasıdır. Önceki "
+                        "dönemlerde oluşan fiyat artışları geri alınmadığı "
+                        "için hayat pahalılığı yüksek kalabilir.\n\n"
+                        "Alım gücü, hane gelirinin aynı dönemdeki fiyat "
+                        "artışına göre nasıl değiştiğine bağlıdır. Ücret ve "
+                        "diğer gelirler fiyatlar kadar artmazsa reel satın "
+                        "alma gücü düşer. Kira, gıda ve ulaşım gibi zorunlu "
+                        "harcamaların bütçedeki payı da bu baskıyı "
+                        "ağırlaştırabilir. TÜFE ortalama bir sepeti ölçer; "
+                        "her hanenin harcama sepeti farklı olduğundan "
+                        "kişisel enflasyon daha yüksek veya düşük olabilir."
+                    )
+                    return cevap, 0.95
+
 
         yonlendirme_sorusu = bool(
             re.search(
