@@ -2363,6 +2363,8 @@ def doviz_arama_sorgusu(mesaj):
         "sterlin": "GBP",
         "sterlinı": "GBP",
         "sterlini": "GBP",
+        "pound": "GBP",
+        "pounds": "GBP",
     }
 
     kur_istegi = any(
