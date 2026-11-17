@@ -449,6 +449,73 @@ def voleybol_takim_eslesme_regresyon_test():
     finally:
         eagle_api.tvf_voleybol_sonuclari_getir = orijinal
 
+
+def doviz_miktar_donusum_regresyon_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+    from eagle_api import doviz_arama_sorgusu
+
+    kaynaklar = {
+        "GBP": [{
+            "title": "1 GBP = 56.25 TL bugün",
+            "snippet": "Güncel Sterlin kuru",
+            "url": "https://test.example/gbp",
+        }],
+        "USD": [{
+            "title": "1 USD = 42.50 TL bugün",
+            "snippet": "Güncel dolar kuru",
+            "url": "https://test.example/usd",
+        }],
+        "EUR": [{
+            "title": "1 EUR = 49.75 TL bugün",
+            "snippet": "Güncel euro kuru",
+            "url": "https://test.example/eur",
+        }],
+    }
+
+    senaryolar = [
+        ("1000 pound kaç TL?", "GBP", "56.250 TL"),
+        ("100 sterlin kaç TL?", "GBP", "5.625 TL"),
+        ("1.000 pound kaç TL?", "GBP", "56.250 TL"),
+        ("1,5 pound kaç TL?", "GBP", "84,38 TL"),
+        ("100 dolar kaç TL?", "USD", "4.250 TL"),
+        ("100 euro kaç TL?", "EUR", "4.975 TL"),
+    ]
+
+    for soru, kod, beklenen in senaryolar:
+        cevap, guven = EagleMerkezMotoru.genel_doviz_cevabi(
+            soru, kaynaklar[kod]
+        )
+        assert beklenen in cevap, (
+            f"{soru}: beklenen {beklenen}, gelen {cevap}"
+        )
+        assert guven >= 0.75, f"Güven düşük: {soru}: {guven}"
+
+    cevap, _ = EagleMerkezMotoru.genel_doviz_cevabi(
+        "1 GBP kaç TL?", kaynaklar["GBP"]
+    )
+    assert cevap == "GBP: 56.25 TL", (
+        f"Tekil kur sorgusunun biçimi değişti: {cevap}"
+    )
+
+    liste, _ = EagleMerkezMotoru.genel_doviz_cevabi(
+        "Döviz kurları",
+        kaynaklar["USD"] + kaynaklar["EUR"] + kaynaklar["GBP"]
+    )
+    for kod in ("USD:", "EUR:", "GBP:"):
+        assert kod in liste, f"Genel döviz listesinde {kod} eksik: {liste}"
+
+    api_senaryolari = (
+        ("1000 pound kaç TL?", "1 Sterlin kaç TL"),
+        ("100 dolar kaç TL?", "1 USD"),
+        ("100 euro kaç TL?", "1 EUR"),
+    )
+    for soru, beklenen in api_senaryolari:
+        sonuc = doviz_arama_sorgusu(soru)
+        assert beklenen in sonuc, (
+            f"API sorgusu hatalı: {soru}: {sonuc}"
+        )
+
+
 def api_fonksiyon_test():
     import eagle_api
 
@@ -475,6 +542,7 @@ test("Kod analiz motoru", kod_analiz_import_test)
 test("AutoFix", autofix_import_test)
 test("BooleanComparison AutoFix", boolean_autofix_test)
 test("Voleybol takım eşleşmesi ve genel sonuçlar", voleybol_takim_eslesme_regresyon_test)
+test("Döviz miktar dönüşümü ve API sorguları", doviz_miktar_donusum_regresyon_test)
 test("API /api/sohbet altyapısı", api_fonksiyon_test)
 
 print()
