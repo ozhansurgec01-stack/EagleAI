@@ -1330,7 +1330,7 @@ class EagleMerkezMotoru:
             re.search(
                 r"\bdoviz\b|\bdöviz\b|\bdövizleri\b|"
                 r"\bdöviz kurları\b|\bdöviz kuru\b|"
-                r"\bdolar\b|\beuro\b|\bstерlin\b|\bsterlin\b|"
+                r"\bdolar\b|\beuro\b|\bstерlin\b|\bsterlin\b|\bpound\b|\bpounds\b|"
                 r"\busd\b|\beur\b|\bgbp\b",
                 mesaj_norm,
                 flags=re.IGNORECASE
@@ -1343,7 +1343,7 @@ class EagleMerkezMotoru:
         para_birimleri = (
             ("USD", ("usd", "dolar")),
             ("EUR", ("eur", "euro")),
-            ("GBP", ("gbp", "sterlin")),
+            ("GBP", ("gbp", "sterlin", "pound", "pounds")),
         )
 
         # Tekil para birimi sorusunda yalnızca istenen kuru çıkar.
@@ -1606,6 +1606,54 @@ class EagleMerkezMotoru:
                 kaynak_sayisi
             )
 
+        def sayisal_deger(metin):
+            x = str(metin).strip().replace(" ", "")
+            try:
+                if "," in x and "." in x:
+                    if x.rfind(",") > x.rfind("."):
+                        x = x.replace(".", "").replace(",", ".")
+                    else:
+                        x = x.replace(",", "")
+                elif "," in x:
+                    parca = x.split(",")
+                    x = x.replace(",", ".") if len(parca) == 2 and len(parca[1]) <= 4 else x.replace(",", "")
+                elif "." in x:
+                    parca = x.split(".")
+                    if not (len(parca) == 2 and len(parca[1]) <= 2):
+                        x = x.replace(".", "")
+                return float(x)
+            except (TypeError, ValueError):
+                return None
+
+        def turkce_sayi(deger, ondalik=True):
+            metin = f"{deger:,.2f}"
+            if not ondalik or abs(deger - round(deger)) < 0.000001:
+                metin = f"{deger:,.0f}"
+            else:
+                metin = metin.rstrip("0").rstrip(".")
+            return metin.replace(",", "X").replace(".", ",").replace("X", ".")
+
+        miktar = None
+        miktar_gorunen = None
+
+        if tekil_kod:
+            kod_adlari = dict((kod, adlar) for kod, adlar in (
+                ("USD", ("usd", "dolar")),
+                ("EUR", ("eur", "euro")),
+                ("GBP", ("gbp", "sterlin", "pound", "pounds")),
+            ))
+            adlar = kod_adlari[tekil_kod]
+            miktar_eslesmesi = re.search(
+                r"(?<![\w])([0-9][0-9.,]*)\s*(?:" +
+                "|".join(re.escape(ad) for ad in adlar) +
+                r")\b",
+                mesaj_norm,
+                re.IGNORECASE
+            )
+            if miktar_eslesmesi:
+                miktar = sayisal_deger(miktar_eslesmesi.group(1))
+                miktar_gorunen = turkce_sayi(miktar) if miktar is not None else None
+
         bulunan = {}
 
         for kod, adlar in para_birimleri:
@@ -1673,6 +1721,16 @@ class EagleMerkezMotoru:
 
         if not sirali:
             return None, 0.0
+
+        if tekil_kod and miktar is not None and miktar != 1:
+            kur_degeri = sayisal_deger(bulunan[tekil_kod][0])
+            if kur_degeri is not None:
+                sonuc_tl = miktar * kur_degeri
+                kur_gorunen = turkce_sayi(kur_degeri)
+                toplam_gorunen = turkce_sayi(sonuc_tl)
+                sirali = [
+                    f"{miktar_gorunen} {tekil_kod} × {kur_gorunen} TL = {toplam_gorunen} TL"
+                ]
 
         toplam_kaynak = sum(
             bulunan[kod][1]
