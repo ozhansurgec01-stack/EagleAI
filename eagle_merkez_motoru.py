@@ -1831,6 +1831,7 @@ class EagleMerkezMotoru:
         mesaj,
         veriler,
         sayfa_okuyucu=None,
+        genel_sayfa_okuyucu=None,
     ):
         """
         Genel web sorularında kaynak sayfalarını okuyup,
@@ -2172,8 +2173,16 @@ class EagleMerkezMotoru:
                         )
                     )
 
-                    # Önce tam konu başlıklı kaynağı dene.
-                    # Sayfa okuyucu varsa gerçek sayfa metnini de kullan.
+                    # Başlık ve konu uyumunu birlikte puanla.
+                    baslik_kelime = set(re.findall(
+                        r"[a-z0-9çğıöşü]+", baslik_norm
+                    ))
+                    baslik_eslesme = sum(
+                        1 for k in konu_kelime if k in baslik_kelime
+                    )
+                    baslik_puani = baslik_eslesme * 6
+                    if tam_baslik:
+                        baslik_puani += 20
                     icerikler = []
                     url = str(v.get("url", "") or "").strip()
                     # Video ve oynatma listelerini genel tanıtım kaynağı yapma.
@@ -2200,10 +2209,13 @@ class EagleMerkezMotoru:
                         re.IGNORECASE,
                     ):
                         continue
-                    if tam_baslik and sayfa_okuyucu:
+                    if (
+                        (tam_baslik or baslik_eslesme > 0)
+                        and (genel_sayfa_okuyucu or sayfa_okuyucu)
+                    ):
                         if url:
                             try:
-                                sayfa_metni = str(sayfa_okuyucu(url) or "").strip()
+                                sayfa_metni = str((genel_sayfa_okuyucu or sayfa_okuyucu)(url) or "").strip()
                                 if sayfa_metni:
                                     icerikler.append(sayfa_metni)
                             except Exception as e:
@@ -2218,27 +2230,13 @@ class EagleMerkezMotoru:
                             icerikler.append(metin)
                         if ozet:
                             icerikler.append(ozet)
-                    # Alt konu başlıkları (ör. İzmir Metrosu),
-                    # genel tanıtımın önüne geçmesin.
-                    oncelik = 0 if tam_baslik else 1
                     for icerik in icerikler:
                         kaynaklar_hizli.append(
-                            (oncelik, baslik, icerik)
+                            (baslik_puani, baslik, icerik)
                         )
 
-                # Genel tanıtımda alt başlıkları (metro, liman,
-                # cezaevi vb.) birleştirerek konu dışı cevap üretme.
-                # Tam başlık eşleşmesi yoksa hızlı yol cevap vermesin;
-                # alttaki mevcut analiz akışı devam etsin.
-                tam_kaynaklar = [
-                    x for x in kaynaklar_hizli if x[0] == 0
-                ]
-                if not tam_kaynaklar:
-                    raise ValueError(
-                        "Genel tanıtım için tam başlıklı kaynak bulunamadı"
-                    )
-                kaynaklar_hizli = tam_kaynaklar
-                kaynaklar_hizli.sort(key=lambda x: x[0])
+                # Tam başlık zorunlu değil; ilgili kaynakları puanla.
+                kaynaklar_hizli.sort(key=lambda x: x[0], reverse=True)
                 aday_cumleler = []
                 gorulen_cumleler = set()
 
@@ -2304,18 +2302,17 @@ class EagleMerkezMotoru:
                         ):
                             continue
 
-                        # Konu doğrudan cümlede geçmeli; alt başlıkta
-                        # geçmesi tek başına yeterli sayılmaz.
-                        if konu_kelime and not any(
-                            k in norm for k in konu_kelime
-                        ):
+                        cumle_eslesme = sum(
+                            1 for k in konu_kelime if k in norm
+                        )
+                        if konu_kelime and cumle_eslesme == 0:
                             continue
 
+                        cumle_puani = oncelik + cumle_eslesme * 10
                         gorulen_cumleler.add(norm)
-                        aday_cumleler.append((oncelik, cumle))
+                        aday_cumleler.append((cumle_puani, cumle))
 
-                # Tam konu başlıklı kaynaklardan gelen cümleleri öncele.
-                aday_cumleler.sort(key=lambda x: x[0])
+                aday_cumleler.sort(key=lambda x: x[0], reverse=True)
                 secilen = [c for _, c in aday_cumleler[:6]]
 
                 # Genel tanıtımda haber ve tekil olay cümlelerini ele.
@@ -4822,6 +4819,7 @@ class EagleMerkezMotoru:
         mevcut_cevap="",
         sayfa_okuyucu=None,
         web_arayici=None,
+        genel_sayfa_okuyucu=None,
     ):
         """
         Merkezi koordinasyon noktası.
@@ -4909,7 +4907,8 @@ class EagleMerkezMotoru:
             genel_cevap, genel_guven = self.genel_web_cevabi(
                 mesaj,
                 [],
-                sayfa_okuyucu=sayfa_okuyucu
+                sayfa_okuyucu=sayfa_okuyucu,
+                genel_sayfa_okuyucu=genel_sayfa_okuyucu
             )
 
             if genel_cevap and genel_guven >= 0.75:
@@ -5089,7 +5088,8 @@ class EagleMerkezMotoru:
         genel_cevap, genel_guven = self.genel_web_cevabi(
             mesaj,
             veriler,
-            sayfa_okuyucu=sayfa_okuyucu
+            sayfa_okuyucu=sayfa_okuyucu,
+            genel_sayfa_okuyucu=genel_sayfa_okuyucu
         )
 
         if genel_cevap and genel_guven >= 0.75:
