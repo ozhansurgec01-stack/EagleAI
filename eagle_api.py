@@ -4314,6 +4314,8 @@ def web_arastirma_gerekli(mesaj):
         "araştır", "arastir",
         "araştırır mısın",
         "bulur musun",
+        "hakkında bilgi", "hakkinda bilgi",
+        "ile ilgili bilgi", "ile ilgili bilgiler",
         "nedir", "ne demek", "ne işe yarar", "ne ise yarar",
         "nasıl çalışır", "nasil calisir"
     ]
