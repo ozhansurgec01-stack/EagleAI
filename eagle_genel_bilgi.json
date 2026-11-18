@@ -1,0 +1,46 @@
+[
+  {
+    "anahtarlar": [
+      "Türkiye'nin başkenti neresi",
+      "Türkiye'nin başkenti neresidir",
+      "Türkiye başkenti neresi",
+      "Türkiye başkenti neresidir",
+      "Türkiye'nin başkenti"
+    ],
+    "cevap": "Ankara"
+  },
+  {
+    "anahtarlar": [
+      "Dünya'nın doğal uydusu",
+      "Dünya doğal uydusu nedir",
+      "Dünya'nın uydusu nedir"
+    ],
+    "cevap": "Ay"
+  },
+  {
+    "anahtarlar": [
+      "Güneş sisteminin en büyük gezegeni",
+      "En büyük gezegen hangisi",
+      "En büyük gezegen hangisidir"
+    ],
+    "cevap": "Jüpiter"
+  },
+  {
+    "anahtarlar": [
+      "Suyun kimyasal formülü",
+      "Su kimyasal formülü nedir",
+      "Suyun formülü nedir"
+    ],
+    "cevap": "H₂O"
+  },
+  {
+    "anahtarlar": [
+      "Güneş bir yıldız mı",
+      "Güneş yıldız mıdır",
+      "Güneş nedir",
+      "Güneş bir yıldız mıdır",
+      "Güneş bir yıldız mıdır?"
+    ],
+    "cevap": "Güneş bir yıldızdır."
+  }
+]

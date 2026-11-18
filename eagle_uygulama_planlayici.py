@@ -237,6 +237,29 @@ class EagleUygulamaPlanlayici:
 
         gereksinimler = self._gereksinimleri_cikar(mesaj, konu)
 
+        # EAGLEAI_FINANSAL_RISK_CSV_PROFILI_V1
+        finans_terimleri = (
+            "finans", "gelir", "gider", "nakit", "borc", "borç",
+            "stok", "risk puani", "risk puanı", "finansal risk",
+        )
+        finans_eslesme = sum(1 for x in finans_terimleri if x in k)
+        finansal_risk_csv = (
+            "csv" in k
+            and finans_eslesme >= 3
+            and any(x in k for x in ("risk", "analiz", "puan"))
+        )
+        if finansal_risk_csv:
+            gereksinimler["varliklar"] = ["finansal_kayit"]
+            gereksinimler["alanlar"] = {
+                "finansal_kayit": [
+                    "id", "tarih", "gelir", "gider",
+                    "nakit_akisi", "borc", "stok",
+                ]
+            }
+            gereksinimler["islemler"] = ["csv_oku", "analiz", "risk_puani"]
+            gereksinimler["ekranlar"] = ["csv_yukle", "analiz_sonucu"]
+            gereksinimler["iliskiler"] = []
+
         if tam_uygulama:
             veri_tabanli = True
             api_istegi = True
@@ -281,4 +304,6 @@ class EagleUygulamaPlanlayici:
             "ekranlar": gereksinimler["ekranlar"],
             "iliskiler": gereksinimler["iliskiler"],
             "harici_kaynak_gerekli": dis_kaynak,
+            "finansal_risk_csv": finansal_risk_csv,
+            "csv_girdisi": finansal_risk_csv,
         }

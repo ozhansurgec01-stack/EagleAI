@@ -50,6 +50,7 @@ from sympy.parsing.sympy_parser import (
     convert_xor,
 )
 import operator
+from decimal import Decimal, ROUND_HALF_UP
 import subprocess
 import sys
 from pathlib import Path
@@ -516,6 +517,67 @@ def hafiza_ekle(bilgi):
     return True
 
 
+def finans_verisini_ayristir(merkez_cevap):
+    """Doğrulanmış altın ve döviz cevaplarını Android kart verisine dönüştürür."""
+    finans_verisi = None
+    altin_urun = None
+    altin_alis = None
+    altin_satis = None
+    altin_ogeleri = []
+
+    for satir in str(merkez_cevap or "").splitlines():
+        baslik = re.search(r"\*\*(.+?)\*\*", satir)
+        if baslik:
+            aday = baslik.group(1).strip()
+            if "ALTIN FİYATLARI" not in aday.upper():
+                altin_urun = aday
+                altin_alis = None
+                altin_satis = None
+
+        alis = re.search(r"Alış:\s*([\d.,]+)\s*TL", satir, re.I)
+        satis = re.search(r"Satış:\s*([\d.,]+)\s*TL", satir, re.I)
+
+        if alis:
+            altin_alis = alis.group(1)
+        if satis:
+            altin_satis = satis.group(1)
+
+        if altin_urun and altin_alis and altin_satis:
+            altin_ogeleri.append({
+                "name": altin_urun,
+                "buy": altin_alis,
+                "sell": altin_satis,
+            })
+            altin_urun = None
+            altin_alis = None
+            altin_satis = None
+
+    if altin_ogeleri:
+        return {
+            "type": "gold",
+            "items": altin_ogeleri,
+        }
+
+    doviz_ogeleri = []
+    for eslesme in re.finditer(
+        r"\b(USD|EUR|GBP):\s*([\d.,]+)\s*TL",
+        str(merkez_cevap or ""),
+        re.I,
+    ):
+        doviz_ogeleri.append({
+            "code": eslesme.group(1).upper(),
+            "value": eslesme.group(2),
+        })
+
+    if doviz_ogeleri:
+        return {
+            "type": "currency",
+            "items": doviz_ogeleri,
+        }
+
+    return None
+
+
 def sohbet_hafizaya_ekle(soru, cevap, konu="", kaynak=None):
     soru = str(soru).strip()
     cevap = str(cevap).strip()
@@ -658,8 +720,74 @@ def bilgi_bankasi_yukle():
         print("⚠️ Bilgi bankası okunamadı:", e, flush=True)
     return {}
 
+def finans_fiyat_sorgusu_mu(mesaj):
+    metin = str(mesaj or "").casefold().replace("\u0307", "")
+    fiyat_niyeti = any(x in metin for x in (
+        "ne kadar", "nekadar", "fiyat", "kaç tl", "kac tl",
+        "kaç lira", "kac lira", "alış", "alis", "satış", "satis",
+    ))
+    kur_niyeti = any(x in metin for x in (
+        "kur", "kuru", "kaç tl", "kac tl", "kaç lira", "kac lira",
+    ))
+    altin_sorgusu = (
+        fiyat_niyeti
+        and any(x in metin for x in ("altın", "altin", "gram"))
+        and any(x in metin for x in ("altın", "altin"))
+    )
+    para_birimi = bool(re.search(
+        r"(?<!\w)(?:usd|dolar|eur|euro|gbp|sterlin)(?!\w)", metin
+    ))
+    genel_doviz = bool(re.search(
+        r"(?<!\w)(?:döviz|doviz)(?!\w)", metin
+    ))
+    doviz_sorgusu = (
+        (fiyat_niyeti and para_birimi)
+        or (kur_niyeti and (para_birimi or genel_doviz))
+    )
+    return (
+        altin_sorgusu
+        or doviz_sorgusu
+        or bitcoin_fiyat_sorgusu_mu(mesaj)
+    )
+
 def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").replace("İ", "i").lower()
+
+    # Genel bilgiler ayrı JSON dosyasından okunur.
+    genel_bilgi_dosyasi = Path(__file__).resolve().with_name("eagle_genel_bilgi.json")
+    try:
+        genel_kayitlar = json.loads(genel_bilgi_dosyasi.read_text(encoding="utf-8"))
+        def genel_norm(deger):
+            deger = str(deger or "").lower().translate(str.maketrans(
+                "çğıöşü", "cgiosu"
+            ))
+            deger = re.sub(r"[^a-z0-9\\s]", " ", deger)
+            return re.sub(r"\\s+", " ", deger).strip()
+
+        soru_norm = " " + genel_norm(metin) + " "
+        for kayit in genel_kayitlar:
+            if not isinstance(kayit, dict):
+                continue
+            cevap = str(kayit.get("cevap", "")).strip()
+            anahtarlar = kayit.get("anahtarlar", [])
+            if not cevap or not isinstance(anahtarlar, list):
+                continue
+            genel_sozcukler = {
+                "hakkında", "bilgi", "ver", "verir", "misin", "misiniz",
+                "lütfen", "anlat", "nedir", "acaba", "bana", "ile",
+                "ilgili", "kimdir", "neresidir"
+            }
+            for anahtar in anahtarlar:
+                ifade = genel_norm(anahtar)
+                if not ifade:
+                    continue
+                sozcukler = ifade.split()
+                if all(sozcuk in genel_sozcukler for sozcuk in sozcukler):
+                    continue
+                if (" " + ifade + " ") in soru_norm:
+                    return [cevap]
+    except (OSError, ValueError, TypeError) as hata:
+        print("Genel bilgi dosyası okunamadı:", hata, flush=True)
 
     # Yaygın Python yazım hatalarını normalize et
     metin = re.sub(r"\bpyhton\b", "python", metin)
@@ -1942,7 +2070,11 @@ def bilgi_bankasi_ara(mesaj):
         durak = {
             "bir", "ve", "veya", "ile", "için", "icin", "nasıl", "nasil",
             "ne", "nedir", "kaç", "kac", "hangi", "olan", "olarak",
-            "bu", "şu", "da", "de", "mi", "mı", "mu", "mü"
+            "bu", "şu", "da", "de", "mi", "mı", "mu", "mü",
+            "örnek", "örnekler", "günlük", "hayattan", "basitçe",
+            "açıkla", "acikla", "anlat", "ver", "verir", "verin",
+            "iki", "göre", "gore", "kod", "yazmadan", "birkaç",
+            "birkaçını", "sonrasında", "sonrası", "nasıl", "nasil"
         }
 
         sorgu_kelime = {
@@ -2213,7 +2345,7 @@ def hava_durumu_getir(mesaj):
         }
 
 
-# ============================================================
+# =====================================================
 # 🌐 ÜCRETSİZ WEB ARAŞTIRMA
 # DuckDuckGo HTML — ücretli API kullanılmaz
 # ============================================================
@@ -2239,7 +2371,7 @@ def doviz_arama_sorgusu(mesaj):
         ifade in metin
         for ifade in [
             "kur", "kuru", "kaç tl", "kac tl",
-            "kaç lira", "kac lira", "tl", "lira"
+            "kaç lira", "kac lira", "ne kadar", "nekadar", "tl", "lira"
         ]
     )
 
@@ -2316,7 +2448,6 @@ def spor_sorgusu_mu(mesaj):
         "kaç kaç", "kac kac",
         "kaç kaç bitti", "kac kac bitti",
         "maç sonucu", "mac sonucu",
-        "sonuç", "sonuc",
         "skor", "skorları", "skorlari"
     ]
 
@@ -2689,6 +2820,455 @@ def sembolik_denklem_coz(metin):
         return None
 
 
+
+
+def _eagle_tmdb_norm(metin):
+    """TMDb başlık karşılaştırması için Türkçe karakterleri normalize eder."""
+    import unicodedata
+    metin = unicodedata.normalize("NFKD", str(metin or "").casefold())
+    metin = "".join(c for c in metin if not unicodedata.combining(c))
+    metin = metin.replace("ı", "i")
+    return re.sub(r"[^a-z0-9]+", " ", metin).strip()
+
+
+
+def _eagle_medya_oneri_istegi(metin):
+    """Film, dizi ve belgesel öneri niyetini algılar."""
+    norm = _eagle_tmdb_norm(metin)
+    medya = re.search(
+        r"\b(film|filmler|filmi|dizi|diziler|dizisi|belgesel|belgeseller|movie|movies|series|documentary|yapim|yapimlar)\b",
+        norm
+    )
+    oneri = re.search(r"\b(oner|oneri|tavsiye|tavsiyeler|benzer)\w*\b", norm)
+    return bool(medya and oneri)
+
+
+def _eagle_tmdb_medya_onerileri(metin, limit=6):
+    """TMDb keşif sonuçlarından afişi doğrulanmış önerileri seçer."""
+    api_key = os.getenv("TMDB_API_KEY", "").strip()
+    norm = _eagle_tmdb_norm(metin)
+    if not api_key or not norm:
+        return []
+
+    if re.search(r"\b(belgesel|belgeseller|documentary)\b", norm):
+        turler, tur_id = ("movie", "tv"), "99"
+    elif re.search(r"\b(dizi|diziler|dizisi|series)\b", norm):
+        turler, tur_id = ("tv",), None
+    elif re.search(r"\b(film|filmler|filmi|movie|movies)\b", norm):
+        turler, tur_id = ("movie",), None
+    else:
+        turler, tur_id = ("movie", "tv"), None
+
+    yabanci = bool(re.search(r"\byabanci\b", norm))
+    oturum = requests.Session()
+    sonuc, kimlikler, afisler = [], set(), set()
+
+    for tur in turler:
+        params = {
+            "api_key": api_key,
+            "language": "tr-TR",
+            "include_adult": "false",
+            "sort_by": "popularity.desc",
+            "page": 1,
+        }
+        if tur_id:
+            params["with_genres"] = tur_id
+
+        try:
+            yanit = oturum.get(
+                f"https://api.themoviedb.org/3/discover/{tur}",
+                params=params,
+                timeout=12,
+            )
+            yanit.raise_for_status()
+            adaylar = yanit.json().get("results", [])
+        except Exception:
+            continue
+
+        for aday in adaylar:
+            medya_id = aday.get("id")
+            poster = aday.get("poster_path")
+            if not medya_id or not poster:
+                continue
+            if tur_id and tur_id not in [str(x) for x in aday.get("genre_ids", [])]:
+                continue
+
+            dil = str(aday.get("original_language") or "").casefold()
+            ulkeler = aday.get("origin_country") or []
+            if isinstance(ulkeler, str):
+                ulkeler = [ulkeler]
+            if yabanci and (dil == "tr" or "TR" in ulkeler):
+                continue
+
+            kimlik = (tur, str(medya_id))
+            poster_url = "https://image.tmdb.org/t/p/w500" + str(poster)
+            if kimlik in kimlikler or poster_url in afisler:
+                continue
+
+            kimlikler.add(kimlik)
+            afisler.add(poster_url)
+            sonuc.append({
+                "provider": "TMDb",
+                "media_type": tur,
+                "tmdb_id": medya_id,
+                "title": aday.get("title") or aday.get("name") or "",
+                "overview": aday.get("overview") or "",
+                "release_date": aday.get("release_date") or aday.get("first_air_date") or "",
+                "poster_url": poster_url,
+                "source_url": f"https://www.themoviedb.org/{tur}/{medya_id}",
+            })
+            if len(sonuc) >= max(1, min(int(limit), 12)):
+                return sonuc
+
+    return sonuc
+
+def _eagle_tmdb_medya_bul(baslik, tur=None):
+    """Tam başlık eşleşmesiyle TMDb yapım görsellerini ve oyuncu fotoğraflarını getirir."""
+    api_key = os.getenv("TMDB_API_KEY", "").strip()
+    baslik = str(baslik or "").strip()
+
+    if not api_key or not baslik:
+        return None
+
+    turler = [tur] if tur in ("movie", "tv") else ["movie", "tv"]
+    hedef = _eagle_tmdb_norm(baslik)
+    if not hedef:
+        return None
+
+    oturum = requests.Session()
+    secilen = None
+
+    for medya_turu in turler:
+        try:
+            yanit = oturum.get(
+                f"https://api.themoviedb.org/3/search/{medya_turu}",
+                params={
+                    "api_key": api_key,
+                    "query": baslik,
+                    "language": "tr-TR",
+                    "include_adult": "false",
+                },
+                timeout=12,
+            )
+            yanit.raise_for_status()
+            sonuclar = yanit.json().get("results", [])
+
+            for aday in sonuclar:
+                aday_baslik = (
+                    aday.get("title") or aday.get("name") or ""
+                )
+                orijinal_baslik = (
+                    aday.get("original_title")
+                    or aday.get("original_name")
+                    or ""
+                )
+
+                if hedef not in {
+                    _eagle_tmdb_norm(aday_baslik),
+                    _eagle_tmdb_norm(orijinal_baslik),
+                }:
+                    continue
+
+                secilen = (medya_turu, aday)
+                break
+
+            if secilen:
+                break
+        except Exception:
+            continue
+
+    if not secilen:
+        return None
+
+    medya_turu, aday = secilen
+    medya_id = aday.get("id")
+    if not medya_id:
+        return None
+
+    temel = {
+        "provider": "TMDb",
+        "media_type": medya_turu,
+        "tmdb_id": medya_id,
+        "title": aday.get("title") or aday.get("name") or baslik,
+        "overview": aday.get("overview") or "",
+        "release_date": aday.get("release_date") or aday.get("first_air_date") or "",
+        "poster_url": (
+            "https://image.tmdb.org/t/p/w500" + aday["poster_path"]
+            if aday.get("poster_path") else None
+        ),
+        "backdrop_url": (
+            "https://image.tmdb.org/t/p/original" + aday["backdrop_path"]
+            if aday.get("backdrop_path") else None
+        ),
+        "images": [],
+        "cast": [],
+        "attribution": (
+            "This product uses the TMDB API but is not endorsed or "
+            "certified by TMDB."
+        ),
+    }
+
+    try:
+        yanit = oturum.get(
+            f"https://api.themoviedb.org/3/{medya_turu}/{medya_id}/images",
+            params={"api_key": api_key},
+            timeout=12,
+        )
+        yanit.raise_for_status()
+        gorseller = yanit.json()
+
+        for kategori in ("backdrops", "posters", "logos"):
+            for gorsel in gorseller.get(kategori, [])[:8]:
+                yol = gorsel.get("file_path")
+                if yol:
+                    temel["images"].append({
+                        "type": kategori[:-1] if kategori.endswith("s") else kategori,
+                        "url": "https://image.tmdb.org/t/p/w780" + yol,
+                    })
+    except Exception:
+        pass
+
+    try:
+        yanit = oturum.get(
+            f"https://api.themoviedb.org/3/{medya_turu}/{medya_id}/credits",
+            params={"api_key": api_key, "language": "tr-TR"},
+            timeout=12,
+        )
+        yanit.raise_for_status()
+
+        for kisi in yanit.json().get("cast", [])[:12]:
+            yol = kisi.get("profile_path")
+            if yol:
+                temel["cast"].append({
+                    "name": kisi.get("name"),
+                    "character": kisi.get("character"),
+                    "image_url": "https://image.tmdb.org/t/p/w342" + yol,
+                })
+    except Exception:
+        pass
+
+    return temel
+
+
+
+# EAGLE_TMDB_FILM_TANITIM_V1
+def _eagle_film_baslik_cikar(metin):
+    """Yalnızca başlığı belirlenebilen film tanıtım sorgularını ayıklar."""
+    import re
+
+    ham = str(metin or "").strip()
+    if not ham:
+        return None
+
+    norm = _eagle_tmdb_norm(ham)
+
+    # Kişisel görüş soruları film tanıtım sorgusu değildir.
+    if re.match(r"^(?:sence|sizce)\b", norm):
+        return None
+
+    # Öneri/tavsiye istekleri bir film başlığı araması değildir.
+    if re.search(
+        r"\b(oner|tavsiye|tavsiyesi|tavsiyeler|"
+        r"oneri|film oner|film tavsiye)\w*\b",
+        norm,
+    ):
+        return None
+
+    # "Inception filmi", "Interstellar filminin konusu" gibi açık tür belirteçleri.
+    eslesme = re.search(
+        r"^(.+?)\s+(?:adli\s+|adlı\s+)?film"
+        r"(?:i|ini|inin|in|inde|inden|ine|ler|leri)?"
+        r"(?=\s|$|[?!.,])",
+        ham,
+        flags=re.IGNORECASE,
+    )
+
+    if eslesme:
+        baslik = eslesme.group(1).strip()
+    else:
+        # Film sözcüğü bulunmadan verilen açık tanıtım istekleri.
+        baslik = ham
+        son_ifadeler = (
+            r"\s+konusu(?:\s+nedir)?\s*[?.!]*$",
+            r"\s+(?:filmin\s+)?oyuncuları(?:\s+kimler(?:dir)?)?\s*[?.!]*$",
+            r"\s+(?:filmin\s+)?oyunculari(?:\s+kimler(?:dir)?)?\s*[?.!]*$",
+            r"\s+kimler\s+oynuyor\s*[?.!]*$",
+            r"\s+yönetmeni\s+kim\s*[?.!]*$",
+            r"\s+yonetmeni\s+kim\s*[?.!]*$",
+            r"\s+ne\s+anlatıyor\s*[?.!]*$",
+            r"\s+ne\s+anlatiyor\s*[?.!]*$",
+        )
+        for kalip in son_ifadeler:
+            yeni = re.sub(kalip, "", baslik, flags=re.IGNORECASE).strip()
+            if yeni != baslik:
+                baslik = yeni
+                break
+        else:
+            return None
+
+    baslik = re.sub(r"^[\s:;,.!?]+|[\s:;,.!?]+$", "", baslik).strip()
+    baslik_norm = _eagle_tmdb_norm(baslik)
+
+    if not baslik_norm:
+        return None
+
+    genel_ifadeler = {
+        "film", "filmi", "bir film", "film hakkinda",
+        "film hakkında", "bana film", "hangi film",
+        "su film", "bu film",
+    }
+    if baslik_norm in {_eagle_tmdb_norm(x) for x in genel_ifadeler}:
+        return None
+
+    if len(baslik_norm) < 2:
+        return None
+
+    return baslik
+
+
+def _eagle_film_sorgu_turu(metin):
+    """Dizi sorgularını film olarak sınıflandırmadan film tanıtımını belirler."""
+    if _eagle_dizi_sorgu_turu(metin):
+        return None
+    return "tanitim" if _eagle_film_baslik_cikar(metin) else None
+
+
+def _eagle_dizi_sorgu_turu(metin):
+    """
+    Dizi sorgusunu genel tanıtım veya özel detay olarak sınıflandırır.
+    Dizi adına bağlı sabit kayıt içermez.
+    """
+    import re
+    import unicodedata
+
+    metin = str(metin or "").strip().casefold()
+    norm = unicodedata.normalize("NFKD", metin)
+    norm = "".join(
+        c for c in norm if not unicodedata.combining(c)
+    ).replace("ı", "i")
+    norm = re.sub(r"[^a-z0-9]+", " ", norm)
+    if _eagle_medya_oneri_istegi(metin):
+        return None
+    norm = re.sub(r"\s+", " ", norm).strip()
+
+    # Dizi adı + bölüm numarası + yayın zamanı sorusu.
+    # Kullanıcının ayrıca "dizi" demesi gerekmez.
+    bolum_eslesmesi = re.search(
+        r"^(.{2,}?)\s+\d{1,3}\s+bolum\b",
+        norm,
+    )
+    yayin_niyeti = re.search(
+        r"\b(?:ne zaman|hangi gun|hangi tarihte|"
+        r"yayinlanacak|yayin tarihi|bolum tarihi)\b",
+        norm,
+    )
+    if bolum_eslesmesi and yayin_niyeti:
+        return "detay"
+
+    dizi_turu = re.search(
+        r"\b(?:dizi|dizisi|dizisini|dizisinin|dizinin|dizisinde|"
+        r"dizilerinin|diziler|dizileri|diziden|diziye|"
+        r"televizyon dizisi|tv dizisi)\b",
+        norm
+    )
+    if not dizi_turu:
+        return None
+
+    detay_kaliplari = (
+        r"\bson bolum(?:u|un|unde|unden|une)?\b",
+        r"\ben son bolum(?:u|un|unde|unden|une)?\b",
+        r"\bkacinci bolum(?:u|un|da|de|te|ta)?\b",
+        r"\bbolum numarasi\b",
+        r"\bhangi bolum(?:u|da|de)?\b",
+        r"\bbolum tarihi\b",
+        r"\bhangi sezon(?:u|da|unda|un)?\b",
+        r"\bkacinci sezon(?:u|da|unda|un)?\b",
+        r"\bson sezon(?:u|da|unda|un)?\b",
+        r"\byayin tarihi\b",
+        r"\bne zaman yayin\b",
+        r"\byayin tarihi ne\b",
+        r"\byeni bolum(?:u|de|den)?\b",
+    )
+    if any(re.search(kalip, norm) for kalip in detay_kaliplari):
+        return "detay"
+
+    tanitim_kaliplari = (
+        r"\bhakkinda\b", r"\bilgiler?\b", r"\bbilgisini\b",
+        r"\bbilgi ver\b", r"\bbilgi verir\b",
+        r"\bilgiler verir\b", r"\bilgiler verir misin\b",
+        r"\bile ilgili\b", r"\banlat\b", r"\btanit\b",
+        r"\bkonusu\b", r"\boyuncular?\b", r"\bkimler oynuyor\b",
+        r"\bne anlatiyor\b", r"\bnedir\b",
+    )
+    if any(re.search(kalip, norm) for kalip in tanitim_kaliplari):
+        return "tanitim"
+
+    # "Doctor Who dizisi" gibi yalnızca başlık ve tür belirten
+    # kısa sorgular da genel tanıtım isteğidir.
+    return "tanitim"
+
+
+
+def eagle_takvim_tarihini_coz(mesaj, bugun=None):
+    """Türkçe tarih sorularını Türkiye saat dilimine göre takvim tarihine çevirir."""
+    from zoneinfo import ZoneInfo
+
+    if bugun is None:
+        bugun = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+    elif isinstance(bugun, datetime):
+        bugun = bugun.date()
+
+    k = str(mesaj or "").casefold().replace("i\u0307", "i")
+    k = k.translate(str.maketrans({
+        "ç": "c", "ğ": "g", "ı": "i",
+        "ö": "o", "ş": "s", "ü": "u"
+    }))
+
+    gun_sorusu = bool(re.search(
+        r"\b(hangi gun(?:e)?|haftanin hangi gunu|gunune denk geliyor)\b",
+        k
+    ))
+    if not gun_sorusu:
+        return None
+
+    if re.search(r"\bbugun\b", k):
+        return bugun
+    if re.search(r"\byarin\b", k):
+        return bugun + timedelta(days=1)
+
+    aylar = {
+        "ocak": 1, "subat": 2, "mart": 3, "nisan": 4,
+        "mayis": 5, "haziran": 6, "temmuz": 7, "agustos": 8,
+        "eylul": 9, "ekim": 10, "kasim": 11, "aralik": 12
+    }
+
+    eslesme = re.search(
+        r"\b(\d{1,2})\s+(ocak|subat|mart|nisan|mayis|haziran|"
+        r"temmuz|agustos|eylul|ekim|kasim|aralik)(?:\s+(\d{4}))?\b",
+        k
+    )
+
+    if eslesme:
+        gun = int(eslesme.group(1))
+        ay = aylar[eslesme.group(2)]
+        yil = int(eslesme.group(3) or bugun.year)
+    else:
+        eslesme = re.search(
+            r"\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{4}))?\b",
+            k
+        )
+        if not eslesme:
+            return None
+        gun = int(eslesme.group(1))
+        ay = int(eslesme.group(2))
+        yil = int(eslesme.group(3) or bugun.year)
+
+    try:
+        return datetime(yil, ay, gun).date()
+    except ValueError:
+        return None
+
+
 def eagle_karar_motoru(mesaj, gecmis=None):
     """
     EagleAI karar motoru v1.
@@ -2739,10 +3319,30 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             })
             return karar
 
+    # Açıkça kod kullanılmadan açıklama isteniyorsa program/kod
+    # üretimi yönlendirmelerini devre dışı bırak.
+    kod_yazmadan_aciklama = bool(re.search(
+        r"\bkod\s+(?:yazmadan|üretmeden|uretmeden|kullanmadan|olmadan|"
+        r"yazmaksızın|kullanmaksızın)\b",
+        k
+    ))
+
     # Basit sohbet ve hafıza yönlendirmesi ayrı modülde.
     erken_karar = erken_sohbet_karari(metin, karar)
     if erken_karar is not None:
         return erken_karar
+
+    # Takvim soruları web veya genel sohbet yerine yerel hesaplamaya gider.
+    if eagle_takvim_tarihini_coz(metin) is not None:
+        karar.update({
+            "intent": "takvim",
+            "guven": "yüksek",
+            "neden": "Tarih ve haftanın günü hesaplama isteği algılandı.",
+            "arac": "takvim_hesaplama",
+            "islem": "gun_bul",
+            "dogrulama": False
+        })
+        return karar
 
     # 🧾 FATURA
     # Elektrik, su, internet, telefon ve D-Smart gibi
@@ -2841,32 +3441,160 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         return karar
 
     # 💳 BORÇ
-    borc_kelimeleri = [
-        "borç", "borc", "borcum",
-        "ödeme", "odeme", "ödedim", "odedim",
-        "yatırdım", "yatirdim",
-        "kredi kartı", "kredi karti",
-        "kredi borcu", "borç raporu", "borc raporu"
-    ]
+    # Borç kelimesi tek başına finansal analiz isteğini borç modülüne göndermez.
+    borc_norm = k.translate(str.maketrans("ıüğşöç", "iugsoc"))
+    borc_referansi = "borc" in borc_norm
 
-    borc_dogal_dil = any(x in k for x in [
-        "borcu bitti", "borcu bitmiş", "borcu bitmis",
-        "artık borç değil", "artik borc degil",
-        "ödemesi bitti", "odemesi bitti",
-        "sil artık", "sil artik",
-        "artık gerek yok", "artik gerek yok",
-        "gerek kalmadı", "gerek kalmadi",
-        "temizle", "kaldır artık", "kaldir artik"
-    ])
+    borc_liste_istegi = any(x in borc_norm for x in (
+        "borclarimi goster",
+        "kalan borc",
+        "borc listesi",
+        "borclarim",
+    ))
 
-    if borc_dogal_dil or any(x in k for x in borc_kelimeleri):
+    borc_toplam_istegi = any(x in borc_norm for x in (
+        "borclarimin toplami",
+        "toplam borc ne kadar",
+    ))
+
+    borc_ekleme_istegi = (
+        "borcum var" in borc_norm
+        or "borc ekle" in borc_norm
+        or (
+            borc_referansi
+            and re.search(r"(?<!\w)ekle(?!\w)", borc_norm)
+            and bool(re.search(r"\d", metin))
+        )
+    )
+
+    odeme_ifadeleri = (
+        "odedim", "odendi", "odeme yaptim", "odeme yapildi",
+        "yatirdim", "yatirildi", "para verdim", "parasini verdim",
+    )
+    fatura_referansi = any(x in borc_norm for x in (
+        "elektrik", "su fatur", "internet", "telefon",
+        "d-smart", "dsmart",
+    ))
+    borc_odeme_istegi = (
+        any(x in borc_norm for x in odeme_ifadeleri)
+        and (borc_referansi or fatura_referansi)
+    )
+
+    borc_durum_istegi = (
+        borc_referansi
+        and any(x in borc_norm for x in (
+            "borcu bitti", "borcu bitmis",
+            "artik borc degil", "borc kapandi",
+            "borc kapanmis", "odemesi bitti",
+        ))
+    )
+
+    borc_silme_istegi = (
+        borc_referansi
+        and any(x in borc_norm for x in (
+            "sil", "kaldir", "temizle", "gereksiz",
+            "gerek yok", "gerek kalmadi",
+            "artik istemiyorum", "artik kullanmiyorum",
+        ))
+    )
+
+    borc_ozel_istegi = any(x in borc_norm for x in (
+        "borc raporu", "kredi karti borcu", "kredi borcu",
+    ))
+
+    # Açık bir program üretim talebi, borç işleminden önce değerlendirilir.
+    program_dili_var = any(
+        re.search(r"(?<!\w)" + re.escape(dil) + r"(?!\w)", borc_norm)
+        for dil in ("python", "java", "javascript", "typescript", "html", "css")
+    )
+    program_fili_var = any(
+        re.search(r"(?<!\w)" + re.escape(fiil) + r"(?!\w)", borc_norm)
+        for fiil in ("yaz", "olustur", "uret", "gelistir", "hazirla", "yap")
+    )
+    acik_program_istegi = program_dili_var and program_fili_var
+
+    borc_islemi = (
+        borc_liste_istegi
+        or borc_toplam_istegi
+        or borc_ekleme_istegi
+        or borc_odeme_istegi
+        or borc_durum_istegi
+        or borc_silme_istegi
+        or borc_ozel_istegi
+    )
+
+    if borc_islemi and not acik_program_istegi:
         karar.update({
             "intent": "borc",
             "guven": "yüksek",
-            "neden": "Borç işlemi algılandı.",
+            "neden": "Açık borç veya fatura işlemi algılandı.",
             "arac": "borc_modulu",
             "islem": "veri_getir",
             "dogrulama": True
+        })
+        return karar
+
+    # 🧮 ARDIŞIK ZAM / İNDİRİM HESABI
+    # Türkçe binlik ayraçlarını ve işlem sırasını korur.
+    zincir_fiyat = re.search(
+        r"(?:fiyat[ıi]|ücret[ıi]?|tutar[ıi]?)\s*"
+        r"(\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?)\s*(?:tl|₺)",
+        metin,
+        re.IGNORECASE
+    )
+
+    # Alternatif doğal Türkçe kullanım:
+    # "2400 TL fiyatına önce %25 indirim, sonra %20 zam"
+    if not zincir_fiyat:
+        zincir_fiyat = re.search(
+            r"(\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?)"
+            r"\s*(?:tl|₺)\s*fiyat(?:ına|ina|ı|i)?",
+            metin,
+            re.IGNORECASE
+        )
+
+    zincir_islemler = list(re.finditer(
+        r"(?:%|yüzde)\s*(\d+(?:[,.]\d+)?)\s*(indirim|zam|artış|artis)",
+        metin,
+        re.IGNORECASE
+    ))
+
+    if zincir_fiyat and len(zincir_islemler) >= 2:
+        ham_fiyat = zincir_fiyat.group(1).replace(" ", "")
+        if "," in ham_fiyat and "." in ham_fiyat:
+            ham_fiyat = ham_fiyat.replace(".", "").replace(",", ".")
+        elif "," in ham_fiyat:
+            ham_fiyat = ham_fiyat.replace(",", ".")
+        elif re.fullmatch(r"\d{1,3}(?:\.\d{3})+", ham_fiyat):
+            ham_fiyat = ham_fiyat.replace(".", "")
+
+        islemler = []
+        ifade_parcalari = [ham_fiyat]
+
+        for eslesme in zincir_islemler:
+            oran = eslesme.group(1).replace(",", ".")
+            tur = "indirim" if eslesme.group(2).lower() == "indirim" else "zam"
+            islemler.append({"oran": oran, "tur": tur})
+            carpan = (
+                f"(1 - ({oran} / 100))"
+                if tur == "indirim"
+                else f"(1 + ({oran} / 100))"
+            )
+            ifade_parcalari.append(carpan)
+
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Ardışık zam/indirim işlemleri sırasıyla algılandı.",
+            "arac": "guvenli_hesaplama",
+            "islem": "hesapla",
+            "dogrulama": True,
+            "matematik_ifadesi": " * ".join(ifade_parcalari),
+            "matematik_zinciri": {
+                "baslangic": ham_fiyat,
+                "islemler": islemler
+            },
+            "yuzde_turu": "zincirli_fiyat"
         })
         return karar
 
@@ -2932,7 +3660,27 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
-# 🧮 DOĞAL DİL YÜZDE HESABI
+# 🧮 DOĞAL DİL KAREKÖK HESABI
+    karekok = re.search(
+        r"(?<!\d)(\d+(?:[.,]\d+)?)\s*(?:['’]?(?:ün|un|nın|nin|ın|in|nun|nün))?\s*(?:sayısının\s*)?(?:karekökü|kareköku|karekok(?:u|ü)?|kökü|koku)\s*(?:kaçtır|kaç|kactir|kac|nedir)?",
+        metin,
+        re.IGNORECASE
+    )
+    if karekok:
+        sayi = karekok.group(1).replace(",", ".")
+        karar.update({
+            "intent": "matematik",
+            "guven": "yüksek",
+            "neden": "Doğal dilde karekök hesabı algılandı.",
+            "arac": "guvenli_hesaplama",
+            "islem": "hesapla",
+            "matematik_ifadesi": f"{sayi} ** 0.5",
+            "karekok_hesabi": True,
+            "dogrulama": True
+        })
+        return karar
+
+    # 🧮 DOĞAL DİL YÜZDE HESABI
     # Örn: "250’nin %18’i kaçtır?"
     dogal_yuzde = re.search(
         r'(\d+(?:[.,]\d+)?)\D+(?:%|yüzde)\s*(\d+(?:[.,]\d+)?)\D*(?:kaçtır|kaç|kactir|kac)',
@@ -3034,7 +3782,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         ("python" in k or "python'da" in k or "pythonda" in k)
         and any(x in k for x in [
             "nedir", "ne demek", "nasıl", "nasil", "nasıl kullanılır",
-            "nasil kullanilir", "ne işe yarar", "ne ise yarar", "ne olur",
+            "nasil kullanilir", "ne için kullanılır", "ne icin kullanilir", "ne işe yarar", "ne ise yarar", "ne olur",
             "açıkla", "acikla", "örnek", "ornek"
         ])
         and not any(x in k for x in [
@@ -3116,6 +3864,10 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "gelistir",
         "hazırla",
         "hazirla",
+        "tasarla",
+        "tasarlayin",
+        "tasarımını yap",
+        "tasarimini yap",
         "yap",
     ]
 
@@ -3133,17 +3885,17 @@ def eagle_karar_motoru(mesaj, gecmis=None):
     ]
 
     program_hedefi_var = any(
-        re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+        re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", k)
         for x in program_yazma_hedefleri
     )
 
     program_fili_var = any(
-        re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+        re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", k)
         for x in program_yazma_filleri
     )
 
     kapsam_istegi = any(
-        re.search(r"(?<!\\w)" + re.escape(x) + r"(?!\\w)", k)
+        re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", k)
         for x in kapsam_terimleri
     ) and program_fili_var
 
@@ -3192,7 +3944,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             or kod_dili_uretim_istegi
             or uygulama_uretim_istegi
         )
-        and not uygulama_bilgi_sorusu
+        and not uygulama_bilgi_sorusu and not kod_yazmadan_aciklama
     )
 
     if program_yazma_istegi:
@@ -3239,7 +3991,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
-    if any(
+    if not kod_yazmadan_aciklama and any(
         re.search(
             r"(?<!\w)" + re.escape(x) + r"(?!\w)",
             k
@@ -3337,13 +4089,12 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "son maçında", "son macinda",
         "son oynadığı maç", "son oynadigi mac",
         "son karşılaşma", "son karsilasma",
-        "sonuç", "sonuc",
         "skor", "skorları", "skorlari",
         "fikstür", "fikstur",
         "oynayacak", "oynanacak",
         "kimle oynayacak", "kiminle oynayacak",
         "bu hafta", "gelecek hafta",
-        "puan durumu", "voleybol", "futbol",
+        "puan durumu", "kaçıncı sırada", "kacinci sirada", "hangi sırada", "hangi sirada", "voleybol", "futbol",
         "basketbol", "tenis", "vnl",
         "süper lig", "super lig", "süperlig", "superlig",
         "premier lig", "premier league",
@@ -3393,6 +4144,28 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         guncel_metin = metin.split(baglam_isareti, 1)[1].strip()
 
     guncel_k = guncel_metin.casefold()
+
+    rss_haber_merkezi_istegi = (
+        "rss" in guncel_k
+        and "haber" in guncel_k
+        and any(x in guncel_k for x in (
+            "oluştur", "olustur", "yap", "hazırla", "hazirla",
+            "üret", "uret", "geliştir", "gelistir"
+        ))
+        and any(x in guncel_k for x in (
+            "merkezi", "merkez", "uygulama", "sistemi", "sistem"
+        ))
+    )
+
+    if rss_haber_merkezi_istegi:
+        karar.update({
+            "intent": "program_yazma",
+            "guven": "yüksek",
+            "neden": "RSS haber merkezi oluşturma isteği algılandı.",
+            "arac": "program_yazma",
+            "islem": "program_uret"
+        })
+        return karar
 
     if any(x in guncel_k for x in guncel_kelimeleri):
         karar.update({
@@ -3448,7 +4221,14 @@ def eagle_karar_motoru(mesaj, gecmis=None):
             "ödeme", "odeme", "kredi"
         ]
 
-        if son_kullanici and any(x in son_kullanici for x in borc_isaretleri):
+        if (
+            son_kullanici
+            and any(x in son_kullanici for x in borc_isaretleri)
+            and (
+                any(x in metin for x in borc_isaretleri)
+                or any(x in metin for x in devam_ifadeleri)
+            )
+        ):
             karar.update({
                 "intent": "borc",
                 "guven": "yüksek",
@@ -3459,6 +4239,42 @@ def eagle_karar_motoru(mesaj, gecmis=None):
                 "history_devam": True
             })
             return karar
+
+    if _eagle_medya_oneri_istegi(metin):
+        karar.update({
+            "intent": "medya_onerisi",
+            "guven": "yüksek",
+            "neden": "Medya önerisi TMDb keşif akışına yönlendirildi.",
+            "arac": "web_arastirma",
+            "ogrenme_adayi": False,
+            "media_recommendation": True,
+        })
+        return karar
+
+    # Başlığı belirlenebilen film tanıtımlarını TMDb akışına yönlendir.
+    film_sorgu_turu = _eagle_film_sorgu_turu(metin)
+    if film_sorgu_turu:
+        karar.update({
+            "intent": "guncel_bilgi",
+            "guven": "yüksek",
+            "neden": "Başlığı belirlenen film tanıtım isteği TMDb araştırmasına yönlendirildi.",
+            "arac": "web_arastirma",
+            "ogrenme_adayi": True,
+            "media_query": True
+        })
+        return karar
+
+    # Dizi sorgularını ortak algılayıcıyla web araştırmasına yönlendir.
+    dizi_sorgu_turu = _eagle_dizi_sorgu_turu(metin)
+    if dizi_sorgu_turu:
+        karar.update({
+            "intent": "guncel_bilgi",
+            "guven": "yüksek",
+            "neden": "Dizi hakkında bilgi isteği web araştırmasına yönlendirildi.",
+            "arac": "web_arastirma",
+            "ogrenme_adayi": True
+        })
+        return karar
 
     if web_arastirma_gerekli(metin):
         karar.update({
@@ -3496,13 +4312,49 @@ def web_arastirma_gerekli(mesaj):
         "ne oldu",
         "araştır", "arastir",
         "araştırır mısın",
-        "bul", "bulur musun",
+        "bulur musun",
         "nedir", "ne demek", "ne işe yarar", "ne ise yarar",
-        "açıkla", "acikla", "nasıl çalışır", "nasil calisir"
+        "nasıl çalışır", "nasil calisir"
     ]
 
-    mesaj_kucuk = mesaj.lower()
-    return any(k in mesaj_kucuk for k in kelimeler)
+    mesaj_kucuk = str(mesaj or "").casefold()
+
+    if any(k in mesaj_kucuk for k in kelimeler):
+        return True
+    if re.search(r"(?<!\w)bul(?!\w)", mesaj_kucuk):
+        return True
+
+    # Yıl ve tarihsel olay içeren bilgi başlıkları.
+    tarihsel_olay = (
+        re.search(r"\b(?:1[0-9]{3}|20[0-9]{2})\s+yılında\b", mesaj_kucuk)
+        and re.search(
+            r"\b(?:görülen|yaşanan|gerçekleşen|meydana gelen|"
+            r"bulunan|keşfedilen|ortaya çıkan)\b",
+            mesaj_kucuk,
+        )
+    )
+    if tarihsel_olay:
+        return True
+
+    # Yıl belirtilmese de "Finlandiya'da görülen kuyruklu yıldız"
+    # gibi tanımlayıcı konu başlıklarını web araştırmasına yönlendir.
+    konu_basligi = re.search(
+        r"\b[\wçğıöşü-]+['’](?:da|de|ta|te)\s+"
+        r"(?:görülen|yaşanan|gerçekleşen|bulunan|keşfedilen)\s+"
+        r"[\wçğıöşü-]+",
+        mesaj_kucuk,
+    )
+    if konu_basligi:
+        return True
+
+    # Açık bilgi başlıkları: "Finlandiya tarihi" gibi.
+    bilgi_basligi = re.search(
+        r"\b[\wçğıöşü-]+\s+"
+        r"(?:tarihi|coğrafyası|nüfusu|başkenti|özellikleri|"
+        r"hayatı|biyografisi|keşfi|icatları|sonuçları)\b",
+        mesaj_kucuk,
+    )
+    return bool(bilgi_basligi)
 
 
 def web_url_tekillestirme_anahtari(url):
@@ -4145,19 +4997,27 @@ def uefa_sampiyonlar_ligi_getir(mesaj=""):
 
 
 def genel_spor_fiksturu_getir(mesaj=""):
-    """ESPN genel skorboard API'sinden günlük spor maçlarını getirir."""
+    """ESPN skorboard API'sinden fikstür ve tamamlanmış maç sonuçlarını getirir."""
     try:
         from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+        import requests
 
-        mesaj_kucuk = (mesaj or "").lower().replace("\u0307", "")
+        mesaj_kucuk = (mesaj or "").lower().replace("\\u0307", "")
+        bugun = datetime.now(ZoneInfo("Europe/Istanbul"))
+        sonuc_sorgusu = any(k in mesaj_kucuk for k in (
+            "sonuç", "sonuc", "skor", "bitti", "maç sonucu", "mac sonucu"
+        ))
 
-        bugun = datetime.now()
-        hedef = bugun
-
-        if any(k in mesaj_kucuk for k in ["yarın", "yarin"]):
-            hedef = bugun + timedelta(days=1)
-
-        tarih = hedef.strftime("%Y%m%d")
+        if any(k in mesaj_kucuk for k in ("yarın", "yarin")):
+            tarihler = [(bugun + timedelta(days=1)).strftime("%Y%m%d")]
+        elif sonuc_sorgusu:
+            tarihler = [
+                (bugun - timedelta(days=i)).strftime("%Y%m%d")
+                for i in range(7)
+            ]
+        else:
+            tarihler = [bugun.strftime("%Y%m%d")]
 
         kaynaklar = [
             ("⚽", "futbol", "soccer/uefa.champions", "Şampiyonlar Ligi"),
@@ -4169,106 +5029,143 @@ def genel_spor_fiksturu_getir(mesaj=""):
             ("🏀", "basketbol", "basketball/nba", "NBA"),
         ]
 
+        lig_eslestirmeleri = [
+            (("şampiyonlar ligi", "sampiyonlar ligi", "champions league"), "Şampiyonlar Ligi"),
+            (("premier league",), "Premier League"),
+            (("la liga",), "La Liga"),
+            (("bundesliga",), "Bundesliga"),
+            (("serie a",), "Serie A"),
+            (("ligue 1",), "Ligue 1"),
+            (("nba",), "NBA"),
+        ]
+
+        aranan_lig = None
+        for ifadeler, lig_adi in lig_eslestirmeleri:
+            if any(ifade in mesaj_kucuk for ifade in ifadeler):
+                aranan_lig = lig_adi
+                break
+
+        if aranan_lig:
+            kaynaklar = [k for k in kaynaklar if k[3] == aranan_lig]
+
         secilen = []
+        gorulen = set()
 
         for ikon, spor, lig_url, lig_adi in kaynaklar:
-            url = (
-                "https://site.api.espn.com/apis/site/v2/sports/"
-                f"{lig_url}/scoreboard?dates={tarih}"
-            )
-
-            try:
-                cevap = requests.get(
-                    url,
-                    headers={
-                        "User-Agent": "Mozilla/5.0",
-                        "Accept": "application/json"
-                    },
-                    timeout=8
+            for tarih in tarihler:
+                url = (
+                    "https://site.api.espn.com/apis/site/v2/sports/"
+                    f"{lig_url}/scoreboard"
                 )
-
-                if cevap.status_code != 200:
-                    continue
-
-                veri = cevap.json()
-
-                for event in veri.get("events", []):
-                    competitions = event.get("competitions", [])
-                    if not competitions:
+                try:
+                    cevap = requests.get(
+                        url,
+                        params={"dates": tarih, "limit": 500},
+                        headers={
+                            "User-Agent": "Mozilla/5.0",
+                            "Accept": "application/json",
+                        },
+                        timeout=12,
+                    )
+                    if cevap.status_code != 200:
                         continue
 
-                    comp = competitions[0]
-                    competitors = comp.get("competitors", [])
+                    for event in cevap.json().get("events", []):
+                        competitions = event.get("competitions", [])
+                        if not competitions:
+                            continue
 
-                    if len(competitors) < 2:
-                        continue
+                        comp = competitions[0]
+                        takimlar = comp.get("competitors", [])
+                        ev_takim = next(
+                            (t for t in takimlar if t.get("homeAway") == "home"), {}
+                        )
+                        dep_takim = next(
+                            (t for t in takimlar if t.get("homeAway") == "away"), {}
+                        )
 
-                    ev = ""
-                    deplasman = ""
-
-                    for takim in competitors:
-                        isim = (
-                            takim.get("team", {}).get("displayName")
-                            or takim.get("team", {}).get("shortDisplayName")
+                        ev = (
+                            ev_takim.get("team", {}).get("displayName")
+                            or ev_takim.get("team", {}).get("shortDisplayName")
                             or ""
                         )
-
-                        if takim.get("homeAway") == "home":
-                            ev = isim
-                        elif takim.get("homeAway") == "away":
-                            deplasman = isim
-
-                    if not ev or not deplasman:
-                        continue
-
-                    tarih_saat = event.get("date", "")
-                    saat = ""
-
-                    if tarih_saat:
-                        try:
-                            dt = datetime.fromisoformat(
-                                tarih_saat.replace("Z", "+00:00")
-                            )
-
-                            # Türkiye UTC+3
-                            dt_tr = dt + timedelta(hours=3)
-                            saat = dt_tr.strftime("%H:%M")
-                        except Exception:
-                            saat = ""
-
-                    secilen.append({
-                        "spor": spor,
-                        "ikon": ikon,
-                        "lig": lig_adi,
-                        "tarih": tarih,
-                        "saat": saat,
-                        "ev": ev,
-                        "deplasman": deplasman,
-                        "title": f"{ev} - {deplasman}",
-                        "url": url,
-                        "snippet": (
-                            f"{lig_adi} | {ev} - {deplasman}"
-                            + (f" | {saat}" if saat else "")
+                        deplasman = (
+                            dep_takim.get("team", {}).get("displayName")
+                            or dep_takim.get("team", {}).get("shortDisplayName")
+                            or ""
                         )
-                    })
+                        if not ev or not deplasman:
+                            continue
 
-            except Exception as e:
-                print(
-                    f"⚠️ ESPN kaynak hatası ({lig_adi}): {e}",
-                    flush=True
-                )
+                        durum_tipi = (
+                            event.get("status", {}).get("type", {}) or {}
+                        )
+                        tamamlandi = bool(durum_tipi.get("completed"))
+                        if sonuc_sorgusu and not tamamlandi:
+                            continue
 
-        print(
-            f"🏟️ GENEL ESPN FİKSTÜR: {len(secilen)} maç",
-            flush=True
-        )
+                        ev_skor = ev_takim.get("score")
+                        dep_skor = dep_takim.get("score")
+                        etkinlik_id = event.get("id") or (
+                            lig_adi, tarih, ev, deplasman
+                        )
+                        if etkinlik_id in gorulen:
+                            continue
+                        gorulen.add(etkinlik_id)
 
+                        tarih_goster = datetime.strptime(
+                            tarih, "%Y%m%d"
+                        ).strftime("%d.%m.%Y")
+
+                        saat = ""
+                        tarih_saat = event.get("date", "")
+                        if tarih_saat:
+                            try:
+                                dt = datetime.fromisoformat(
+                                    tarih_saat.replace("Z", "+00:00")
+                                )
+                                if dt.utcoffset() is not None:
+                                    dt = dt.astimezone(ZoneInfo("Europe/Istanbul")).replace(tzinfo=None)
+                                saat = dt.strftime("%H:%M")
+                            except Exception:
+                                pass
+
+                        skor_metni = (
+                            f"{ev_skor}-{dep_skor}"
+                            if ev_skor is not None and dep_skor is not None
+                            else ""
+                        )
+                        secilen.append({
+                            "spor": spor,
+                            "ikon": ikon,
+                            "lig": lig_adi,
+                            "tarih": tarih_goster,
+                            "saat": saat,
+                            "ev": ev,
+                            "deplasman": deplasman,
+                            "ev_skor": ev_skor,
+                            "deplasman_skor": dep_skor,
+                            "oynandi": tamamlandi,
+                            "durum": durum_tipi.get("detail", ""),
+                            "title": f"{ev} {skor_metni} {deplasman}".strip(),
+                            "url": url,
+                            "snippet": (
+                                f"{lig_adi} | {tarih_goster} | "
+                                f"{ev} {skor_metni} {deplasman}"
+                            ).strip(),
+                        })
+                except Exception as e:
+                    print(
+                        f"ESPN kaynak hatası ({lig_adi}, {tarih}): {e}",
+                        flush=True,
+                    )
+
+        print(f"🏟️ GENEL ESPN FİKSTÜR: {len(secilen)} maç", flush=True)
         return secilen
 
     except Exception as e:
         print(f"⚠️ Genel spor fikstürü hatası: {e}", flush=True)
         return []
-
 
 def tvf_voleybol_getir(hedef_tarih=None, hafta=False):
     """TVF HTML fikstürünü dener; gerekirse resmî Excel fikstürünü kullanır."""
@@ -4667,20 +5564,41 @@ def tvf_voleybol_sonuclari_getir(limit=8):
                 ad = "".join(c for c in ad if not unicodedata.combining(c))
                 return re.sub(r"\s+", " ", ad).strip()
 
-            lig_urlleri = list(dict.fromkeys(
-                el.get("href", "").strip()
-                for el in ana_soup.select(
-                    'a[href*="/FSM/"], a[href*="/FSW/"]'
-                )
-                if el.get("href", "").strip()
-            ))
+            def lig_anahtari(ad):
+                ad = takim_anahtari(ad)
+                ad = re.sub(r"\bvoleybol\b", " ", ad)
+                ad = re.sub(r"\bligi\b", "lig", ad)
+                ad = re.sub(r"[^a-z0-9\s]", " ", ad)
+                return re.sub(r"\s+", " ", ad).strip()
+
+            sonuc_ligleri = {
+                lig_anahtari(mac.get("lig", ""))
+                for mac in sonuclar if mac.get("lig")
+            }
+
+            lig_urlleri = []
+            lig_url_adlari = {}
+            for el in ana_soup.select(
+                'a[href*="/FSM/"], a[href*="/FSW/"]'
+            ):
+                href = el.get("href", "").strip()
+                lig_adi = el.get_text(" ", strip=True)
+                if (
+                    href
+                    and lig_anahtari(lig_adi) in sonuc_ligleri
+                    and href not in lig_urlleri
+                ):
+                    lig_urlleri.append(href)
+                    lig_url_adlari[href] = lig_adi
 
             tarihli_maclar = {}
-            fikstur_sonuclari = []
-            for lig_yolu in lig_urlleri:
+
+            def lig_tarihlerini_oku(lig_yolu):
+                kayitlar = []
                 try:
+                    adres = requests.compat.urljoin(ana_sayfa, lig_yolu)
                     cevap = requests.get(
-                        requests.compat.urljoin(ana_sayfa, lig_yolu),
+                        adres,
                         headers={"User-Agent": "Mozilla/5.0"},
                         timeout=5
                     )
@@ -4707,15 +5625,47 @@ def tvf_voleybol_sonuclari_getir(limit=8):
                         ):
                             continue
 
-                        # Fikstür yalnızca tarih/saat eşleştirmesinde kullanılır.
+                        ev_sayi, dep_sayi = int(ev_skor), int(dep_skor)
                         anahtar = (
-                            takim_anahtari(ev), int(ev_skor),
-                            takim_anahtari(deplasman), int(dep_skor)
+                            takim_anahtari(ev), ev_sayi,
+                            takim_anahtari(deplasman), dep_sayi
                         )
-                        tarihli_maclar.setdefault(anahtar, set()).add((tarih, saat))
+                        setler = [
+                            f"{a}-{b}"
+                            for a, b in re.findall(
+                                r"\((\d+)\s*-\s*(\d+)\)", d[8]
+                            )
+                        ]
+                        ek_sonuc = None
+                        if setler and len(setler) == ev_sayi + dep_sayi:
+                            ek_sonuc = {
+                                "ev": ev, "ev_skor": ev_sayi,
+                                "deplasman": deplasman,
+                                "deplasman_skor": dep_sayi,
+                                "lig": lig_url_adlari.get(
+                                    lig_yolu, "TVF Resmî Fikstürü"
+                                ),
+                                "setler": setler,
+                                "kaynak": adres,
+                                "tarih": tarih, "saat": saat,
+                            }
+                        kayitlar.append((anahtar, tarih, saat, ek_sonuc))
 
                 except Exception as hata:
                     print(f"TVF lig tablosu okunamadı: {hata}", flush=True)
+
+                return kayitlar
+
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=4) as havuz:
+                for kayitlar in havuz.map(lig_tarihlerini_oku, lig_urlleri):
+                    for anahtar, tarih, saat, ek_sonuc in kayitlar:
+                        tarihli_maclar.setdefault(anahtar, set()).add(
+                            (tarih, saat)
+                        )
+                        if ek_sonuc is not None:
+                            sonuclar.append(ek_sonuc)
 
             for mac in sonuclar:
                 anahtar = (
@@ -4736,15 +5686,29 @@ def tvf_voleybol_sonuclari_getir(limit=8):
 
         for mac in sonuclar:
             anahtar_mac = (
-                str(mac["ev"]).casefold(),
+                re.sub(r"[^a-z0-9]", "", takim_anahtari(str(mac["ev"]))),
                 int(mac["ev_skor"]),
-                str(mac["deplasman"]).casefold(),
+                re.sub(r"[^a-z0-9]", "", takim_anahtari(str(mac["deplasman"]))),
                 int(mac["deplasman_skor"]),
             )
             if anahtar_mac in gorulen:
                 continue
             gorulen.add(anahtar_mac)
             birlesik.append(mac)
+
+        from datetime import datetime
+
+        birlesik.sort(
+            key=lambda mac: (
+                datetime.strptime(mac["tarih"], "%d.%m.%Y")
+                if re.fullmatch(
+                    r"\d{2}\.\d{2}\.\d{4}",
+                    str(mac.get("tarih", ""))
+                )
+                else datetime.min
+            ),
+            reverse=True
+        )
 
         sonuclar = birlesik[:max(1, min(int(limit), 20))]
         print(f"TVF: {len(sonuclar)} sonuç kaydı hazırlandı.", flush=True)
@@ -4755,6 +5719,64 @@ def tvf_voleybol_sonuclari_getir(limit=8):
         return []
 
 
+def _web_arama_sorgusunu_sadelestir(sorgu):
+    """Doğal dildeki bilgi isteğini genel arama sorgusuna dönüştürür."""
+    temiz = str(sorgu or "")[:400]
+
+    # Nezaket ifadelerini ve yaygın soru kalıplarını kaldır;
+    # konunun kendisini arama sorgusunda koru.
+    temiz = re.sub(
+        r"\b(?:hakkında|hakkinda|bilgi|bana|lütfen|lutfen)\b",
+        " ", temiz, flags=re.IGNORECASE
+    )
+    temiz = re.sub(
+        r"\b(?:ne\s+anlama\s+gelir|ne\s+demek|"
+        r"ver(?:ir|ebilir)?|anlat(?:ır|ir)?|"
+        r"açıkla(?:r|yabilir)?)"
+        r"\s+(?:misin|mısın|misiniz|mısınız|mi|mı|mu|mü|"
+        r"musun|musunuz|midir|mıdır)?\b",
+        " ", temiz, flags=re.IGNORECASE
+    )
+    temiz = re.sub(
+        r"\b(?:nedir|kimdir|neresidir|nerededir|nerede|"
+        r"hangisidir|hangisi|hangileri|kaçtır|kac\s+tır)\b",
+        " ", temiz, flags=re.IGNORECASE
+    )
+    temiz = re.sub(
+        r"\b(?:nerelerde\s+bulunur|nerede\s+bulunur|"
+        r"hangi\s+ülkelerdedir|hangi\s+ülkelerde)\b",
+        " ", temiz, flags=re.IGNORECASE
+    )
+    temiz = re.sub(r"[?؟!]+", " ", temiz)
+    temiz = re.sub(r"\s+", " ", temiz).strip(" ,.-")
+    temiz = re.sub(r"(?<=[a-zA-ZğüşöçıİĞÜŞÖÇ])(?=[A-ZĞÜŞÖÇ])", " ", temiz)
+    return temiz or str(sorgu or "")[:400]
+
+def _web_yagmur_ormani_sorgusu_mu(sorgu):
+    metin = str(sorgu or "").casefold()
+    return bool(
+        re.search(r"yağmur\s+orman", metin)
+        or (
+            re.search(r"\bamazon\b", metin)
+            and re.search(r"\borman\w*", metin)
+        )
+    )
+
+
+def _web_yagmur_ormani_sonucu_uygun_mu(sorgu, sonuc):
+    if not _web_yagmur_ormani_sorgusu_mu(sorgu):
+        return True
+    baslik = str(sonuc.get("title", "") or "").casefold()
+    metin = baslik + " " + str(sonuc.get("snippet", "") or "").casefold()
+    orman_eslesmesi = bool(re.search(r"orman\w*|rainforests?", baslik))
+    konu_eslesmesi = bool(
+        re.search(r"yağmur\s+orman\w*|rain\s*forests?", metin)
+        or (
+            re.search(r"\bamazon\b", str(sorgu or "").casefold())
+            and re.search(r"\bamazon\b", metin)
+        )
+    )
+    return orman_eslesmesi and konu_eslesmesi
 def _gerekli_web_eslesme_sayisi(kelime_sayisi):
     """Arama sonucunda eşleşmesi gereken en az anlamlı kelime sayısı."""
     if kelime_sayisi <= 1:
@@ -4772,10 +5794,41 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
         "kaç", "kac", "zaman", "ne zaman", "ile", "için",
         "icin", "olan", "olarak", "nedeniyle", "mıdır", "midir",
         "nerededir", "kıtadadır", "yaptı", "yapti",
+        "verir", "misin", "mısın", "musun", "müsün",
+        "misiniz", "mısınız", "musunuz", "müsünüz",
+        "lütfen", "lutfen", "kısa", "kisa", "genel", "özet", "ozet",
+        "tanıtım", "tanitim", "tanıtır", "tanitir", "anlat", "eder", "misiniz",
     }
+    # İstek bildiren ve arama sonucunda bulunması şart olmayan
+    # dizi/bölüm bilgisi kelimelerini kökleri üzerinden ayıkla.
+    durak_kokleri = durak | {
+        "dizi", "bölüm", "bolum", "numara", "sezon",
+        "yayın", "yayin", "tarih", "oyuncu",
+        "son", "söyle", "soyle",
+    }
+    turkce_ekler = (
+        "larının", "lerinin", "larını", "lerini",
+        "sının", "sinin", "sunun", "sünün",
+        "sını", "sini", "sunu", "sünü",
+        "unun", "ünün", "ının", "inin",
+        "larını", "lerini", "ları", "leri",
+        "lar", "ler", "nın", "nin", "nun", "nün",
+        "ını", "ini", "unu", "ünü",
+    )
+
+    def durak_kelimesi_mi(kelime):
+        if kelime in durak_kokleri:
+            return True
+        return any(
+            kelime.endswith(ek)
+            and len(kelime) - len(ek) >= 4
+            and kelime[:-len(ek)] in durak_kokleri
+            for ek in turkce_ekler
+        )
+
     kelimeler = {
         k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
-        if len(k) >= 4 and k not in durak
+        if len(k) >= 4 and not durak_kelimesi_mi(k)
     }
     if not kelimeler:
         kelimeler = {
@@ -4786,10 +5839,97 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
     baslik = str(sonuc.get("title", "") or "").casefold()
     metin = (baslik + " " + str(sonuc.get("snippet", "") or "")).casefold()
 
+    genel_tanitim = bool(re.search(
+        r"hakkında|hakkinda|genel bilgi|kısa bilgi|kisa bilgi|"
+        r"tanıt|tanit|özet|ozet|bilgi verir misin|bilgi ver",
+        str(sorgu or "").casefold(),
+    ))
+    if genel_tanitim and len(kelimeler) == 1:
+        konu = next(iter(kelimeler))
+        alt_konu = re.search(
+            r"film festivali|festival|futbol|basketbol|voleybol|"
+            r"maç sonuç|mac sonuc|üniversite|universite|"
+            r"seçim sonuç|secim sonuc|hava durumu|deprem|"
+            r"konser|albüm|album|dizi bölümü|dizi bolumu",
+            baslik,
+        )
+        sorguda_alt_konu = bool(re.search(
+            r"festival|futbol|basketbol|voleybol|maç|mac|"
+            r"üniversite|universite|seçim|secim|hava durumu|"
+            r"deprem|konser|albüm|album|dizi",
+            str(sorgu or "").casefold(),
+        ))
+        if konu in baslik and alt_konu and not sorguda_alt_konu:
+            return False
+
+    # Başkent sorularında ülke ile başkent arasındaki ilişkiyi doğrula.
+    bas_soru = re.search(
+        r"\b(.+?)(?:['’])(?:nin|nın|nun|nün|in|ın|un|ün)\s+başkenti\b",
+        str(sorgu or "").casefold(),
+    )
+    if bas_soru:
+        ulke = bas_soru.group(1).strip()
+        ulke_deseni = re.escape(ulke)
+        iliski_deseni = (
+            r"\b" + ulke_deseni
+            + r"(?:\s+\w+){0,2}['’]?(?:nin|nın|nun|nün|in|ın|un|ün)"
+            + r"\s+başkent\w*"
+            + r"|\bcapital\s+of\s+" + ulke_deseni + r"\b"
+            + r"|\b" + ulke_deseni + r"['’]s\s+capital\b"
+        )
+        if not re.search(iliski_deseni, metin):
+            return False
+
+    if re.search(
+        r"en\s+kalabalık\s+ülke(?:si)?|en\s+kalabalik\s+ulke(?:si)?|"
+        r"en\s+çok\s+nüfuslu\s+ülke(?:si)?|en\s+cok\s+nufuslu\s+ulke(?:si)?",
+        str(sorgu).casefold(),
+    ):
+        if re.search(r"\b(hindistan|india)\b", baslik):
+            return True
+        if (
+            re.search(
+                r"most populous country|world's most populous country|"
+                r"world’s most populous country|dünyanın en kalabalık ülkesi|"
+                r"dunyanin en kalabalik ulkesi|en kalabalık ülkesi|"
+                r"en kalabalik ulkesi",
+                metin,
+            )
+            and re.search(r"\bindia\b|hindistan", metin)
+        ):
+            return True
+        return False
+
     def eslesiyor(kelime, hedef):
+        # Yaygın ülke adlarının Türkçe ve İngilizce karşılıklarını eşleştir.
+        dil_es_anlamlilari = (
+            ("kanada", "canada"),
+            ("almanya", "germany", "deutschland"),
+            ("mısır", "egypt"),
+            ("yunanistan", "greece"),
+            ("hollanda", "netherlands", "holland"),
+            ("abd", "usa", "united states", "amerika", "america"),
+            ("ingiltere", "england", "united kingdom", "britain"),
+            ("japonya", "japan"),
+            ("çin", "china"),
+            ("ispanya", "spain"),
+            ("italya", "italy"),
+            ("fransa", "france"),
+            ("avustralya", "australia"),
+            ("rusya", "russia"),
+            ("türkiye", "turkey"),
+        )
+        adaylar = {kelime}
+        for grup in dil_es_anlamlilari:
+            if kelime in grup:
+                adaylar.update(grup)
+                break
+        hedef_kelimeler = re.findall(r"[a-z0-9çğıöşü]+", hedef)
+        if any(aday in hedef_kelimeler for aday in adaylar):
+            return True
         if kelime in hedef:
             return True
-        for parca in re.findall(r"[a-z0-9çğıöşü]+", hedef):
+        for parca in hedef_kelimeler:
             ortak = 0
             for x, y in zip(kelime, parca):
                 if x != y:
@@ -4799,9 +5939,22 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
                 return True
         return False
 
+    # Açık yıl içeren tarihsel sorgularda aynı yıl sonuçta doğrulanmalı.
+    yil_eslesmesi = re.search(
+        r"\b(?:1[0-9]{3}|20[0-9]{2})\b",
+        str(sorgu or "").casefold(),
+    )
+    if yil_eslesmesi and not re.search(
+        r"\b" + re.escape(yil_eslesmesi.group(0)) + r"\b",
+        metin,
+    ):
+        return False
+
     baslik_eslesmesi = sum(1 for k in kelimeler if eslesiyor(k, baslik))
     toplam_eslesme = sum(1 for k in kelimeler if eslesiyor(k, metin))
     gerekli = _gerekli_web_eslesme_sayisi(len(kelimeler))
+    if len(kelimeler) >= 2:
+        gerekli = max(2, gerekli)
 
     # Konum sorularında tek kelimelik yer adını doğrudan başlıkta doğrula.
     sorgu_metni = str(sorgu).casefold()
@@ -4822,28 +5975,85 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
         if not any(eslesiyor(k, baslik) for k in kelimeler):
             return False
 
-    # Birden fazla konu terimi varsa, yalnızca snippet eşleşmesi yeterli değil:
-    # başlık da sorunun konusuyla ilişkili olmalı.
-    if len(kelimeler) >= 2:
-        # Birden fazla konu teriminde, yalnızca ikincil
-        # bir kelimenin başlıkta geçmesi yeterli değildir.
-        ilk_konu = next(
-            (k for k in re.findall(
-                r"[a-z0-9çğıöşü]+",
-                str(sorgu).casefold()
-            ) if len(k) >= 4 and k not in durak),
-            None,
-        )
-        yagmur_ormani_sorgusu = bool(
-            re.search(r"yağmur\s+orman", sorgu_metni)
-        )
-        if not yagmur_ormani_sorgusu and baslik_eslesmesi == 0:
-            return False
+    # Birden fazla konu teriminde başlık da konuyla eşleşmeli.
+    # Yalnızca açıklamadaki ortak kelimeler yanlış sonuç için yeterli değildir.
+    if len(kelimeler) >= 2 and baslik_eslesmesi == 0:
+        return False
+
     return toplam_eslesme >= gerekli
+
+
+
+
+def bitcoin_fiyat_sorgusu_mu(mesaj):
+    metin = (mesaj or "").casefold().replace("\u0307", "")
+    if not re.search(r"\b(?:bitcoin|btc)\b", metin):
+        return False
+    return bool(re.search(
+        r"fiyat|kaç|kac|ne kadar|şu an|su an|güncel|guncel|"
+        r"dolar karşısında|dolar karsisinda|\busd\b",
+        metin,
+    ))
+
+
+def bitcoin_fiyatini_getir():
+    try:
+        from zoneinfo import ZoneInfo
+
+        url = (
+            "https://api.coingecko.com/api/v3/simple/price"
+            "?ids=bitcoin&vs_currencies=usd&include_last_updated_at=true"
+        )
+        yanit = requests.get(url, timeout=8)
+        yanit.raise_for_status()
+        veri = yanit.json()
+        bitcoin = veri.get("bitcoin") if isinstance(veri, dict) else None
+        fiyat = bitcoin.get("usd") if isinstance(bitcoin, dict) else None
+        guncelleme = bitcoin.get("last_updated_at") if isinstance(bitcoin, dict) else None
+
+        if (
+            isinstance(fiyat, bool)
+            or not isinstance(fiyat, (int, float))
+            or not 0 < fiyat < 1_000_000_000
+            or isinstance(guncelleme, bool)
+            or not isinstance(guncelleme, (int, float))
+            or guncelleme <= 0
+        ):
+            return None
+
+        tarih = datetime.fromtimestamp(
+            guncelleme, ZoneInfo("Europe/Istanbul")
+        ).strftime("%d.%m.%Y %H:%M:%S")
+        return {"price": float(fiyat), "updated_at": tarih}
+
+    except Exception as hata:
+        print(f"CoinGecko fiyat alınamadı: {hata}", flush=True)
+        return None
 
 
 def web_arastir(sorgu, limit=6):
     """Güncel web araması: DuckDuckGo -> Google -> Bing."""
+
+    # TROPICAL_COUNTRY_QUERY_NORMALIZATION
+    # EN KALABALIK ÜLKE SORGUSUNU DOĞRUDAN KONUYA YÖNLENDİR
+    if (
+        re.search(
+            r"en\s+kalabalık\s+ülke(?:si|dir|sidir)?|"
+            r"en\s+kalabalik\s+ulke(?:si|dir|sidir)?|"
+            r"en\s+çok\s+nüfuslu\s+ülke(?:si|dir|sidir)?|"
+            r"en\s+cok\s+nufuslu\s+ulke(?:si|dir|sidir)?",
+            str(sorgu).casefold(),
+        )
+        and not re.search(r"\b(hindistan|india)\b", str(sorgu).casefold())
+    ):
+        sorgu = "Hindistan dünyanın en kalabalık ülkesi güncel nüfus"
+
+    if (
+        re.search(r"yağmur\s+orman", str(sorgu).casefold())
+        and re.search(r"\bülkelerde\b|\bhangi ülkelerde\b", str(sorgu).casefold())
+        and not re.search(r"\bamazon\b", str(sorgu).casefold())
+    ):
+        sorgu = "tropikal yağmur ormanları hangi ülkelerde bulunur"
 
     def sonuclari_ayikla(soup, kaynak):
         sonuclar = []
@@ -4924,15 +6134,16 @@ def web_arastir(sorgu, limit=6):
 
         elif kaynak == "bing":
             for baslik in soup.select("li.b_algo h2"):
-                link = baslik.find("a")
-
-                # Bing güncel HTML yapısında bağlantı h2 içinde olmayabilir.
+                # Bing sonuç bağlantısı h2 etiketini saran a etiketindedir.
+                link = baslik.find_parent("a", href=True)
                 kapsayici = baslik.find_parent("li")
 
                 if not link and kapsayici:
+                    link = kapsayici.select_one(".b_algoheader a[href]")
+
+                if not link and kapsayici:
                     for aday in kapsayici.select("a[href]"):
-                        href = aday.get("href", "").strip()
-                        if href.startswith(("http://", "https://")):
+                        if aday.select_one("h2"):
                             link = aday
                             break
 
@@ -4971,13 +6182,7 @@ def web_arastir(sorgu, limit=6):
         # ========================================================
         # EKONOMİ ARAMA BAĞLAMI
         # ========================================================
-        arama_sorgusu = re.sub(
-            r"\b(nerelerde\s+bulunur|nerede\s+bulunur|nerededir|nerede|nedir|kimdir|kaçtır|kactir|nasıl|nasil|ne\s+zaman|hangi\s+ülkelerdedir|hangi\s+ülkelerde|hakkında|hakkinda|bilgi ver(\s+bana)?|bana bilgi ver)\b",
-            " ",
-            str(sorgu),
-            flags=re.IGNORECASE,
-        )
-        arama_sorgusu = re.sub(r"\s+", " ", arama_sorgusu).strip() or sorgu
+        arama_sorgusu = _web_arama_sorgusunu_sadelestir(sorgu)
         ekonomi_arama = bool(
             re.search(
                 r"\b("
@@ -4995,12 +6200,23 @@ def web_arastir(sorgu, limit=6):
 
         if ekonomi_arama:
             soru_norm = str(sorgu).casefold()
+            turkiye_ekonomi_arama = bool(
+                re.search(
+                    r"\b(türkiye|turkiye|tcmb|tüik|tuik)\b",
+                    soru_norm,
+                )
+            )
 
             if re.search(r"\btaylor\b", soru_norm):
                 arama_sorgusu = (
                     '"Taylor rule" monetary policy '
                     '"inflation target" "policy rate" '
                     '"Federal Reserve" "St. Louis Fed"'
+                )
+            elif turkiye_ekonomi_arama:
+                arama_sorgusu = (
+                    "Türkiye güncel enflasyon TÜİK tüketici fiyat endeksi "
+                    "alım gücü reel ücret TCMB"
                 )
             elif (
                 re.search(r"\b(enflasyon|enflasyonu)\b", soru_norm)
@@ -5330,6 +6546,182 @@ def web_arastir(sorgu, limit=6):
                 flush=True
             )
 
+        # Türkiye ekonomi sorularında genel aramaya ek olarak
+        # doğrulanmış TCMB sorgularını ayrı ayrı dene.
+        # Sonuçların resmî kaynak ve konu kontrolü aşağıdaki
+        # mevcut filtreleme aşamasında yapılır.
+        if ekonomi_arama and turkiye_ekonomi_arama:
+            tcmb_hedefli_sorgular = [
+                'site:tcmb.gov.tr "Enflasyon Raporu" 2026',
+                'site:tcmb.gov.tr enflasyon beklentileri Kasım 2026',
+            ]
+
+            for hedefli_sorgu in tcmb_hedefli_sorgular:
+                try:
+                    hedefli_url = (
+                        "https://www.bing.com/search?q="
+                        + quote(hedefli_sorgu)
+                        + "&mkt=tr-TR&setLang=tr&count=10"
+                    )
+                    hedefli_cevap = requests.get(
+                        hedefli_url,
+                        headers=headers,
+                        timeout=15,
+                    )
+
+                    if hedefli_cevap.status_code != 200:
+                        print(
+                            "⚠️ TCMB hedefli arama HTTP "
+                            f"{hedefli_cevap.status_code}",
+                            flush=True,
+                        )
+                        continue
+
+                    hedefli_soup = BeautifulSoup(
+                        hedefli_cevap.text,
+                        "html.parser",
+                    )
+                    hedefli_sonuclar = sonuclari_ayikla(
+                        hedefli_soup,
+                        "bing",
+                    )
+
+                    if hedefli_sonuclar:
+                        tum_sonuclar.extend(hedefli_sonuclar)
+
+                    print(
+                        "🌐 TCMB hedefli arama: "
+                        f"{len(hedefli_sonuclar)} sonuç",
+                        flush=True,
+                    )
+
+                except Exception as e:
+                    print(
+                        f"⚠️ TCMB hedefli arama hatası: {e}",
+                        flush=True,
+                    )
+
+        # Türkiye ekonomi sorularında TCMB'nin yayımladığı
+        # TÜFE tablosundan en yeni dönemi doğrudan oku.
+        if ekonomi_arama and turkiye_ekonomi_arama:
+            tcmb_tufe_url = (
+                "https://www.tcmb.gov.tr/wps/wcm/connect/TR/"
+                "TCMB+TR/Main+Menu/Istatistikler/Enflasyon+Verileri/"
+                "Tuketici+Fiyatlari"
+            )
+
+            try:
+                tufe_cevap = requests.get(
+                    tcmb_tufe_url,
+                    headers=headers,
+                    timeout=15,
+                )
+
+                if tufe_cevap.status_code == 200:
+                    tufe_soup = BeautifulSoup(
+                        tufe_cevap.text,
+                        "html.parser",
+                    )
+
+                    ay_adlari = {
+                        1: "Ocak", 2: "Şubat", 3: "Mart",
+                        4: "Nisan", 5: "Mayıs", 6: "Haziran",
+                        7: "Temmuz", 8: "Ağustos", 9: "Eylül",
+                        10: "Ekim", 11: "Kasım", 12: "Aralık",
+                    }
+
+                    tufe_verileri = []
+
+                    for tablo_satiri in tufe_soup.select("tr"):
+                        hucreler = [
+                            hucre.get_text(" ", strip=True)
+                            for hucre in tablo_satiri.find_all(["td", "th"])
+                        ]
+
+                        if len(hucreler) < 3:
+                            continue
+
+                        tarih_eslesmesi = re.fullmatch(
+                            r"\s*(\d{1,2})[-/.](20\d{2})\s*",
+                            hucreler[0],
+                        )
+                        if not tarih_eslesmesi:
+                            continue
+
+                        ay = int(tarih_eslesmesi.group(1))
+                        yil = int(tarih_eslesmesi.group(2))
+
+                        if not 1 <= ay <= 12:
+                            continue
+
+                        try:
+                            yillik = float(
+                                hucreler[1].replace("%", "").replace(",", ".")
+                            )
+                            aylik = float(
+                                hucreler[2].replace("%", "").replace(",", ".")
+                            )
+                        except (TypeError, ValueError):
+                            continue
+
+                        tufe_verileri.append(
+                            (yil, ay, yillik, aylik)
+                        )
+
+                    if tufe_verileri:
+                        yil, ay, yillik, aylik = max(
+                            tufe_verileri,
+                            key=lambda x: (x[0], x[1]),
+                        )
+
+                        ay_adi = ay_adlari[ay]
+                        yillik_metin = f"{yillik:.2f}".replace(".", ",")
+                        aylik_metin = f"{aylik:.2f}".replace(".", ",")
+
+                        tcmb_tufe_sonucu = {
+                            "title": (
+                                f"TCMB - Tüketici Fiyatları "
+                                f"({ay_adi} {yil})"
+                            ),
+                            "url": tcmb_tufe_url,
+                            "snippet": (
+                                f"TÜFE {ay_adi} {yil}: "
+                                f"yıllık değişim %{yillik_metin}; "
+                                f"aylık değişim %{aylik_metin}. "
+                                "Kaynak: Türkiye Cumhuriyet Merkez Bankası. "
+                                "Endeks verileri TÜİK tarafından yayımlanır."
+                            ),
+                        }
+
+                        # Aynı URL arama sonuçlarında da varsa,
+                        # doğrulanmış tablo verisi önce işlensin.
+                        tum_sonuclar.insert(0, tcmb_tufe_sonucu)
+
+                        print(
+                            "📊 TCMB TÜFE tablosu: "
+                            f"{ay_adi} {yil}, yıllık %{yillik_metin}, "
+                            f"aylık %{aylik_metin}",
+                            flush=True,
+                        )
+                    else:
+                        print(
+                            "⚠️ TCMB sayfası açıldı ancak TÜFE tablosu "
+                            "satırları ayrıştırılamadı.",
+                            flush=True,
+                        )
+                else:
+                    print(
+                        f"⚠️ TCMB TÜFE sayfası HTTP "
+                        f"{tufe_cevap.status_code}",
+                        flush=True,
+                    )
+
+            except Exception as e:
+                print(
+                    f"⚠️ TCMB TÜFE verisi alınamadı: {e}",
+                    flush=True,
+                )
+
         taylor_arama = bool(
             re.search(r"\btaylor\b", str(sorgu).casefold())
         )
@@ -5340,11 +6732,47 @@ def web_arastir(sorgu, limit=6):
             # Ekonomi sorularında arama motoruna gönderilen
             # İngilizce/ek bağlam da sonuç filtresine dahil edilir.
             filtre_sorgusu = (
-                arama_sorgusu
-                if ekonomi_arama
-                else sorgu
+                "Türkiye enflasyon tuik tcmb"
+                if ekonomi_arama and turkiye_ekonomi_arama
+                else (
+                    arama_sorgusu
+                    if ekonomi_arama
+                    else sorgu
+                )
             )
             soru = str(filtre_sorgusu or "").casefold()
+
+            def turkiye_ekonomi_resmi_sonucu_mu(sonuc):
+                if not (ekonomi_arama and turkiye_ekonomi_arama):
+                    return False
+
+                kaynak_url = web_kaynak_url(
+                    str(sonuc.get("url", "") or "")
+                )
+                kaynak_host = urlparse(kaynak_url).netloc.casefold().split(":")[0]
+                resmi_host = (
+                    kaynak_host == "tuik.gov.tr"
+                    or kaynak_host.endswith(".tuik.gov.tr")
+                    or kaynak_host == "tcmb.gov.tr"
+                    or kaynak_host.endswith(".tcmb.gov.tr")
+                )
+                if not resmi_host:
+                    return False
+
+                konu_metni = (
+                    f"{sonuc.get('title', '')} "
+                    f"{sonuc.get('snippet', '')}"
+                ).casefold()
+                return bool(re.search(
+                    r"tüfe|tufe|tüketici fiyat|tuketici fiyat|"
+                    r"enflasyon|fiyat endeksi|üretici fiyat|"
+                    r"uretici fiyat|sektörel enflasyon|"
+                    r"sektorel enflasyon|enflasyon beklenti|"
+                    r"reel ücret|reel ucret|satın alma gücü|"
+                    r"satin alma gucu",
+                    konu_metni,
+                ))
+
             sorgu_kelime = {
                 k for k in re.findall(r"[a-z0-9çğıöşü]+", soru)
                 if len(k) >= 4
@@ -5358,6 +6786,22 @@ def web_arastir(sorgu, limit=6):
                     f"{sonuc.get('snippet', '')}"
                 ).casefold()
 
+                if turkiye_ekonomi_resmi_sonucu_mu(sonuc):
+                    kaynak_url = web_url_tekillestirme_anahtari(
+                        sonuc.get("url", "")
+                    )
+                    if kaynak_url and kaynak_url in gorulen_url_anahtarlari:
+                        continue
+                    if kaynak_url:
+                        gorulen_url_anahtarlari.add(kaynak_url)
+                    ilgili_sonuclar.append(sonuc)
+                    continue
+
+                if not _web_yagmur_ormani_sonucu_uygun_mu(soru, sonuc):
+                    continue
+                if _web_yagmur_ormani_sorgusu_mu(soru):
+                    ilgili_sonuclar.append(sonuc)
+                    continue
                 # Taylor Kuralı sorgusunda yalnızca güvenilir
                 # ve doğrudan ilgili iki kurumsal kaynak kabul edilir.
                 if taylor_arama:
@@ -5376,7 +6820,7 @@ def web_arastir(sorgu, limit=6):
                     ):
                         continue
 
-                if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
+                if _web_sonucu_sorguyla_ilgili_mi(soru, sonuc):
                     kaynak_url = web_url_tekillestirme_anahtari(
                         sonuc.get("url", "")
                     )
@@ -5394,6 +6838,9 @@ def web_arastir(sorgu, limit=6):
                     "hangi", "hakkında", "hakkinda", "bilgi", "son",
                     "gelişmeler", "gelismeler", "bulunur", "ülkelerde",
                     "ülkeler", "olan", "olarak", "için", "icin",
+                    "kısa", "kisa", "verir", "misin", "misiniz",
+                    "genel", "tanıtım", "tanitim", "özet", "ozet",
+                    "anlat", "lütfen", "lutfen", "eder",
                 }
             }
 
@@ -5401,6 +6848,7 @@ def web_arastir(sorgu, limit=6):
                 baslik = str(sonuc.get("title", "")).casefold()
                 aciklama = str(sonuc.get("snippet", "")).casefold()
                 puan = 0
+
                 for kelime in anlamli:
                     if re.search(
                         r"(?<![a-z0-9çğıöşü])" + re.escape(kelime)
@@ -5411,6 +6859,84 @@ def web_arastir(sorgu, limit=6):
                         puan += 5
                     elif kelime in aciklama:
                         puan += 1
+
+                # Genel tanıtım sorularında rehber/tanıtım sayfalarını öne al.
+                genel_tanitim = bool(re.search(
+                    r"\b(hakkında|hakkinda|tanıt|tanit|"
+                    r"bilgi ver|genel bilgi|anlat|tanıtır mısın|"
+                    r"tanitir misin|overview|introduction|"
+                    r"travel guide|city guide)\b",
+                    soru,
+                ))
+                if genel_tanitim:
+                    tanitim_baslik = (
+                        "hakkında", "hakkinda", "tanıtım", "tanitim",
+                        "gezi rehberi", "şehir rehberi", "sehir rehberi",
+                        "turizm", "gezilecek yerler", "genel bilgiler",
+                        "about", "overview", "travel guide", "city guide",
+                        "tourism", "things to do",
+                    )
+                    tanitim_aciklama = (
+                        "nüfus", "nufus", "coğrafya", "cografya",
+                        "ekonomi", "kültür", "kultur", "tarih",
+                        "gezilecek yerler", "turistik", "population",
+                        "geography", "culture", "tourism", "attractions",
+                    )
+                    olay_baslik = (
+                        "vakası", "vakasi", "olayı", "olayi",
+                        "davası", "davasi", "cinayeti", "savaşı",
+                        "savasi", "patlaması", "patlamasi",
+                    )
+                    if any(x in baslik for x in tanitim_baslik):
+                        puan += 18
+                    if any(x in aciklama for x in tanitim_aciklama):
+                        puan += 3
+                    if any(x in baslik for x in olay_baslik):
+                        puan -= 12
+
+                    # Genel tanıtım sorusunda dar alt konuları geriye al.
+                    sorgu_alt_konu = bool(re.search(
+                        r"festival|futbol|basketbol|voleybol|maç|mac|"
+                        r"üniversite|universite|seçim|secim|hava durumu|"
+                        r"deprem|konser|albüm|album|edebiyat|edebiyatı|"
+                        r"edebiyati|dizi|film|birliği|birligi|"
+                        r"tarihçe|tarihcesi|sonuçları|sonuclari",
+                        soru,
+                    ))
+                    dar_konu_baslik = (
+                        "edebiyat", "film festivali", "festival",
+                        "futbol", "basketbol", "voleybol", "üniversite",
+                        "universite", "seçim sonuç", "secim sonuc",
+                        "hava durumu", "deprem", "konser", "albüm",
+                        "album", "dizi bölümü", "dizi bolumu",
+                        "isveç ve norveç birliği", "isvec ve norvec birligi",
+                    )
+                    if not sorgu_alt_konu and any(
+                        x in baslik for x in dar_konu_baslik
+                    ):
+                        puan -= 22
+
+                    # Sosyal medya ve kısa video içerikleri genel tanıtımda
+                    # ansiklopedik veya kurumsal kaynakların önüne geçmesin.
+                    url = str(sonuc.get("url", "") or "").casefold()
+                    zayif_kaynaklar = (
+                        "tiktok.com", "instagram.com", "facebook.com",
+                        "pinterest.com",
+                    )
+                    if any(x in url for x in zayif_kaynaklar):
+                        puan -= 30
+
+                    # Doğrudan konu başlığını anlatan sayfaları öne çıkar.
+                    baslik_temiz = re.sub(
+                        r"[^a-z0-9çğıöşü ]+", " ", baslik
+                    ).strip()
+                    if baslik_temiz in anlamli:
+                        puan += 12
+                    if "wikipedia.org/wiki/" in url:
+                        puan += 5
+                    if ".gov.tr" in url:
+                        puan += 5
+
                 return puan
 
             ilgili_sonuclar.sort(key=baslik_puani, reverse=True)
@@ -5554,12 +7080,62 @@ def web_arastir(sorgu, limit=6):
                 "hangisi", "hangisidir", "hangileri", "hangileridir"
             }
 
+            # Soru eklerini ve bilgi isteği kelimelerini ayıkla;
+            # konu adlarını koruyarak genel bir arama çekirdeği oluştur.
+            durak_kokleri = etkisiz | {
+                "en", "son", "dizi",
+                "bölüm", "bolum", "numara", "sezon",
+                "yayın", "yayin", "tarih", "oyuncu",
+                "söyle", "soyle", "göster", "goster", "bul",
+                "listele", "öğren", "ogren", "anlat", "bilgi",
+                "ver", "kaç", "kac", "tane", "hakkında", "hakkinda",
+            }
+            turkce_ekler = (
+                "larının", "lerinin", "larını", "lerini",
+                "sının", "sinin", "sunun", "sünün",
+                "sını", "sini", "sunu", "sünü",
+                "unun", "ünün", "ının", "inin",
+                "larını", "lerini", "ları", "leri",
+                "lar", "ler", "nın", "nin", "nun", "nün",
+                "ını", "ini", "unu", "ünü",
+            )
+
+            def arama_durak_kelimesi_mi(kelime):
+                if kelime in durak_kokleri:
+                    return True
+                return any(
+                    kelime.endswith(ek)
+                    and len(kelime) - len(ek) >= 3
+                    and kelime[:-len(ek)] in durak_kokleri
+                    for ek in turkce_ekler
+                )
+
             kelimeler = [
                 k for k in re.findall(r"[a-z0-9çğıöşü]+", soru)
-                if len(k) >= 3 and k not in etkisiz
+                if len(k) >= 3 and not arama_durak_kelimesi_mi(k)
             ]
 
             kısa_kelimeler = kelimeler[:8]
+
+            # Dizi sorularında platform ve bölüm bağlamını koru.
+            dizi_sorusu = bool(re.search(
+                r"\b(?:dizi\w*|bölüm\w*|bolum\w*|sezon\w*|oyuncu\w*)\b",
+                soru
+            ))
+            if dizi_sorusu:
+                platform = re.search(r"\b([a-z0-9]+)\s+tv\b", soru)
+                if platform:
+                    platform_kelimeleri = [platform.group(1), "tv"]
+                    kısa_kelimeler = [
+                        k for k in kısa_kelimeler
+                        if k not in platform_kelimeleri and k != "bölümler"
+                    ]
+                    kısa_kelimeler.extend(platform_kelimeleri)
+                elif re.search(r"\btv\b", soru) and "tv" not in kısa_kelimeler:
+                    kısa_kelimeler.append("tv")
+
+                if "bölümler" not in kısa_kelimeler:
+                    kısa_kelimeler.append("bölümler")
 
             # "hangi bölüm", "hangi doktor", "hangi birim" gibi
             # yönlendirme amacı taşıyan soru kalıbını koru.
@@ -5581,7 +7157,7 @@ def web_arastir(sorgu, limit=6):
             if (
                 kısa_sorgu
                 and kısa_sorgu != soru
-                and len(kelimeler) >= 4
+                and len(kelimeler) >= 2
                 and (
                     not ekonomi_arama
                     or taylor_arama
@@ -5616,7 +7192,7 @@ def web_arastir(sorgu, limit=6):
                     if ikinci:
                         ikinci_ilgili = [
                             sonuc for sonuc in ikinci
-                            if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc)
+                            if _web_sonucu_sorguyla_ilgili_mi(kısa_sorgu, sonuc)
                         ]
                         print(
                             f"🧠 Kısa sorgu: {len(ikinci)} sonuç, "
@@ -5626,11 +7202,43 @@ def web_arastir(sorgu, limit=6):
                         if ikinci_ilgili:
                             return ikinci_ilgili
 
+            ilgili_ilk_sonuclar = [
+                sonuc for sonuc in ilk_sonuclar
+                if (
+                    turkiye_ekonomi_resmi_sonucu_mu(sonuc)
+                    or _web_sonucu_sorguyla_ilgili_mi(filtre_sorgusu, sonuc)
+                )
+            ]
             print(
-                f"🧠 Web toplam: {len(ilk_sonuclar)} sonuç (çoklu kaynak)",
+                f"🧠 Web toplam: {len(ilk_sonuclar)} sonuç; "
+                f"ilgili: {len(ilgili_ilk_sonuclar)} (çoklu kaynak)",
                 flush=True
             )
-            return ilk_sonuclar
+            if ekonomi_arama and turkiye_ekonomi_arama:
+                # Türkiye ekonomi sorgularında resmî veri kaynakları öne alınır.
+                ilgili_ilk_sonuclar.sort(
+                    key=lambda x: (
+                        not turkiye_ekonomi_resmi_sonucu_mu(x),
+                        -baslik_puani(x),
+                    )
+                )
+            else:
+                # Genel aramalarda mevcut Wikipedia önceliğini koru.
+                konu = _web_arama_sorgusunu_sadelestir(sorgu).casefold().strip()
+                ilgili_ilk_sonuclar.sort(
+                    key=lambda x: (
+                        not (
+                            x.get("url", "").startswith(
+                                "https://tr.wikipedia.org/wiki/"
+                            )
+                            and x.get("title", "").casefold().strip() == konu
+                        ),
+                        not x.get("url", "").startswith(
+                            "https://tr.wikipedia.org/wiki/"
+                        ),
+                    )
+                )
+            return ilgili_ilk_sonuclar
 
         return []
 
@@ -5678,6 +7286,87 @@ def web_sayfa_oku(url, limit=7000):
         )
 
         # Sayfa metnine karışan teknik/navigasyon bölümlerini temizle.
+        yapilandirilmis_bilgiler = []
+        gorulen_bilgiler = set()
+
+        def json_ld_deger(deger):
+            if isinstance(deger, dict):
+                return (
+                    deger.get("name")
+                    or deger.get("@id")
+                    or deger.get("url")
+                    or ""
+                )
+            if isinstance(deger, list):
+                return ", ".join(
+                    str(json_ld_deger(x)).strip()
+                    for x in deger
+                    if json_ld_deger(x)
+                )
+            return str(deger).strip() if deger is not None else ""
+
+        def json_ld_gez(veri):
+            if isinstance(veri, list):
+                for oge in veri:
+                    json_ld_gez(oge)
+                return
+            if not isinstance(veri, dict):
+                return
+
+            tur = veri.get("@type", [])
+            if isinstance(tur, str):
+                turler = [tur.lower().split("/")[-1]]
+            elif isinstance(tur, list):
+                turler = [str(x).lower().split("/")[-1] for x in tur]
+            else:
+                turler = []
+
+            desteklenen = {
+                "tvepisode", "episode", "article", "newsarticle",
+                "reportagenewsarticle", "videoobject", "event"
+            }
+
+            if any(t in desteklenen for t in turler):
+                alanlar = (
+                    ("name", "Başlık"),
+                    ("headline", "Başlık"),
+                    ("episodeNumber", "Bölüm numarası"),
+                    ("partOfSeason", "Sezon"),
+                    ("partOfSeries", "Dizi"),
+                    ("datePublished", "Yayın tarihi"),
+                    ("uploadDate", "Yüklenme tarihi"),
+                    ("startDate", "Başlangıç tarihi"),
+                    ("description", "Açıklama"),
+                    ("url", "Bağlantı"),
+                    ("actor", "Oyuncular"),
+                    ("director", "Yönetmen"),
+                    ("productionCompany", "Yapım şirketi"),
+                    ("image", "Görsel"),
+                    ("aggregateRating", "İzleyici puanı"),
+                )
+
+                for anahtar, etiket in alanlar:
+                    deger = json_ld_deger(veri.get(anahtar))
+                    if not deger:
+                        continue
+                    deger = re.sub(r"\\s+", " ", deger).strip()
+                    satir = f"{etiket}: {deger}"
+                    if satir not in gorulen_bilgiler:
+                        gorulen_bilgiler.add(satir)
+                        yapilandirilmis_bilgiler.append(satir)
+
+            for alt in veri.values():
+                if isinstance(alt, (dict, list)):
+                    json_ld_gez(alt)
+
+        for betik in soup.find_all("script"):
+            if str(betik.get("type", "")).lower() != "application/ld+json":
+                continue
+            try:
+                json_ld_gez(json.loads(betik.string or betik.get_text(), strict=False))
+            except (ValueError, TypeError):
+                continue
+
         for etiket in soup([
             "script", "style", "noscript", "svg",
             "nav", "header", "footer", "aside", "form"
@@ -5707,6 +7396,10 @@ def web_sayfa_oku(url, limit=7000):
         else:
             metin = " ".join(kaynak.stripped_strings)
         metin = re.sub(r"\s+", " ", metin).strip()
+
+        if yapilandirilmis_bilgiler:
+            ek_bilgi = " | ".join(yapilandirilmis_bilgiler)
+            metin = (ek_bilgi + " | " + metin).strip(" |")
 
         if len(metin) > limit:
             metin = metin[:limit]
@@ -6162,6 +7855,262 @@ def sofascore_son_mac_getir(mesaj):
         print(f"[SofaScore] Son maç hatası: {e}")
         return None
 
+
+
+
+def fotmob_takim_bul(sorgu):
+    """FotMob arama API'sinden takım adını ve ID'sini bulur."""
+    import requests
+
+    sorgu = str(sorgu or "").strip()
+    if not sorgu:
+        return None
+
+    try:
+        r = requests.get(
+            "https://apigw.fotmob.com/searchapi/suggest",
+            params={"term": sorgu, "lang": "en"},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=15
+        )
+        r.raise_for_status()
+        data = r.json()
+        norm = _sofascore_takim_adi_norm
+        sorgu_norm = norm(sorgu)
+        adaylar = []
+
+        for grup in data.get("teamSuggest", []):
+            for secenek in grup.get("options", []):
+                payload = secenek.get("payload") or {}
+                takim_id = payload.get("id")
+                ad = str(secenek.get("text") or "").split("|")[0].strip()
+
+                if not takim_id or not ad:
+                    continue
+
+                ad_norm = norm(ad)
+                if ad_norm != sorgu_norm and not ad_norm.startswith(sorgu_norm):
+                    continue
+
+                puan = float(secenek.get("score") or 0)
+                if ad_norm == sorgu_norm:
+                    puan += 1000000
+
+                adaylar.append((puan, {"id": takim_id, "name": ad}))
+
+        if not adaylar:
+            return None
+
+        adaylar.sort(key=lambda x: x[0], reverse=True)
+        return adaylar[0][1]
+
+    except Exception as e:
+        print(f"[FotMob] Takım arama hatası: {e}", flush=True)
+        return None
+
+
+def fotmob_takim_puan_durumu_getir(takim, mesaj=""):
+    """FotMob üzerinden takımın genel lig sıralamasını getirir."""
+    import requests
+
+    if not takim or not takim.get("id"):
+        return None
+
+    try:
+        r = requests.get(
+            "https://www.fotmob.com/api/data/teams",
+            params={"id": takim["id"]},
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=20
+        )
+        r.raise_for_status()
+
+        gruplar = (r.json().get("overview") or {}).get("table") or []
+        sorgu = str(mesaj or "").casefold()
+
+        acik_lig = None
+        for grup in gruplar:
+            data = grup.get("data") or {}
+            lig = str(data.get("leagueName") or "")
+            if lig and lig.casefold() in sorgu:
+                acik_lig = lig
+                break
+
+        for grup in gruplar:
+            data = grup.get("data") or {}
+            lig = str(data.get("leagueName") or "")
+
+            if acik_lig and lig.casefold() != acik_lig.casefold():
+                continue
+
+            satirlar = ((data.get("table") or {}).get("all") or [])
+            for satir in satirlar:
+                if str(satir.get("id")) == str(takim["id"]):
+                    return {
+                        "takim": satir.get("name") or takim.get("name"),
+                        "lig": lig,
+                        "sira": satir.get("idx"),
+                        "puan": satir.get("pts"),
+                        "oynanan": satir.get("played")
+                    }
+
+        return None
+    except Exception as e:
+        print(f"[FotMob] Puan durumu hatası: {e}", flush=True)
+        return None
+
+
+def fotmob_takim_mac_getir(takim, gelecek=True):
+    """FotMob takım verisinden canlı/sıradaki veya son bitmiş maçı alır."""
+    import requests
+    from datetime import datetime, timezone, timedelta
+
+
+    if not takim or not takim.get("id"):
+        return None
+
+    try:
+        r = requests.get(
+            "https://www.fotmob.com/api/data/teams",
+            params={"id": takim["id"]},
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://www.fotmob.com/"
+            },
+            timeout=20
+        )
+        r.raise_for_status()
+        overview = r.json().get("overview") or {}
+        mac = overview.get("nextMatch") if gelecek else overview.get("lastMatch")
+
+        if not isinstance(mac, dict):
+            return None
+
+        status = mac.get("status") or {}
+        if status.get("cancelled"):
+            return None
+
+        finished = bool(status.get("finished"))
+        started = bool(status.get("started"))
+
+        if gelecek and finished:
+            return None
+        if not gelecek and not finished:
+            return None
+
+        ev = mac.get("home") or {}
+        dep = mac.get("away") or {}
+        utc = status.get("utcTime")
+        if not utc:
+            return None
+
+        dt = datetime.fromisoformat(utc.replace("Z", "+00:00"))
+        tarih = dt.astimezone(timezone(timedelta(hours=3))).strftime("%d.%m.%Y %H:%M")
+
+        live = status.get("liveTime") or mac.get("liveTime") or {}
+
+        return {
+            "ev": ev.get("name", "Ev sahibi"),
+            "deplasman": dep.get("name", "Deplasman"),
+            "ev_skor": ev.get("score") if (started or finished) else None,
+            "dep_skor": dep.get("score") if (started or finished) else None,
+            "durum": "finished" if finished else ("inprogress" if started else "notstarted"),
+            "canli_durum": live.get("long") or live.get("short") or "",
+            "tarih_saat": tarih,
+            "turnuva": (mac.get("tournament") or {}).get("name")
+        }
+
+    except Exception as e:
+        print(f"[FotMob] Tek takım maç hatası: {e}", flush=True)
+        return None
+
+
+
+
+def sofascore_takim_mac_getir(takim, gelecek=True):
+    """Bir futbol takımının sıradaki veya son tamamlanmış maçını SofaScore'dan getirir."""
+    import requests
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    if not takim or not takim.get("id"):
+        return None
+
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json"
+        }
+        yon = "next" if gelecek else "last"
+        url = (
+            f"https://www.sofascore.com/api/v1/team/"
+            f"{takim['id']}/events/{yon}/0"
+        )
+
+        r = requests.get(url, headers=headers, timeout=12)
+        if r.status_code != 200:
+            return None
+
+        events = r.json().get("events", [])
+        simdi = datetime.now(timezone.utc).timestamp()
+        adaylar = []
+
+        for event in events:
+            ev = event.get("homeTeam") or {}
+            dep = event.get("awayTeam") or {}
+            takim_id = str(takim.get("id"))
+
+            if takim_id not in (str(ev.get("id")), str(dep.get("id"))):
+                continue
+
+            timestamp = event.get("startTimestamp")
+            if not timestamp:
+                continue
+
+            durum = (event.get("status") or {}).get("type", "")
+
+            if gelecek:
+                if timestamp < simdi or durum not in ("notstarted", "inprogress"):
+                    continue
+            else:
+                if durum != "finished":
+                    continue
+                if timestamp > simdi:
+                    continue
+
+            adaylar.append(event)
+
+        if not adaylar:
+            return None
+
+        mac = (
+            min(adaylar, key=lambda x: x["startTimestamp"])
+            if gelecek
+            else max(adaylar, key=lambda x: x["startTimestamp"])
+        )
+
+        ev = mac.get("homeTeam") or {}
+        dep = mac.get("awayTeam") or {}
+        ev_skor = (mac.get("homeScore") or {}).get("current")
+        dep_skor = (mac.get("awayScore") or {}).get("current")
+
+        tarih = datetime.fromtimestamp(
+            mac["startTimestamp"], ZoneInfo("Europe/Istanbul")
+        ).strftime("%d.%m.%Y %H:%M")
+
+        return {
+            "ev": ev.get("name", "Ev sahibi"),
+            "deplasman": dep.get("name", "Deplasman"),
+            "ev_skor": ev_skor,
+            "dep_skor": dep_skor,
+            "durum": (mac.get("status") or {}).get("type"),
+            "tarih_saat": tarih,
+            "turnuva": (mac.get("tournament") or {}).get("name")
+        }
+
+    except Exception as e:
+        print(f"[SofaScore] Tek takım maç hatası: {e}", flush=True)
+        return None
 
 
 def fotmob_iki_takim_skoru_getir(mesaj, takimlar):
@@ -6868,6 +8817,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
     """Bugünkü spor fikstürünü kaynaklardan ayıklayıp kategori bazında doğrudan cevaplar."""
     import re
     from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     if not mesaj:
         return ""
@@ -7025,7 +8975,9 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         "oynanacak", "oynayacak",
         "kiminle oynayacak", "kimle oynayacak",
         "var mı", "var mi",
-        "hangi maç", "hangi mac"
+        "hangi maç", "hangi mac",
+        "sonuç", "sonuc", "skor",
+        "oynanan"
     ])
 
     if not fikstur_mu:
@@ -7382,7 +9334,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         if bugun_mu and not sonuc_mu and saat and not genel_fikstur_mu:
             try:
                 saat_dt = datetime.strptime(saat, "%H:%M")
-                simdi_dt = datetime.now()
+                simdi_dt = datetime.now(ZoneInfo("Europe/Istanbul")).replace(tzinfo=None)
                 if (
                     saat_dt.hour < simdi_dt.hour
                     or (
@@ -7409,8 +9361,9 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             deplasman
         ).strip()
 
-        # Genel maç sorgusunda sayfanın genel lig bilgisini maça taşıma.
-        lig = ""
+        # Yapılandırılmış ESPN kaydının lig bilgisini koru.
+        # Yalnızca lig bilgisi olmayan web kayıtları boş kalır.
+        lig = temiz(sonuc.get("lig", ""))
 
         if any(k in f"{ev} {deplasman}".casefold() for k in (
             "tekrar",
@@ -7489,6 +9442,10 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
         renk_ikonu = renk_ikonlari[len(yapilandirilmis) % len(renk_ikonlari)]
 
         tarih = str(sonuc.get("tarih", "")).strip()
+        if bugun_mu and tarih:
+            bugunun_tarihi = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%d.%m.%Y")
+            if tarih != bugunun_tarihi:
+                continue
         gun_metni = ""
 
         if tarih:
@@ -7551,7 +9508,7 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
             mac = re.search(
                 r"(?:🔴|🔵|🟠|🟡|🟢|🟥|⚫|⚽|🏀|🏐|🎾)\s*(.*?)\s+-\s+(.*?)\n"
                 r"(?:📅\s+.*?—\s+)?(\d{2}\.\d{2}\.\d{4})\n"
-                r"(?:🕐\s+)?(\d{2}:\d{2})",
+                r"(?:🕐\s+(\d{2}:\d{2})|⚽\s+(\d+)\s*-\s*(\d+))",
                 satir,
                 flags=re.DOTALL
             )
@@ -7560,7 +9517,11 @@ def spor_fikstur_direkt_cevapla(mesaj, web_verisi=None):
 
             ev = temiz(mac.group(1))
             deplasman = temiz(mac.group(2))
-            saat = mac.group(4)
+            saat = mac.group(4) or (
+                f"skor:{mac.group(5)}-{mac.group(6)}"
+                if mac.group(5) is not None and mac.group(6) is not None
+                else ""
+            )
 
             def takim_anahtari(ad):
                 ad = norm(ad)
@@ -7928,6 +9889,7 @@ def web_sonuclari_metni(sonuclar):
                 + sayfa_metni
                 + "\n"
             )
+        else:
             satirlar.append(
                 "GERÇEK SAYFA İÇERİĞİ: Okunamadı. "
                 "Yalnızca arama özeti kullanılabilir.\n"
@@ -8373,6 +10335,7 @@ def eagle_baglam_yonlendir(mesaj, karar, sohbet_baglam, borc_modulu, gecmis=None
         "kod_analiz",
         "hafiza",
         "program_yazma",
+        "takvim_hesaplama",
     }
 
     if karar.get("arac") in yeni_konu_araclari:
@@ -8484,7 +10447,19 @@ def sohbet():
                         "bunu açıkça belirt ve görselden doğrulanabilen bilgilerle "
                         "sınırlı kal. "
                         "Öncelik sırası: görseli anla, soruyu görsele göre cevapla, "
-                        "ancak gerekirse daha sonra dış bilgi doğrulaması yapılabilir."
+                        "ancak gerekirse daha sonra dış bilgi doğrulaması yapılabilir. "
+                        "Yanıtında üç şeyi birbirinden ayır: "
+                        "1) GÖZLEM: Görselde gerçekten görülen nesneler, yazılar ve sayılar. "
+                        "2) YORUM: Gözlemlerden makul biçimde çıkarılabilecek sonuçlar. "
+                        "3) BELİRSİZLİK: Görselin tek başına doğrulayamadığı bilgiler. "
+                        "Tahminleri kesin gerçek gibi sunma; bir simgenin anlamı, "
+                        "haritadaki renklerin ölçüsü veya verilerin güncelliği "
+                        "doğrulanamıyorsa bunu açıkça belirt. "
+                        "Ekran görüntülerinde teknik hata, bozuk yerleşim veya "
+                        "yanlışlıkla gösterilen kaynak kodu gibi sorunları da belirt. "
+                        "Kullanıcı yalnızca yorum istiyorsa uzun bir ekran öğeleri "
+                        "listesi yerine en önemli bulguları ve sonuçlarını açıkla. "
+                        "Okunabilir metinleri doğru aktar; görünmeyen ayrıntıları uydurma."
                     )
 
                     gemini_payload = {
@@ -8649,6 +10624,76 @@ def sohbet():
     akil_plani = akil_motor.planla(mesaj_karar, gecmis)
     karar = akil_plani.get("karar", {})
 
+    # Takvim hesabını bilgi bankası ve web aşamalarından önce doğrudan yanıtla.
+    if karar.get("arac") == "takvim_hesaplama":
+        takvim_tarihi = eagle_takvim_tarihini_coz(mesaj_orijinal)
+        if takvim_tarihi is not None:
+            ay_adlari = [
+                "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+                "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"
+            ]
+            gun_adlari = [
+                "Pazartesi", "Salı", "Çarşamba", "Perşembe",
+                "Cuma", "Cumartesi", "Pazar"
+            ]
+            gun_adi = gun_adlari[takvim_tarihi.weekday()]
+            tarih_metni = (
+                f"{takvim_tarihi.day} {ay_adlari[takvim_tarihi.month - 1]} "
+                f"{takvim_tarihi.year}"
+            )
+            soru_norm = str(mesaj_orijinal).casefold().replace("ü", "u")
+            if "bugun" in soru_norm or "bugün" in soru_norm:
+                cevap = f"📅 Bugün {tarih_metni}, {gun_adi}."
+            elif "yarin" in soru_norm or "yarın" in soru_norm:
+                cevap = f"📅 Yarın {tarih_metni}, {gun_adi}."
+            else:
+                cevap = f"📅 {tarih_metni}, {gun_adi} gününe denk geliyor."
+
+            return jsonify({
+                "ok": True,
+                "answer": cevap,
+                "eagle_direct": True,
+                "web_search": False,
+                "takvim_hesaplama": True,
+                "memory_count": len(hafiza_yukle())
+            })
+
+    # Genel bilgi JSON kaydını web/matematik yönlendirmesinden önce dene.
+    if karar.get("arac") not in (
+        "borc_modulu", "spor_kaynaklari", "hava_api",
+        "guvenli_hesaplama", "kod_analiz", "program_yazma",
+        "web_arastirma", "takvim_hesaplama",
+    ) and not karar.get("komut"):
+        genel_dosya = Path(__file__).resolve().with_name("eagle_genel_bilgi.json")
+        try:
+            genel_kayitlar = json.loads(genel_dosya.read_text(encoding="utf-8"))
+            def _genel_norm(v):
+                v = str(v or "").casefold().translate(str.maketrans(
+                    {"ç":"c", "ğ":"g", "ı":"i", "ö":"o", "ş":"s", "ü":"u"}
+                ))
+                v = re.sub(r"[^a-z0-9\s]", " ", v)
+                return re.sub(r"\s+", " ", v).strip()
+
+            _soru = " " + _genel_norm(mesaj_orijinal) + " "
+            for _kayit in genel_kayitlar:
+                if not isinstance(_kayit, dict):
+                    continue
+                _cevap = str(_kayit.get("cevap", "")).strip()
+                for _anahtar in _kayit.get("anahtarlar", []):
+                    _ifade = _genel_norm(_anahtar)
+                    if _cevap and _ifade and (" " + _ifade + " ") in _soru:
+                        return jsonify({
+                            "ok": True,
+                            "answer": "🦅 EAGLE BİLGİ BANKASI\n\n• " + _cevap,
+                            "eagle_direct": True,
+                            "knowledge_base": True,
+                            "web_search": False,
+                            "memory_count": len(hafiza_yukle()),
+                        })
+        except (OSError, ValueError, TypeError) as _hata:
+            print("Genel bilgi JSON hatası:", _hata, flush=True)
+
+
     # Kimlik sorularını web aramasından önce yerel sohbet motorunda yanıtla.
     kimlik_metni = str(mesaj_orijinal or "").casefold().strip().rstrip(" ?!.")
     kimlik_sorulari = {
@@ -8730,6 +10775,17 @@ def sohbet():
         r'(?m)^\s*(?:from\s+\w+|import\s+\w+|def\s+\w+|class\s+\w+|print\s*\(|[A-Za-z_]\w*\s*=)',
         mesaj
     )
+    if not yeni_kod_eslesmesi and (
+        re.search(r"\b(?:python|kod|koddaki|kodundaki)\b", mesaj_kucuk)
+        and any(x in mesaj_kucuk for x in ("hata", "düzelt", "duzelt", "analiz", "incele"))
+    ):
+        yeni_kod_eslesmesi = re.search(
+            r"\b(?:print\s*\(|raise\s+[A-Za-z_]\w*\s*\(|"
+            r"import\s+\w+|from\s+\w+\s+import\b|"
+            r"def\s+[A-Za-z_]\w*\s*\(|class\s+[A-Za-z_]\w*)",
+            mesaj,
+        )
+
     yeni_kod_var = bool(yeni_kod_eslesmesi)
 
     if aktif_kod and not yeni_kod_var and not any(
@@ -8826,6 +10882,38 @@ def sohbet():
         )
 
     print(f"🧠 EAGLE KARAR: {karar}", flush=True)
+
+    # Medya önerileri: son kararın ardından, web araştırmasından önce TMDb'ye yönlendir.
+    medya_soru = str(mesaj_orijinal or mesaj or "").strip()
+    if karar.get("media_recommendation") or _eagle_medya_oneri_istegi(medya_soru):
+        medya_items = _eagle_tmdb_medya_onerileri(medya_soru, limit=6)
+        satirlar = []
+        for sira, item in enumerate(medya_items, 1):
+            yil = str(item.get("release_date") or "")[:4]
+            baslik = str(item.get("title") or "Yapım")
+            ozet = str(item.get("overview") or "").strip()
+            satir = f"{sira}. **{baslik}**" + (f" ({yil})" if yil else "")
+            if ozet:
+                satir += f"\n{ozet[:220]}"
+            satirlar.append(satir)
+
+        cevap = (
+            "🎬 **TMDb doğrulamalı öneriler**\n\n" + "\n\n".join(satirlar)
+            if medya_items else
+            "İsteğine uygun, afişi doğrulanmış TMDb önerisi bulamadım. Yanlış veya uydurma yapım/afiş göstermiyorum."
+        )
+        return jsonify({
+            "ok": True,
+            "answer": cevap,
+            "web_search": True,
+            "eagle_direct": True,
+            "merkez_motor": False,
+            "media_query": True,
+            "media_items": medya_items,
+            "source": "https://www.themoviedb.org/",
+            "memory_count": len(hafiza_yukle()),
+        })
+
 
     def eagle_yapistirilmis_kod_mu(metin):
         """Doğrudan veya doğal dil içinde verilen Python kodunu algılar."""
@@ -9038,6 +11126,31 @@ def sohbet():
                         kaynak_kod = olasi_kod.strip()
 
 
+                # Doğal dildeki hata ayıklama isteğini tek satırlık koddan ayır.
+                if "\n" not in kaynak_kod:
+                    kod_baslangici = re.search(
+                        r"\b(?:print\s*\(|raise\s+[A-Za-z_]\w*\s*\(|"
+                        r"import\s+\w+|from\s+\w+\s+import\b|"
+                        r"def\s+[A-Za-z_]\w*\s*\(|"
+                        r"class\s+[A-Za-z_]\w*|"
+                        r"for\s+[A-Za-z_]\w*\s+in\b|"
+                        r"while\s+.+:|if\s+.+:)",
+                        kaynak_kod,
+                    )
+                    if kod_baslangici:
+                        on_ek = kaynak_kod[:kod_baslangici.start()].lower()
+                        if (
+                            re.search(r"\b(?:python|kod|koddaki|kodundaki)\b", on_ek)
+                            and any(
+                                ifade in on_ek
+                                for ifade in (
+                                    "hata", "düzelt", "duzelt",
+                                    "analiz", "incele", "bul",
+                                )
+                            )
+                        ):
+                            kaynak_kod = kaynak_kod[kod_baslangici.start():].strip()
+
                 # Kodun arkasına eklenen doğal dil sorusunu Python kaynağına dahil etme.
                 soru_isaretleri = (
                     "bu python kodunu",
@@ -9195,10 +11308,12 @@ def sohbet():
                     "",
                 ]
 
+                kod_degisti = False
                 if autofix_sonucu.get("success"):
                     if gecici_dosya.exists():
                         duzeltilmis_kod = gecici_dosya.read_text(encoding="utf-8").strip()
                         if duzeltilmis_kod and duzeltilmis_kod != kaynak_kod:
+                            kod_degisti = True
                             cevap.extend([
                                 "",
                                 "📝 DÜZELTİLMİŞ KOD",
@@ -9208,9 +11323,22 @@ def sohbet():
                                 "```"
                             ])
                     cevap.extend([
-                        "✅ DÜZELTME KABUL EDİLDİ",
+                        (
+                            "✅ DÜZELTME UYGULANDI"
+                            if kod_degisti
+                            else "✅ ÇALIŞTIRMA BAŞARILI — MANTIKSAL DOĞRULUK TEYİT EDİLMEDİ"
+                        ),
                         "",
                         f"Neden: {autofix_sonucu.get('reason', '')}",
+                    ])
+
+                else:
+                    cevap.extend([
+                        "",
+                        "🛑 DÜZELTME REDDEDİLDİ",
+                        "",
+                        "Otomatik değişiklik uygulanmadı.",
+                        f"Neden: {autofix_sonucu.get('reason', 'Doğrulama başarısız.')}",
                     ])
 
                 cevap.extend([
@@ -9264,6 +11392,22 @@ def sohbet():
                     "autofix_result": autofix_sonucu,
                     "findings": bulgular,
                     "logic_analysis": mantik,
+                    "memory_count": len(hafiza_yukle())
+                })
+
+            except subprocess.TimeoutExpired:
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        "🦅 EAGLE KOD ANALİZİ + AUTOFIX\n\n"
+                        "⏱️ Kod 5 saniye içinde tamamlanmadı; "
+                        "güvenli süre sınırı nedeniyle durduruldu."
+                    ),
+                    "eagle_direct": True,
+                    "code_analysis": True,
+                    "code_execution": False,
+                    "autofix": False,
+                    "timeout": True,
                     "memory_count": len(hafiza_yukle())
                 })
 
@@ -9372,6 +11516,61 @@ def sohbet():
         except Exception as e:
             borc_modulu_sonucu = f"Borç modülü çalıştırılırken hata oluştu: {e}"
             print(f"❌ BORÇ MODÜLÜ HATASI: {e}", flush=True)
+
+    # Afet isteğini modülden bağımsız algıla.
+    # Normal sohbetlerde afet modülünü yüklemeye gerek yoktur.
+    import unicodedata
+
+    afet_soru = unicodedata.normalize(
+        "NFKD", str(mesaj or "").lower()
+    )
+    afet_soru = "".join(
+        c for c in afet_soru if not unicodedata.combining(c)
+    ).replace("ı", "i")
+
+    def afet_isareti_var(isaret):
+        return re.search(
+            r"(?<!\w)" + re.escape(isaret) + r"\w*(?!\w)",
+            afet_soru
+        ) is not None
+
+    afet_istegi = (
+        any(afet_isareti_var(x) for x in (
+            "deprem", "afet", "enkaz", "yarali"
+        ))
+        or "toplu yaralanma" in afet_soru
+        or "sahra hastanesi" in afet_soru
+    ) and any(afet_isareti_var(x) for x in (
+        "triyaj", "aciliyet", "hastane",
+        "ambulans", "kaynak", "siniflandir", "yonlendir"
+    ))
+
+    if afet_istegi:
+        try:
+            from eagle_afet_koordinasyon import afet_koordinasyon_cevabi
+            afet_cevap = afet_koordinasyon_cevabi(mesaj)
+            if not afet_cevap:
+                raise RuntimeError("Afet isteği algılandı ancak modül yanıt üretmedi.")
+        except Exception as e:
+            print(f"❌ AFET KOORDİNASYON MODÜLÜ HATASI: {e}", flush=True)
+            return jsonify({
+                "ok": False,
+                "answer": "Afet koordinasyon modülü güvenli biçimde yanıt üretemedi. Yerel koordinasyon desteği şu anda kullanılamıyor.",
+                "web_search": False,
+                "eagle_direct": True,
+                "afet_koordinasyon": True,
+                "merkez_motor": False,
+            }), 503
+
+        return jsonify({
+            "ok": True,
+            "answer": afet_cevap,
+            "web_search": False,
+            "eagle_direct": True,
+            "afet_koordinasyon": True,
+            "merkez_motor": False,
+            "memory_count": len(hafiza_yukle()),
+        })
 
     hava_verisi = hava_durumu_getir(mesaj)
 
@@ -9527,11 +11726,24 @@ def sohbet():
         ))
 
         mac_ifadesi = "maç" in mesaj_kf or "mac" in mesaj_kf
+        voleybol_sorgusu = any(k in mesaj_kf for k in (
+            "voleybol", "filenin sultanları",
+            "filenin sultanlari", "filenin efeleri"
+        ))
 
-        if skor_istegi:
+        tek_takim_mac_istegi = any(k in mesaj_kf for k in (
+    "maç", "mac", "saat", "kaçta", "kacta", "rakibi",
+    "kimle", "kiminle", "oynayacak", "oynuyor",
+    "son maç", "son mac", "kazandı", "kazandi"
+))
+        puan_durumu_istegi = any(k in mesaj_kf for k in (
+            "kaçıncı", "kacinci", "sırada", "sirada",
+            "puan durumu", "puan", "ligde"
+        ))
+        if (skor_istegi or tek_takim_mac_istegi or puan_durumu_istegi) and not voleybol_sorgusu:
             # Önce yapılandırılmış direkt spor kaynağını dene.
             # FotMob gerçek sonucu bulursa SofaScore'a geçmeden döndür.
-            direkt_skor = spor_skoru_direkt_cevapla(mesaj)
+            direkt_skor = spor_skoru_direkt_cevapla(mesaj) if skor_istegi else ''
             if direkt_skor:
                 print(
                     f"⚽ FOTMOB DOĞRUDAN API CEVAP: {direkt_skor}",
@@ -9547,7 +11759,7 @@ def sohbet():
                 })
 
             temiz_mesaj = re.sub(
-                r"\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|bitti|sonucu)\b",
+                r"\b(?:maçı|maci|maç|mac|canlı|canli|sonuç|sonuc|skor|kaç|kac|bitti|sonucu|saat|kaçta|kacta|rakibi|kimle|kiminle|oynayacak|oynuyor|son|kazandı|kazandi|kaçıncı|kacinci|sırada|sirada|puan|durumu|ligde|europa|league|uefa|mı|mi|mu|mü|ne|zaman|fikstür|fikstur|gelecek|nin|nın|nun|nün|in|ın|un|ün)\b",
                 " ",
                 mesaj_kf
             )
@@ -9573,7 +11785,7 @@ def sohbet():
 
                     gorulen.add(parca)
 
-                    takim = sofascore_takim_bul(parca)
+                    takim = fotmob_takim_bul(parca)
 
                     if takim:
                         adaylar.append(
@@ -9607,6 +11819,120 @@ def sohbet():
                 if len(secilen) == 2:
                     break
 
+            if len(secilen) == 1:
+                tek_takim = secilen[0]
+                if puan_durumu_istegi:
+                    bilgi = fotmob_takim_puan_durumu_getir(tek_takim, mesaj)
+                    if bilgi:
+                        cevap = (
+                            f"{bilgi['takim']}, {bilgi['lig']} puan durumunda "
+                            f"{bilgi['sira']}. sırada. "
+                            f"{bilgi['puan']} puanı var; "
+                            f"{bilgi['oynanan']} maç oynadı."
+                        )
+                    else:
+                        cevap = (
+                            f"{tek_takim.get('name', 'Takım')} için "
+                            "güncel lig sıralaması bilgisine ulaşılamadı."
+                        )
+
+                    print(f"FOTMOB PUAN DURUMU CEVAP: {cevap}", flush=True)
+                    return jsonify({
+                        "ok": True,
+                        "answer": cevap,
+                        "web_search": True,
+                        "eagle_direct": True,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
+                son_mac_istegi = any(k in mesaj_kf for k in (
+                    "son maç", "son mac", "kazandı", "kazandi",
+                    "maç sonucu", "mac sonucu", "kaç kaç", "kac kac",
+                    "skor", "bitti"
+                ))
+
+                mac = fotmob_takim_mac_getir(
+                    tek_takim, gelecek=not son_mac_istegi
+                )
+
+                if mac:
+                    ev = mac["ev"]
+                    dep = mac["deplasman"]
+                    tarih_saat = mac["tarih_saat"]
+                    takim_adi = tek_takim.get("name", "Takım")
+
+                    if son_mac_istegi:
+                        es = mac.get("ev_skor")
+                        ds = mac.get("dep_skor")
+                        skor = (
+                            f" {es} - {ds}"
+                            if es is not None and ds is not None else ""
+                        )
+                        sonuc_metni = ''
+                        if es is not None and ds is not None:
+                            try:
+                                ev_sayi, dep_sayi = int(es), int(ds)
+                                takim_norm = _sofascore_takim_adi_norm(takim_adi)
+                                if takim_norm == _sofascore_takim_adi_norm(ev):
+                                    takim_skor, rakip_skor = ev_sayi, dep_sayi
+                                elif takim_norm == _sofascore_takim_adi_norm(dep):
+                                    takim_skor, rakip_skor = dep_sayi, ev_sayi
+                                else:
+                                    takim_skor = rakip_skor = None
+                                if takim_skor is not None:
+                                    if takim_skor > rakip_skor:
+                                        sonuc_metni = f'{takim_adi} kazandı.'
+                                    elif takim_skor < rakip_skor:
+                                        sonuc_metni = f'{takim_adi} kaybetti.'
+                                    else:
+                                        sonuc_metni = f'{takim_adi} berabere kaldı.'
+                            except (TypeError, ValueError):
+                                pass
+                        cevap = (
+                            f'{takim_adi} takımının son maçı: '
+                            f'{ev}{skor} {dep}. '
+                        )
+                        if sonuc_metni:
+                            cevap += sonuc_metni + ' '
+                        cevap += f'Tarih: {tarih_saat}.'
+                    else:
+                        if mac.get("durum") == "inprogress":
+                            es = mac.get("ev_skor")
+                            ds = mac.get("dep_skor")
+                            skor = (
+                                f"{es} - {ds}"
+                                if es is not None and ds is not None
+                                else "skor bilgisi alınamadı"
+                            )
+                            cevap = f"{ev} {skor} {dep}. Maç şu anda oynanıyor"
+                            if mac.get("canli_durum"):
+                                cevap += f" ({mac['canli_durum']})"
+                            cevap += f". Başlangıç: {tarih_saat}."
+                        else:
+                            cevap = (
+                                f"{takim_adi} takımının sıradaki maçı: "
+                                f"{ev} - {dep}. Tarih ve saat: "
+                                f"{tarih_saat} (Türkiye saati)."
+                            )
+
+                    if mac.get("turnuva"):
+                        cevap += f" Organizasyon: {mac['turnuva']}."
+
+                    print(f"SOFASCORE TEK TAKIM CEVAP: {cevap}", flush=True)
+                    return jsonify({
+                        "ok": True,
+                        "answer": cevap,
+                        "web_search": True,
+                        "eagle_direct": True,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
+                print(
+                    f"[SofaScore] {tek_takim.get('name')} için maç bulunamadı.",
+                    flush=True
+                )
             if len(secilen) == 2:
                 mac = sofascore_takimlar_arasi_mac_getir(
                     secilen[0],
@@ -9860,6 +12186,44 @@ def sohbet():
 
             # 🏟️ Genel maç sorgusunda ESPN günlük fikstürünü doğrudan kullan.
             # Belirli lig/takım akışlarına dokunmadan yalnızca genel sorguları hedefler.
+            sampiyonlar_ligi_mi = any(k in mesaj.casefold().replace("\\u0307", "") for k in (
+                "şampiyonlar ligi", "sampiyonlar ligi", "champions league"
+            ))
+
+            # Şampiyonlar Ligi sorgularında eski web sonuçları yerine
+            # önce güncel ESPN skorboard verisini dene.
+            if sampiyonlar_ligi_mi:
+                genel_fikstur_verisi = genel_spor_fiksturu_getir(mesaj)
+                if genel_fikstur_verisi:
+                    genel_cevap = spor_fikstur_direkt_cevapla(
+                        mesaj,
+                        web_verisi=genel_fikstur_verisi
+                    )
+                    if genel_cevap:
+                        return jsonify({
+                            "ok": True,
+                            "answer": genel_cevap,
+                            "eagle_direct": True,
+                            "web_search": False,
+                            "memory_count": len(hafiza_yukle())
+                        })
+                elif any(k in mesaj_spor for k in (
+                    "bugün", "bugun", "bugünkü", "bugunku"
+                )):
+                    from datetime import datetime
+                    from zoneinfo import ZoneInfo
+                    bugun_tarih = datetime.now(
+                        ZoneInfo("Europe/Istanbul")
+                    ).strftime("%d.%m.%Y")
+                    return jsonify({
+                        "ok": True,
+                        "answer": f"🏆 Şampiyonlar Ligi\n\nBugün ({bugun_tarih}) için ESPN fikstüründe maç bulunmuyor.",
+                        "eagle_direct": True,
+                        "web_search": False,
+                        "merkez_motor": False,
+                        "memory_count": len(hafiza_yukle())
+                    })
+
             if genel_mac_sorgusu and not web_verisi:
                 genel_fikstur_verisi = genel_spor_fiksturu_getir(mesaj)
                 if genel_fikstur_verisi:
@@ -10023,8 +12387,9 @@ def sohbet():
                 "champions league"
             ])
 
-            if sampiyonlar_ligi_mi:
-                web_verisi = uefa_sampiyonlar_ligi_getir(mesaj)
+            # Şampiyonlar Ligi sorgularında sabit tarihli fikstür
+            # güncel web sonuçlarını ezmemeli. Mevcut spor web araması
+            # doğrulanabilir güncel veriyi getirsin.
 
 # 🌐 Genel spor veri kaynağı — UEFA/TFF/TVF boşsa ESPN
             # 🏟️ Geçmiş/son maç sonucu sorularında çoklu web araması.
@@ -10067,6 +12432,7 @@ def sohbet():
                         c for c in metin
                         if not unicodedata.combining(c)
                     )
+                    metin = re.sub(r"\bzerenspor\b", "zeren spor", metin)
                     return re.sub(r"[^a-z0-9]+", " ", metin).strip()
 
                 durak_kelimeleri = {
@@ -10148,19 +12514,10 @@ def sohbet():
                         "memory_count": len(hafiza_yukle())
                     })
 
-            # Takim eslesmesi yoksa alakasiz web skorlarini gosterme.
-            if (
-                voleybol_mu and gecmis_mac
-                and not voleybol_tarih_istegi
-                and sorgu_kelimeleri and not tvf_sonuclari
-            ):
+            if (voleybol_mu and gecmis_mac and not voleybol_tarih_istegi and sorgu_kelimeleri and not tvf_sonuclari):
                 return jsonify({
                     "ok": True,
-                    "answer": (
-                        "🏐 Belirtilen takımlar arasında doğrulanmış bir "
-                        "maç sonucu bulamadım. "
-                        "Bu nedenle başka takımların skorlarını göstermiyorum."
-                    ),
+                    "answer": "🏐 Belirtilen takımlar arasında doğrulanmış bir maç sonucu bulamadım. Bu nedenle başka takımların skorlarını göstermiyorum.",
                     "eagle_direct": True,
                     "web_search": False,
                     "merkez_motor": False,
@@ -10210,6 +12567,251 @@ def sohbet():
                 })
 
     elif karar.get("arac") == "web_arastirma":
+        # EAGLE_TMDB_FILM_TANITIM_V1
+        _film_soru = str(mesaj_orijinal or mesaj or "").strip()
+        _film_basligi = (
+            None
+            if _eagle_dizi_sorgu_turu(_film_soru)
+            else _eagle_film_baslik_cikar(_film_soru)
+        )
+
+        if _film_basligi:
+            _film_medya = _eagle_tmdb_medya_bul(
+                _film_basligi, "movie"
+            )
+
+            if _film_medya:
+                _film_yil = str(
+                    _film_medya.get("release_date") or ""
+                )[:4]
+                _film_ozet = str(
+                    _film_medya.get("overview") or ""
+                ).strip()
+
+                _film_cevap = (
+                    f"🎬 **{_film_medya.get('title') or _film_basligi}**"
+                )
+                if _film_yil:
+                    _film_cevap += f" ({_film_yil})"
+                if _film_ozet:
+                    _film_cevap += f"\n\n{_film_ozet}"
+                else:
+                    _film_cevap += (
+                        "\n\nTMDb başlık eşleşmesi doğrulandı. "
+                        "Bu yapım için kayıtlı özet bilgisi bulunmuyor."
+                    )
+
+                return jsonify({
+                    "ok": True,
+                    "answer": _film_cevap,
+                    "web_search": True,
+                    "eagle_direct": True,
+                    "merkez_motor": False,
+                    "source": "https://www.themoviedb.org/movie/"
+                              + str(_film_medya.get("tmdb_id")),
+                    "media_query": True,
+                    "media_images": _film_medya,
+                    "memory_count": len(hafiza_yukle())
+                })
+
+            # Doğrulanmış eşleşme yoksa yanlış görsel gösterme.
+            return jsonify({
+                "ok": True,
+                "answer": (
+                    f"🎬 **{_film_basligi}** için TMDb üzerinde "
+                    "tam başlık eşleşmesi doğrulanamadı. "
+                    "Bu nedenle yanlış afiş veya oyuncu görseli "
+                    "göstermiyorum."
+                ),
+                "web_search": True,
+                "eagle_direct": True,
+                "merkez_motor": False,
+                "media_query": True,
+                "media_images": None,
+                "memory_count": len(hafiza_yukle())
+            })
+
+        # EAGLE_WIKIPEDIA_DIZI_TANITIM_V1
+        # Genel dizi tanıtımlarında tam başlıklı Wikipedia maddesini kullan.
+        _dizi_soru = str(mesaj_orijinal or mesaj or "").strip()
+        _dizi_norm = _dizi_soru.casefold().replace("ı", "i")
+        _dizi_tanitimi = (
+            _eagle_dizi_sorgu_turu(_dizi_soru) == "tanitim"
+        )
+
+        # Bölüm/sezon/yayın tarihi gibi yapılandırılmış sorgulara dokunma.
+        _dizi_detay_sorgusu = any(x in _dizi_norm for x in (
+            "son bölüm", "son bolum", "en son bölüm", "en son bolum",
+            "kaçıncı bölüm", "kacinci bolum", "bölüm numarası",
+            "bolum numarasi", "hangi sezon", "kaçıncı sezon",
+            "kacinci sezon", "yayın tarihi", "yayin tarihi",
+            "ne zaman yayın", "ne zaman yayin", "son bölümün",
+            "son bolumun", "bölüm tarihi", "bolum tarihi"
+        ))
+
+        if _dizi_tanitimi and not _dizi_detay_sorgusu:
+            import unicodedata
+
+            def _dizi_baslik_norm(v):
+                v = str(v or "").casefold().replace("ı", "i")
+                v = unicodedata.normalize("NFKD", v)
+                v = "".join(
+                    c for c in v
+                    if not unicodedata.combining(c)
+                )
+                return re.sub(r"[^a-z0-9]+", " ", v).strip()
+
+            _baslik_eslesmesi = re.search(
+                r"(.+?)\s+(?:adlı\s+|adli\s+)?(?:televizyon\s+)?dizi(?:si|sini|sinin|sinde)?\b",
+                _dizi_soru.casefold()
+            )
+            _dizi_basligi = (
+                _baslik_eslesmesi.group(1).strip()
+                if _baslik_eslesmesi else ""
+            )
+
+            if _dizi_basligi:
+                try:
+                    import requests as _wiki_requests
+                    _wiki = _wiki_requests.get(
+                        "https://tr.wikipedia.org/w/api.php",
+                        params={
+                            "action": "query",
+                            "format": "json",
+                            "formatversion": 2,
+                            "generator": "search",
+                            "gsrsearch": _dizi_basligi,
+                            "gsrnamespace": 0,
+                            "gsrlimit": 10,
+                            "prop": "extracts",
+                            "exintro": 1,
+                            "explaintext": 1,
+                        },
+                        headers={
+                            "User-Agent": "EagleAI/1.0 (series information)"
+                        },
+                        timeout=12
+                    )
+                    _wiki.raise_for_status()
+                    _wiki_data = _wiki.json()
+                    _wiki_pages = (
+                        _wiki_data.get("query", {}).get("pages", [])
+                    )
+
+                    _hedef_baslik = _dizi_baslik_norm(_dizi_basligi)
+                    _wiki_adaylari = []
+
+                    for _sayfa in _wiki_pages:
+                        if not isinstance(_sayfa, dict):
+                            continue
+
+                        _sayfa_baslik = str(
+                            _sayfa.get("title") or ""
+                        ).strip()
+                        _sayfa_ozet = re.sub(
+                            r"\s+", " ",
+                            str(_sayfa.get("extract") or "")
+                        ).strip()
+
+                        if not _sayfa_baslik or len(_sayfa_ozet) < 80:
+                            continue
+
+                        _baslik_norm = _dizi_baslik_norm(_sayfa_baslik)
+                        _ozet_norm = _dizi_baslik_norm(_sayfa_ozet)
+
+                        # Sezon, bölüm, film ve liste maddelerini ana
+                        # dizi tanıtımı adayı olarak değerlendirme.
+                        _baslik_engelleri = (
+                            " film", " sezon", " bolum",
+                            " bolumleri", " listesi", " ozel bolum"
+                        )
+                        if any(
+                            engel in " " + _baslik_norm
+                            for engel in _baslik_engelleri
+                        ):
+                            continue
+
+                        _dizi_ifadesi = bool(re.search(
+                            r"\b(dizi|dizisi|dizidir|dizisini|"
+                            r"televizyon dizisi)\b",
+                            _ozet_norm
+                        ))
+                        if not _dizi_ifadesi:
+                            continue
+
+                        _tam_baslik = _baslik_norm == _hedef_baslik
+                        _ozette_ad = bool(re.search(
+                            r"(?<![a-z0-9])"
+                            + re.escape(_hedef_baslik)
+                            + r"(?![a-z0-9])",
+                            _ozet_norm
+                        ))
+
+                        if not (_tam_baslik or _ozette_ad):
+                            continue
+
+                        _puan = (
+                            (1000 if _tam_baslik else 0)
+                            + (200 if _ozette_ad else 0)
+                            + min(len(_sayfa_ozet), 2000) // 100
+                        )
+
+                        _wiki_adaylari.append((
+                            _puan, _sayfa, _sayfa_ozet
+                        ))
+
+                    _wiki_adaylari.sort(
+                        key=lambda aday: aday[0],
+                        reverse=True
+                    )
+                    _wiki_sayfasi = (
+                        _wiki_adaylari[0][1]
+                        if _wiki_adaylari else None
+                    )
+                    if _wiki_sayfasi:
+                        _wiki_baslik = str(
+                            _wiki_sayfasi.get("title") or _dizi_basligi
+                        ).strip()
+                        _wiki_ozet = re.sub(
+                            r"\s+", " ",
+                            str(_wiki_sayfasi.get("extract") or "")
+                        ).strip()
+
+                        if len(_wiki_ozet) >= 80:
+                            _wiki_url = (
+                                "https://tr.wikipedia.org/wiki/"
+                                + quote(_wiki_baslik.replace(" ", "_"))
+                            )
+                            _tmdb_medya = _eagle_tmdb_medya_bul(
+                                _wiki_baslik, "tv"
+                            )
+                            return jsonify({
+                                "ok": True,
+                                "answer": (
+                                    f"📺 **{_wiki_baslik}**\n\n"
+                                    f"{_wiki_ozet}\n\n"
+                                    f"Kaynak: {_wiki_url}"
+                                ),
+                                "web_search": True,
+                                "eagle_direct": True,
+                                "merkez_motor": False,
+                                "source": _wiki_url,
+                                "media_query": True,
+                                "media_images": _tmdb_medya,
+                                "memory_count": len(hafiza_yukle())
+                            })
+
+                    print(
+                        "📺 Dizi tanıtımı için tam başlıklı Wikipedia "
+                        "maddesi bulunamadı; normal akış devam edecek.",
+                        flush=True
+                    )
+                except Exception as _wiki_hata:
+                    print(
+                        f"📺 Wikipedia dizi tanıtım hatası: {_wiki_hata}",
+                        flush=True
+                    )
+
         # 🧠 Öğrenme hafızası: güncel olmayan genel konuda önce mevcut bilgiyi kullan
         mesaj_kucuk = mesaj.casefold()
         guncel_isaretleri = [
@@ -10217,7 +12819,10 @@ def sohbet():
             "haber", "haberler", "maç", "mac", "skor", "puan durumu",
             "bitcoin", "btc", "ethereum", "eth",
             "altın", "gram altın", "dolar", "euro", "sterlin",
-            "en son", "son durum", "ne oldu"
+            "en son", "son durum", "ne oldu",
+            "yeni bölüm", "yeni bolum", "bölüm", "bolum",
+            "yayınlandı", "yayimlandi", "yayında", "yayinda",
+            "dizi", "sezon", "fragman", "final yaptı", "final yapti"
         ]
 
         if not any(x in mesaj_kucuk for x in guncel_isaretleri):
@@ -10259,6 +12864,25 @@ def sohbet():
 
         if web_verisi and eagle_webden_ogren(mesaj, web_verisi, karar):
             print("🧠 WEB BİLGİSİ ÖĞRENME HAFIZASINA KAYDEDİLDİ", flush=True)
+
+        if bitcoin_fiyat_sorgusu_mu(mesaj):
+            btc = bitcoin_fiyatini_getir()
+            if btc:
+                return jsonify({
+                    "ok": True,
+                    "answer": (
+                        f"₿ Bitcoin (BTC): ${btc['price']:,.2f} USD\n"
+                        "Kaynak: CoinGecko\n"
+                        f"Son güncelleme: {btc['updated_at']} (İstanbul)"
+                    ),
+                    "web_search": True,
+                    "eagle_direct": True,
+                    "bitcoin_price": True,
+                    "bitcoin_usd": btc["price"],
+                    "bitcoin_updated_at": btc["updated_at"],
+                    "source": "CoinGecko",
+                    "memory_count": len(hafiza_yukle()),
+                })
 
 
 
@@ -10315,17 +12939,64 @@ def sohbet():
     if ifade:
         ifade = ifade.replace("%", "/100")
         ok, sonuc_hesap = guvenli_hesapla(ifade)
+
         if ok:
-            yuzde_turu = karar.get("yuzde_turu", "")
-            if yuzde_turu == "zam":
-                hesaplama_metni = f"Yeni fiyat: {sonuc_hesap} TL"
-            elif yuzde_turu == "indirim":
-                hesaplama_metni = f"İndirim sonrası fiyat: {sonuc_hesap} TL"
-            elif yuzde_turu == "zam_miktari":
-                hesaplama_metni = f"Zam miktarı: {sonuc_hesap} TL"
-            elif yuzde_turu == "indirim_miktari":
-                hesaplama_metni = f"İndirim miktarı: {sonuc_hesap} TL"
-            hesaplama_metni = str(sonuc_hesap)
+            zincir = karar.get("matematik_zinciri")
+
+            def _tl_yaz(deger):
+                deger = Decimal(str(deger)).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                return (
+                    f"{deger:,.2f}"
+                    .replace(",", "_")
+                    .replace(".", ",")
+                    .replace("_", ".")
+                )
+
+            if zincir:
+                mevcut = Decimal(zincir["baslangic"])
+                adimlar = [
+                    f"Başlangıç fiyatı: {_tl_yaz(mevcut)} TL"
+                ]
+
+                for sira, islem in enumerate(zincir["islemler"], 1):
+                    oran = Decimal(islem["oran"])
+                    onceki = mevcut
+                    if islem["tur"] == "indirim":
+                        carpan = Decimal("1") - oran / Decimal("100")
+                        ad = "indirim"
+                    else:
+                        carpan = Decimal("1") + oran / Decimal("100")
+                        ad = "zam"
+
+                    mevcut = (mevcut * carpan).quantize(
+                        Decimal("0.01"), rounding=ROUND_HALF_UP
+                    )
+                    oran_yazisi = islem["oran"].replace(".", ",")
+                    adimlar.append(
+                        f"{sira}. adım — %{oran_yazisi} {ad}: "
+                        f"{_tl_yaz(onceki)} × {_tl_yaz(carpan)} "
+                        f"= {_tl_yaz(mevcut)} TL"
+                    )
+
+                adimlar.append(f"SON FİYAT: {_tl_yaz(mevcut)} TL")
+                hesaplama_metni = "\n".join(adimlar)
+
+            else:
+                yuzde_turu = karar.get("yuzde_turu", "")
+                sonuc_yazisi = _tl_yaz(sonuc_hesap)
+
+                if yuzde_turu == "zam":
+                    hesaplama_metni = f"Yeni fiyat: {sonuc_yazisi} TL"
+                elif yuzde_turu == "indirim":
+                    hesaplama_metni = f"İndirim sonrası fiyat: {sonuc_yazisi} TL"
+                elif yuzde_turu == "zam_miktari":
+                    hesaplama_metni = f"Zam miktarı: {sonuc_yazisi} TL"
+                elif yuzde_turu == "indirim_miktari":
+                    hesaplama_metni = f"İndirim miktarı: {sonuc_yazisi} TL"
+                else:
+                    hesaplama_metni = str(sonuc_hesap)
 
     mantiksal_metni = ""
     ok, sonuc_mantiksal = guvenli_mantiksal_hesapla(mesaj)
@@ -10409,12 +13080,43 @@ def sohbet():
     elif hava_verisi and not hava_verisi.get("ok"):
         hava_metni = f"⚠️ {hava_verisi.get('error', 'Hava verisi alınamadı.')}"
 
+    # Ayrıntılı analiz ve çözüm planı isteklerini genel web aramasına gönderme.
+    mesaj_analiz_kucuk = str(mesaj or "").casefold()
+    analitik_istek_mi = any(
+        ifade in mesaj_analiz_kucuk
+        for ifade in (
+            "kod yazmadan açıkla",
+            "kod yazmadan anlat",
+            "analiz et",
+            "analizini yap",
+            "analiz yap",
+            "değerlendir",
+            "yorumla",
+            "olası nedenleri",
+            "finansal riskleri",
+            "kontrol edilmesi gereken göstergeler",
+            "çözüm planı",
+            "uygulanabilir çözüm",
+            "90 günlük",
+        )
+    )
+
+
     # 🧠 Eagle teknik bilgi bankası — doğrudan cevap
     bilgi_sonuclari = []
-    if karar.get("arac") not in ("borc_modulu", "spor_kaynaklari", "hava_api", "guvenli_hesaplama", "kod_analiz", "program_yazma") and not autofix_istegi:
+    if karar.get("arac") not in (
+        "borc_modulu",
+        "spor_kaynaklari",
+        "hava_api",
+        "guvenli_hesaplama",
+        "kod_analiz",
+        "program_yazma",
+        "web_arastirma",
+        "takvim_hesaplama",
+    ) and not autofix_istegi and not finans_fiyat_sorgusu_mu(mesaj):
         bilgi_sonuclari = bilgi_bankasi_ara(mesaj)
 
-    if bilgi_sonuclari:
+    if bilgi_sonuclari and not analitik_istek_mi:
         cevap = "🦅 EAGLE BİLGİ BANKASI\n\n" + "\n".join(
             f"• {madde}" for madde in bilgi_sonuclari
         )
@@ -10459,12 +13161,40 @@ def sohbet():
         "kimsin", "sen kimsin", "senin adın ne", "senin adin ne",
         "ne yapabiliyorsun", "ne yapabilirsin",
     }
+
+    # Açıkça genel bilgi veya konu tanıtımı isteyen doğal ifadeler.
+    tanitim_istegi = bool(re.search(
+        r"(?:hakkında|hakkinda).*(?:bilgi|anlat|tanıt|tanit)"
+        r"|bilgi.*(?:ver|lazım|lazim|istiyorum|almak)"
+        r"|(?:tanıt|tanit|anlat)\w*"
+        r"|merak ediyorum|nasıl bir yer|nasil bir yer",
+        mesaj_yonlendirme
+    ))
+
+    # Tek kelimelik konu adları; selamlaşma ve kısa sohbet yanıtları hariç.
+    sohbet_kelimeleri = {
+        "selam", "merhaba", "hey", "evet", "hayır", "hayir",
+        "tamam", "peki", "olur", "yok", "var", "teşekkürler",
+        "tesekkurler", "sağol", "sagol", "görüşürüz", "gorusuruz",
+        "iyi", "güzel", "guzel", "aynen", "ok",
+    }
+    tek_konu_istegi = bool(
+        re.fullmatch(r"[^\W\d_]{3,}", mesaj_yonlendirme, flags=re.UNICODE)
+        and mesaj_yonlendirme not in sohbet_kelimeleri
+    )
+
+    genel_konu_istegi = tanitim_istegi or tek_konu_istegi
+
     if (
         karar.get("intent") in ("basit_sohbet", "sohbet")
         and karar.get("arac") == "eagle_sohbet"
         and not web_verisi
         and not kimlik_sorusu
-        and _soru_gibi_mi(str(mesaj or "").casefold().strip())
+        and not analitik_istek_mi
+        and (
+            _soru_gibi_mi(str(mesaj or "").casefold().strip())
+            or genel_konu_istegi
+        )
         and not any(
             ifade in str(mesaj or "").casefold()
             for ifade in (
@@ -10910,6 +13640,15 @@ def sohbet():
                     )
                 ).strip()
 
+                # Kullanıcıya ham kaynak işaretlerini gösterme.
+                merkez_cevap = re.sub(
+                    r"\[\s*(?:\d+|[a-zçğıöşü])\s*\]",
+                    "",
+                    merkez_cevap,
+                    flags=re.IGNORECASE,
+                )
+                merkez_cevap = re.sub(r" {2,}", " ", merkez_cevap).strip()
+
                 if (
                     merkez_sonuc.get("ok")
                     and merkez_cevap
@@ -10918,17 +13657,21 @@ def sohbet():
                         merkez_cevap,
                         karar.get("komut", "")
                     )
+
+                    finans_verisi = finans_verisini_ayristir(merkez_cevap)
                     return jsonify({
                         "ok": True,
                         "answer": merkez_cevap,
                         "web_search": True,
                         "eagle_direct": True,
                         "merkez_motor": True,
+                        **({"finance_data": finans_verisi} if finans_verisi else {}),
                         "memory_count": len(hafiza_yukle())
                     })
 
                 # 🧠 Eagle cevap çıkaramadıysa Gemini yalnızca son çare.
-                if merkez_sonuc.get("gemini_gerekli"):
+                # Normal sohbet Gemini'ye devredilmez; Eagle kendi cevabını üretir.
+                if not merkez_sonuc.get("ok"):
                     try:
                         import os
                         import requests
@@ -10938,7 +13681,7 @@ def sohbet():
                         if gemini_key:
                             kaynaklar = []
 
-                            for kaynak in web_verisi[:6]:
+                            for kaynak in web_verisi[:3]:
                                 if not isinstance(kaynak, dict):
                                     continue
 
@@ -10951,9 +13694,10 @@ def sohbet():
                                 url = str(
                                     kaynak.get("url", "")
                                 ).strip()
+                                tam_metin = web_sayfa_oku(url, limit=3500) if url else ""
 
                                 parca = " ".join(
-                                    x for x in (baslik, ozet)
+                                    x for x in (baslik, ozet, tam_metin)
                                     if x
                                 ).strip()
 

@@ -27,6 +27,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.widget.PopupMenu;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -45,11 +47,13 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import android.util.Base64;
 import java.text.SimpleDateFormat;
@@ -70,6 +74,11 @@ public class MainActivity extends Activity {
     private static final String MEMORY_URL =
             "https://eagleai-8p9b4.faable.link/api/hafiza";
 
+    private static final int PROJE_ZIP_KAYDET = 8741;
+    private JSONObject bekleyenProjeDosyalari;
+    private String bekleyenProjeAdi = "eagle_project";
+
+
     private LinearLayout mesajAlani;
     private EditText mesajKutusu;
     private Uri secilenDosyaUri;
@@ -82,6 +91,9 @@ public class MainActivity extends Activity {
     private final ExecutorService executor =
             Executors.newSingleThreadExecutor();
 
+    private final ExecutorService gorselExecutor =
+            Executors.newSingleThreadExecutor();
+
     private long sonMesajZamani = 0;
 
     private TextToSpeech konusmaMotoru;
@@ -90,6 +102,16 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Açık tema: şampanya altın durum çubuğu, açık gezinme çubuğu
+        getWindow().setStatusBarColor(Color.rgb(232, 213, 163));
+        getWindow().setNavigationBarColor(Color.rgb(250, 249, 246));
+        getWindow().getDecorView().setSystemUiVisibility(
+                getWindow().getDecorView().getSystemUiVisibility()
+                        | View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                        | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        );
+
         arayuzOlustur();
         sesMotoruBaslat();
     }
@@ -98,49 +120,107 @@ public class MainActivity extends Activity {
 
         LinearLayout ana = new LinearLayout(this);
         ana.setOrientation(LinearLayout.VERTICAL);
-        ana.setBackgroundColor(Color.rgb(11, 16, 32));
+        ana.setBackgroundColor(Color.rgb(250, 249, 246));
 
-          // ===== ÜST BAR =====
-          LinearLayout ustBar = new LinearLayout(this);
-          ustBar.setOrientation(LinearLayout.HORIZONTAL);
-          ustBar.setGravity(Gravity.CENTER_VERTICAL);
-          ustBar.setPadding(6, 8, 12, 8);
-          ustBar.setBackgroundColor(Color.rgb(16, 26, 51));
+          // ===== MODERN EAGLE-AI ÜST BAŞLIK =====
+        LinearLayout ustBar = new LinearLayout(this);
+        ustBar.setOrientation(LinearLayout.HORIZONTAL);
+        ustBar.setGravity(Gravity.CENTER_VERTICAL);
+        ustBar.setPadding(10, 10, 12, 10);
+        ustBar.setBackground(yuvarlakArkaPlan(
+                Color.rgb(232, 213, 163),
+                Color.rgb(224, 198, 132),
+                0
+        ));
 
-          // ☰ SOL HAMBURGER MENÜ
-          Button menuBtn = new Button(this);
-          menuBtn.setText("☰");
-          menuBtn.setTextSize(25);
-          menuBtn.setTextColor(Color.WHITE);
-          menuBtn.setAllCaps(false);
-          menuBtn.setGravity(Gravity.CENTER);
-          menuBtn.setPadding(0, 0, 0, 0);
-          menuBtn.setBackgroundColor(Color.TRANSPARENT);
+        Button menuBtn = new Button(this);
+        menuBtn.setText("☰");
+        menuBtn.setTextSize(25);
+        menuBtn.setTextColor(Color.rgb(42, 48, 59));
+        menuBtn.setAllCaps(false);
+        menuBtn.setGravity(Gravity.CENTER);
+        menuBtn.setPadding(0, 0, 0, 0);
+        menuBtn.setBackground(yuvarlakArkaPlan(
+                Color.rgb(211, 183, 122),
+                Color.rgb(184, 151, 87),
+                24
+        ));
 
-          LinearLayout.LayoutParams menuLp =
-                  new LinearLayout.LayoutParams(58, 58);
+        ustBar.addView(menuBtn, new LinearLayout.LayoutParams(48, 48));
 
-          ustBar.addView(menuBtn, menuLp);
+        TextView kartalLogo = new TextView(this);
+        kartalLogo.setText("🦅");
+        kartalLogo.setTextSize(40);
+        kartalLogo.setGravity(Gravity.CENTER);
+        kartalLogo.setShadowLayer(
+                8f, 0f, 0f, Color.rgb(157, 126, 67)
+        );
 
-          // 🦅 EAGLE-AI BAŞLIK
-          TextView baslik = new TextView(this);
-          baslik.setText("🦅 EAGLE-AI");
-          baslik.setTextSize(24);
-          baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-          baslik.setTextColor(Color.WHITE);
-          baslik.setGravity(Gravity.CENTER_VERTICAL);
-          baslik.setPadding(8, 0, 0, 0);
+        LinearLayout.LayoutParams logoLp =
+                new LinearLayout.LayoutParams(52, 56);
+        logoLp.setMargins(8, 0, 4, 0);
+        ustBar.addView(kartalLogo, logoLp);
 
-          LinearLayout.LayoutParams baslikLp =
-                  new LinearLayout.LayoutParams(
-                          0,
-                          LinearLayout.LayoutParams.WRAP_CONTENT,
-                          1
-                  );
+        LinearLayout baslikAlani = new LinearLayout(this);
+        baslikAlani.setOrientation(LinearLayout.VERTICAL);
+        baslikAlani.setGravity(Gravity.CENTER_VERTICAL);
 
-          ustBar.addView(baslik, baslikLp);
+        TextView baslik = new TextView(this);
+        baslik.setText("EAGLE-AI");
+        baslik.setTextSize(23);
+        baslik.setTypeface(
+                Typeface.create("sans-serif", Typeface.BOLD)
+        );
+        baslik.setTextColor(Color.rgb(42, 48, 59));
 
-          ana.addView(ustBar);
+        TextView altBaslik = new TextView(this);
+        altBaslik.setText("Her zaman yanınızda...");
+        altBaslik.setTextSize(11);
+        altBaslik.setTextColor(Color.rgb(105, 86, 54));
+
+        baslikAlani.addView(baslik);
+        baslikAlani.addView(altBaslik);
+
+        ustBar.addView(
+                baslikAlani,
+                new LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        1
+                )
+        );
+
+        Button sesBtn = new Button(this);
+        sesBtn.setText(sesAcik ? "🔊" : "🔇");
+        sesBtn.setTextSize(19);
+        sesBtn.setTextColor(Color.rgb(42, 48, 59));
+        sesBtn.setAllCaps(false);
+        sesBtn.setPadding(0, 0, 0, 0);
+        sesBtn.setBackground(yuvarlakArkaPlan(
+                Color.rgb(211, 183, 122),
+                Color.rgb(184, 151, 87),
+                24
+        ));
+
+        ustBar.addView(sesBtn, new LinearLayout.LayoutParams(46, 46));
+
+        sesBtn.setOnClickListener(v -> {
+            sesAcik = !sesAcik;
+
+            if (!sesAcik && konusmaMotoru != null) {
+                konusmaMotoru.stop();
+            }
+
+            sesBtn.setText(sesAcik ? "🔊" : "🔇");
+
+            Toast.makeText(
+                    this,
+                    sesAcik ? "🔊 Sesli cevap açık" : "🔇 Sesli cevap kapalı",
+                    Toast.LENGTH_SHORT
+            ).show();
+        });
+
+        ana.addView(ustBar);
 
         kaydirma = new ScrollView(this);
 
@@ -149,7 +229,7 @@ public class MainActivity extends Activity {
         mesajAlani.setPadding(16, 16, 16, 16);
 
         mesajAlani.addView(mesajOlustur(
-                "🦅 Özhan, hoş geldin!\n\n" +
+                "🦅 Özhan, hoş geldin!\n" +
                 "Nasıl yardımcı olabilirim?"
         ));
 
@@ -171,22 +251,27 @@ public class MainActivity extends Activity {
         LinearLayout alt = new LinearLayout(this);
         alt.setOrientation(LinearLayout.HORIZONTAL);
         alt.setGravity(Gravity.CENTER_VERTICAL);
-        alt.setPadding(8, 8, 8, 10);
-        alt.setBackgroundColor(Color.rgb(16, 26, 51));
+        alt.setPadding(8, 7, 8, 7);
+        alt.setBackground(yuvarlakArkaPlan(
+                Color.rgb(244, 242, 235),
+                Color.rgb(222, 213, 193),
+                24
+        ));
+        alt.setElevation(8f);
 
         // 📎 Dosya butonu
           // 📎 DOSYA BUTONU
           Button dosya = new Button(this);
           dosya.setText("+");
           dosya.setTextSize(24);
-          dosya.setTextColor(Color.WHITE);
+          dosya.setTextColor(Color.rgb(42, 58, 72));
           dosya.setAllCaps(false);
           dosya.setGravity(Gravity.CENTER);
-          dosya.setBackgroundColor(Color.rgb(70, 70, 70));
+          dosya.setBackground(yuvarlakArkaPlan(Color.rgb(226, 234, 239), Color.rgb(194, 211, 221), 18));
           dosya.setPadding(0, 0, 0, 0);
 
           LinearLayout.LayoutParams dosyaLp =
-                  new LinearLayout.LayoutParams(60, 60);
+                  new LinearLayout.LayoutParams(46, 46);
           dosyaLp.setMargins(0, 0, 6, 0);
 
           alt.addView(dosya, dosyaLp);
@@ -199,10 +284,14 @@ public class MainActivity extends Activity {
         mesajKutusu.setMinLines(1);
         mesajKutusu.setMaxLines(30);
         mesajKutusu.setGravity(Gravity.TOP | Gravity.START);
-        mesajKutusu.setPadding(18, 12, 18, 12);
-        mesajKutusu.setTextColor(Color.WHITE);
-        mesajKutusu.setHintTextColor(Color.GRAY);
-        mesajKutusu.setBackgroundColor(Color.rgb(23, 35, 61));
+        mesajKutusu.setPadding(14, 10, 14, 10);
+        mesajKutusu.setTextColor(Color.rgb(35, 48, 64));
+        mesajKutusu.setHintTextColor(Color.rgb(125, 137, 148));
+        mesajKutusu.setBackground(yuvarlakArkaPlan(
+                Color.rgb(255, 255, 255),
+                Color.rgb(211, 222, 231),
+                20
+        ));
         mesajKutusu.setVerticalScrollBarEnabled(false);
         mesajKutusu.setHorizontallyScrolling(false);
         mesajKutusu.setScrollBarStyle(View.SCROLLBARS_INSIDE_INSET);
@@ -221,7 +310,7 @@ public class MainActivity extends Activity {
 
         mesajLp.setMargins(4, 0, 6, 0);
 
-        mesajLp.setMargins(4, 0, 6, 0);
+
 
         alt.addView(mesajKutusu, mesajLp);
 
@@ -232,11 +321,11 @@ public class MainActivity extends Activity {
         mikrofon.setTextColor(Color.WHITE);
         mikrofon.setAllCaps(false);
         mikrofon.setGravity(Gravity.CENTER);
-        mikrofon.setBackgroundColor(Color.rgb(70, 70, 70));
+        mikrofon.setBackground(yuvarlakArkaPlan(Color.rgb(226, 234, 239), Color.rgb(194, 211, 221), 18));
         mikrofon.setPadding(0, 0, 0, 0);
 
         LinearLayout.LayoutParams mikrofonLp =
-                new LinearLayout.LayoutParams(60, 60);
+                new LinearLayout.LayoutParams(46, 46);
         mikrofonLp.setMargins(0, 0, 6, 0);
 
         alt.addView(mikrofon, mikrofonLp);
@@ -249,10 +338,10 @@ public class MainActivity extends Activity {
         gonder.setAllCaps(false);
         gonder.setGravity(Gravity.CENTER);
         gonder.setPadding(0, 0, 0, 0);
-        gonder.setBackgroundColor(Color.rgb(0, 194, 215));
+        gonder.setBackground(yuvarlakArkaPlan(Color.rgb(48, 111, 130), Color.rgb(34, 88, 108), 18));
 
         LinearLayout.LayoutParams gonderLp =
-                new LinearLayout.LayoutParams(56, 56);
+                new LinearLayout.LayoutParams(48, 48);
 
         alt.addView(gonder, gonderLp);
 
@@ -262,7 +351,7 @@ public class MainActivity extends Activity {
         onizlemeAlani.setOrientation(LinearLayout.HORIZONTAL);
         onizlemeAlani.setGravity(Gravity.CENTER_VERTICAL);
         onizlemeAlani.setPadding(12, 8, 12, 8);
-        onizlemeAlani.setBackgroundColor(Color.rgb(230, 230, 230));
+        onizlemeAlani.setBackground(yuvarlakArkaPlan(Color.rgb(244, 247, 250), Color.rgb(211, 222, 232), 16));
         onizlemeAlani.setVisibility(View.GONE);
 
         onizlemeResmi = new ImageView(this);
@@ -274,7 +363,7 @@ public class MainActivity extends Activity {
 
         TextView onizlemeYazi = new TextView(this);
         onizlemeYazi.setText("📷 Fotoğraf eklendi");
-        onizlemeYazi.setTextColor(Color.rgb(60, 60, 60));
+        onizlemeYazi.setTextColor(Color.rgb(42, 55, 70));
         LinearLayout.LayoutParams onizlemeYaziLp =
                 new LinearLayout.LayoutParams(
                         0,
@@ -286,7 +375,7 @@ public class MainActivity extends Activity {
         Button onizlemeKaldir = new Button(this);
         onizlemeKaldir.setText("✕");
         onizlemeKaldir.setTextColor(Color.WHITE);
-        onizlemeKaldir.setBackgroundColor(Color.rgb(180, 60, 60));
+        onizlemeKaldir.setBackground(yuvarlakArkaPlan(Color.rgb(145, 61, 69), Color.rgb(190, 105, 110), 14));
         onizlemeKaldir.setAllCaps(false);
         LinearLayout.LayoutParams onizlemeKaldirLp =
                 new LinearLayout.LayoutParams(48, 48);
@@ -444,26 +533,59 @@ public class MainActivity extends Activity {
         );
 
         executor.execute(() -> {
-            String sonucCevap = geminiIstek(mesaj, gonderilecekResim);
-
-            if (sonucCevap == null) {
-                sonucCevap =
-                        "❌ Eagle-AI API bağlantısı kurulamadı.\n\n" +
+            ApiCevap apiCevap = geminiIstek(mesaj, gonderilecekResim);
+            if (apiCevap == null) {
+                apiCevap = new ApiCevap();
+                apiCevap.answer =
+                        "❌ Eagle-AI API bağlantısı kurulamadı.\\n\\n" +
                         "Telefonun aynı Wi-Fi ağında olduğundan " +
                         "ve Termux'taki eagle_api.py sunucusunun çalıştığından emin ol.";
             }
-
-            final String cevapFinal = sonucCevap;
+            final String cevapFinal = apiCevap.answer;
+            final String cevapGosterim = cevapFinal.replaceAll(
+                    "(?i)\\s*\\|?\\s*Görsel\\s*:\\s*https://upload\\.wikimedia\\.org/[^\\s|<>\"']+",
+                    ""
+            ).replaceAll("[ \\t]+\\|[ \\t]*$", "").trim();
+            final JSONArray medyaOnerileri = apiCevap.mediaItems;
+            final JSONArray medyaGorselleri = apiCevap.mediaImages;
+            final boolean medyaSorusu = apiCevap.mediaQuery;
+            final boolean bitcoinFiyati = apiCevap.bitcoinPrice;
+            final String bitcoinUsd = apiCevap.bitcoinUsd;
+            final String bitcoinUpdatedAt = apiCevap.bitcoinUpdatedAt;
+            final JSONObject finansVerisi = apiCevap.financeData;
+            final JSONObject projeDosyalari = apiCevap.projectFiles;
+            final String projeAdi = apiCevap.projectName;
 
             runOnUiThread(() -> {
                 mesajAlani.removeView(durum);
 
-                mesajAlani.addView(
-                        mesajOlustur("🦅\n\n" + cevapFinal)
-                );
-                gecmiseKaydet("🦅\n\n" + cevapFinal);
-                  sohbeteMesajEkle("🦅\n\n" + cevapFinal);
-                metniSesliOku(cevapFinal);
+                LinearLayout cevapKarti =
+                        bitcoinFiyati && !bitcoinUsd.isEmpty()
+                                ? bitcoinFiyatKartiOlustur(bitcoinUsd, bitcoinUpdatedAt)
+                                : finansVerisi != null
+                                    ? finansKartlariOlustur(finansVerisi)
+                                    : mesajOlustur("🦅\n\n" + cevapGosterim);
+                mesajAlani.addView(cevapKarti);
+
+                if (projeDosyalari != null && projeDosyalari.length() > 0) {
+                    projeZipIndirmeButonuEkle(
+                            cevapKarti, projeDosyalari, projeAdi
+                    );
+                }
+
+                if (gonderilecekResim == null) {
+                    if (medyaOnerileri != null && medyaOnerileri.length() > 0) {
+                        tmdbOneriKartlariEkle(cevapKarti, medyaOnerileri);
+                    } else if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
+                        tmdbGorselleriEkle(cevapKarti, medyaGorselleri);
+                    } else if (!bitcoinFiyati && finansVerisi == null && !medyaSorusu
+                            && gorselAramasiUygunMu(mesaj, cevapFinal)) {
+                        commonsGorselleriEkle(cevapKarti, mesaj, cevapFinal);
+                    }
+                }
+                gecmiseKaydet("🦅\n\n" + cevapGosterim, medyaOnerileri);
+                  sohbeteMesajEkle("🦅\n\n" + cevapGosterim, medyaOnerileri);
+                metniSesliOku(cevapGosterim);
 
                 kaydirma.post(() ->
                         kaydirma.fullScroll(View.FOCUS_DOWN)
@@ -760,7 +882,20 @@ public class MainActivity extends Activity {
 
 
 
-    private String geminiIstek(String mesaj, Uri resimUri) {
+    private static class ApiCevap {
+        String answer = "Eagle-AI cevap vermedi.";
+        JSONArray mediaItems;
+        JSONArray mediaImages;
+        boolean mediaQuery;
+        boolean bitcoinPrice;
+        String bitcoinUsd = "";
+        String bitcoinUpdatedAt = "";
+        JSONObject financeData;
+        JSONObject projectFiles;
+        String projectName = "eagle_project";
+    }
+
+    private ApiCevap geminiIstek(String mesaj, Uri resimUri) {
 
         HttpURLConnection baglanti = null;
 
@@ -838,50 +973,135 @@ public class MainActivity extends Activity {
             int kod = baglanti.getResponseCode();
               android.util.Log.d("EAGLE_NET", "HTTP cevap kodu alındı: " + kod);
 
-            BufferedReader reader;
+            String contentType = baglanti.getContentType();
+            InputStream yanitAkisi = (kod >= 200 && kod < 300)
+                    ? baglanti.getInputStream()
+                    : baglanti.getErrorStream();
 
-            if (kod >= 200 && kod < 300) {
+            StringBuilder sonuc = new StringBuilder();
 
-                reader = new BufferedReader(
+            if (yanitAkisi != null) {
+                try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(
-                                baglanti.getInputStream(),
+                                yanitAkisi,
                                 StandardCharsets.UTF_8
                         )
-                );
-
-            } else {
-
-                reader = new BufferedReader(
-                        new InputStreamReader(
-                                baglanti.getErrorStream(),
-                                StandardCharsets.UTF_8
-                        )
-                );
+                )) {
+                    String satir;
+                    while ((satir = reader.readLine()) != null) {
+                        sonuc.append(satir);
+                    }
+                }
             }
 
-            StringBuilder sonuc =
-                    new StringBuilder();
+            String yanitMetni = sonuc.toString().trim();
 
-            String satir;
+            if (yanitMetni.isEmpty()) {
+                android.util.Log.e(
+                        "EAGLE_NET",
+                        "API boş yanıt döndürdü. HTTP=" + kod
+                                + " Content-Type=" + contentType
+                );
 
-            while ((satir = reader.readLine()) != null) {
-                sonuc.append(satir);
+                ApiCevap hataCevap = new ApiCevap();
+                hataCevap.answer = "API boş yanıt döndürdü. HTTP kodu: " + kod;
+                return hataCevap;
             }
 
-            reader.close();
+            JSONObject cevapJson;
 
-            JSONObject cevapJson =
-                    new JSONObject(sonuc.toString());
+            try {
+                cevapJson = new JSONObject(yanitMetni);
+            } catch (org.json.JSONException jsonHatasi) {
+                String onizleme = yanitMetni.substring(
+                        0, Math.min(300, yanitMetni.length())
+                );
+
+                android.util.Log.e(
+                        "EAGLE_NET",
+                        "API geçersiz JSON döndürdü. HTTP=" + kod
+                                + " Content-Type=" + contentType
+                                + " Yanıt=" + onizleme,
+                        jsonHatasi
+                );
+
+                ApiCevap hataCevap = new ApiCevap();
+                hataCevap.answer = "API geçersiz yanıt döndürdü. HTTP kodu: "
+                        + kod + " (" + jsonHatasi.getClass().getSimpleName() + ")";
+                return hataCevap;
+            }
 
             if (kod >= 200 &&
                     kod < 300 &&
                     cevapJson.optBoolean("ok", false)) {
 
-                String cevap =
-                        cevapJson.optString(
-                                "answer",
-                                "Eagle-AI cevap vermedi."
-                        );
+                ApiCevap apiCevap = new ApiCevap();
+                apiCevap.answer = cevapJson.optString(
+                        "answer",
+                        "Eagle-AI cevap vermedi."
+                );
+
+                apiCevap.mediaItems = cevapJson.optJSONArray("media_items");
+                apiCevap.mediaQuery = cevapJson.optBoolean("media_query", false);
+                apiCevap.bitcoinPrice = cevapJson.optBoolean("bitcoin_price", false);
+                apiCevap.bitcoinUsd = cevapJson.optString("bitcoin_usd", "");
+                apiCevap.bitcoinUpdatedAt = cevapJson.optString("bitcoin_updated_at", "");
+                apiCevap.financeData = cevapJson.optJSONObject("finance_data");
+                apiCevap.projectFiles = cevapJson.optJSONObject("dosyalar");
+                apiCevap.projectName = cevapJson.optString(
+                        "proje_adi", "eagle_project"
+                );
+                JSONObject medya = cevapJson.optJSONObject("media_images");
+                if (medya != null) {
+                    JSONArray gorseller = new JSONArray();
+
+                    String afis = medya.optString("poster_url", "");
+                    String arkaPlan = medya.optString("backdrop_url", "");
+
+                    if (!afis.isEmpty() && !afis.equals("null")) {
+                        JSONObject item = new JSONObject();
+                        item.put("url", afis);
+                        item.put("type", "poster");
+                        gorseller.put(item);
+                    }
+
+                    if (!arkaPlan.isEmpty() && !arkaPlan.equals("null")) {
+                        JSONObject item = new JSONObject();
+                        item.put("url", arkaPlan);
+                        item.put("type", "backdrop");
+                        gorseller.put(item);
+                    }
+
+                    JSONArray ekGorseller = medya.optJSONArray("images");
+                    if (ekGorseller != null) {
+                        for (int i = 0; i < ekGorseller.length(); i++) {
+                            JSONObject item = ekGorseller.optJSONObject(i);
+                            if (item != null && item.has("url")) {
+                                gorseller.put(item);
+                            }
+                        }
+                    }
+
+                    JSONArray oyuncular = medya.optJSONArray("cast");
+                    if (oyuncular != null) {
+                        for (int i = 0; i < oyuncular.length(); i++) {
+                            JSONObject kisi = oyuncular.optJSONObject(i);
+                            if (kisi != null && kisi.has("image_url")) {
+                                JSONObject item = new JSONObject();
+                                item.put("url", kisi.optString("image_url"));
+                                item.put("type", "cast");
+                                item.put("name", kisi.optString("name"));
+                                item.put("character", kisi.optString("character"));
+                                gorseller.put(item);
+                            }
+                        }
+                    }
+
+                    apiCevap.mediaImages = gorseller;
+                }
+
+                String cevap = apiCevap.answer;
+
 
                 JSONObject userMessage =
                         new JSONObject();
@@ -900,14 +1120,13 @@ public class MainActivity extends Activity {
                     gecmis.add(modelMessage);
                 }
 
-                return cevap;
+                return apiCevap;
             }
 
-            return "API hatası: " +
-                    cevapJson.optString(
-                            "error",
-                            "Bilinmeyen hata."
-                    );
+            ApiCevap hataCevap = new ApiCevap();
+            hataCevap.answer = "API hatası: " +
+                    cevapJson.optString("error", "Bilinmeyen hata.");
+            return hataCevap;
 
         } catch (Exception e) {
 
@@ -918,8 +1137,10 @@ public class MainActivity extends Activity {
                     e
             );
 
-            return "Bağlantı hatası: " +
+            ApiCevap hataCevap = new ApiCevap();
+            hataCevap.answer = "Bağlantı hatası: " +
                     e.getClass().getSimpleName();
+            return hataCevap;
 
         } finally {
 
@@ -945,15 +1166,60 @@ public class MainActivity extends Activity {
     private static final String GECMIS_PREF = "eagle_gecmis";
     private static final String GECMIS_KEY = "mesajlar";
 
+    private void mesajKaydiniEkle(
+            JSONArray mesajlar,
+            String metin,
+            JSONArray medyaOnerileri
+    ) {
+        if (medyaOnerileri == null || medyaOnerileri.length() == 0) {
+            mesajlar.put(metin);
+            return;
+        }
+
+        try {
+            JSONObject kayit = new JSONObject();
+            kayit.put("metin", metin);
+            kayit.put("media_items", new JSONArray(medyaOnerileri.toString()));
+            mesajlar.put(kayit);
+        } catch (Exception e) {
+            mesajlar.put(metin);
+        }
+    }
+
+    private void kayitliMesajiGoster(JSONArray mesajlar, int index) {
+        Object kayit = mesajlar.opt(index);
+        String metin;
+        JSONArray medyaOnerileri = null;
+
+        if (kayit instanceof JSONObject) {
+            JSONObject mesaj = (JSONObject) kayit;
+            metin = mesaj.optString("metin", "");
+            medyaOnerileri = mesaj.optJSONArray("media_items");
+        } else {
+            metin = mesajlar.optString(index, "");
+        }
+
+        LinearLayout kart = mesajOlustur(metin);
+        mesajAlani.addView(kart);
+
+        if (medyaOnerileri != null && medyaOnerileri.length() > 0) {
+            tmdbOneriKartlariEkle(kart, medyaOnerileri);
+        }
+    }
+
     private void gecmiseKaydet(String metin) {
+        gecmiseKaydet(metin, null);
+    }
+
+    private void gecmiseKaydet(String metin, JSONArray medyaOnerileri) {
         try {
             SharedPreferences sp = getSharedPreferences(GECMIS_PREF, MODE_PRIVATE);
             String mevcut = sp.getString(GECMIS_KEY, "[]");
             JSONArray dizi = new JSONArray(mevcut);
-            dizi.put(metin);
+            mesajKaydiniEkle(dizi, metin, medyaOnerileri);
             sp.edit().putString(GECMIS_KEY, dizi.toString()).apply();
         } catch (Exception e) {
-            // Kaydedilemezse sessizce geç, sohbeti bozmasın.
+            // Kaydedilemezse sessizce geç.
         }
     }
 
@@ -964,8 +1230,7 @@ public class MainActivity extends Activity {
             JSONArray dizi = new JSONArray(mevcut);
 
             for (int i = 0; i < dizi.length(); i++) {
-                String metin = dizi.getString(i);
-                mesajAlani.addView(mesajOlustur(metin));
+                kayitliMesajiGoster(dizi, i);
             }
         } catch (Exception e) {
             // Yüklenemezse sessizce geç.
@@ -977,7 +1242,7 @@ public class MainActivity extends Activity {
         sp.edit().putString(GECMIS_KEY, "[]").apply();
         mesajAlani.removeAllViews();
         mesajAlani.addView(mesajOlustur(
-                "🦅 Özhan, hoş geldin!\n\n" +
+                "🦅 Özhan, hoş geldin!\n" +
                 "Nasıl yardımcı olabilirim?"
         ));
     }
@@ -1053,7 +1318,7 @@ public class MainActivity extends Activity {
 
             mesajAlani.addView(
                     mesajOlustur(
-                            "🦅 Özhan, hoş geldin!\n\n" +
+                            "🦅 Özhan, hoş geldin!\n" +
                             "Nasıl yardımcı olabilirim?"
                     )
             );
@@ -1077,9 +1342,7 @@ private void sohbetYukle(String id) {
 
                     if (mesajlar != null) {
                         for (int j = 0; j < mesajlar.length(); j++) {
-                            mesajAlani.addView(
-                                    mesajOlustur(mesajlar.getString(j))
-                            );
+                            kayitliMesajiGoster(mesajlar, j);
                         }
                     }
 
@@ -1157,6 +1420,10 @@ private void sohbetYukle(String id) {
       }
 
     private void sohbeteMesajEkle(String metin) {
+        sohbeteMesajEkle(metin, null);
+    }
+
+    private void sohbeteMesajEkle(String metin, JSONArray medyaOnerileri) {
         try {
             SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
             String mevcut = sp.getString(SOHBET_KEY, "[]");
@@ -1169,7 +1436,6 @@ private void sohbetYukle(String id) {
                 if (baslik.startsWith("Sen: ")) {
                     baslik = baslik.substring(5).trim();
                 }
-
                 if (baslik.length() > 45) {
                     baslik = baslik.substring(0, 45) + "...";
                 }
@@ -1186,7 +1452,7 @@ private void sohbetYukle(String id) {
                 );
 
                 JSONArray mesajlar = new JSONArray();
-                mesajlar.put(metin);
+                mesajKaydiniEkle(mesajlar, metin, medyaOnerileri);
                 sohbet.put("mesajlar", mesajlar);
 
                 JSONArray yeniSohbetler = new JSONArray();
@@ -1201,7 +1467,6 @@ private void sohbetYukle(String id) {
                         .apply();
 
                 aktifSohbetId = id;
-
             } else {
                 for (int i = 0; i < sohbetler.length(); i++) {
                     JSONObject sohbet = sohbetler.getJSONObject(i);
@@ -1214,8 +1479,7 @@ private void sohbetYukle(String id) {
                             sohbet.put("mesajlar", mesajlar);
                         }
 
-                        mesajlar.put(metin);
-
+                        mesajKaydiniEkle(mesajlar, metin, medyaOnerileri);
                         sohbet.put(
                                 "tarih",
                                 new SimpleDateFormat(
@@ -1223,7 +1487,6 @@ private void sohbetYukle(String id) {
                                         java.util.Locale.getDefault()
                                 ).format(new Date())
                         );
-
                         break;
                     }
                 }
@@ -1232,7 +1495,6 @@ private void sohbetYukle(String id) {
                         .putString(SOHBET_KEY, sohbetler.toString())
                         .apply();
             }
-
         } catch (Exception e) {
             Toast.makeText(
                     this,
@@ -1252,13 +1514,13 @@ private void sohbetYukle(String id) {
             String token = tokenMatcher.group();
             int color;
             if (token.startsWith("#")) {
-                color = Color.rgb(0, 128, 0);
+                color = Color.rgb(69, 119, 83);
             } else if (token.startsWith("\"") || token.startsWith("'")) {
-                color = Color.rgb(165, 42, 42);
+                color = Color.rgb(164, 91, 35);
             } else if (Character.isDigit(token.charAt(0))) {
-                color = Color.rgb(0, 150, 160);
+                color = Color.rgb(22, 119, 128);
             } else {
-                color = Color.rgb(0, 0, 255);
+                color = Color.rgb(75, 91, 155);
             }
             styled.setSpan(new ForegroundColorSpan(color), tokenMatcher.start(), tokenMatcher.end(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -1317,7 +1579,7 @@ private void sohbetYukle(String id) {
 
         while (skorMatcher.find()) {
             styled.setSpan(
-                    new ForegroundColorSpan(Color.rgb(190, 30, 45)),
+                    new ForegroundColorSpan(Color.rgb(255, 125, 135)),
                     skorMatcher.start(),
                     skorMatcher.end(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1338,7 +1600,7 @@ private void sohbetYukle(String id) {
 
         while (tarihMatcher.find()) {
             styled.setSpan(
-                    new ForegroundColorSpan(Color.rgb(0, 120, 215)),
+                    new ForegroundColorSpan(Color.rgb(90, 205, 235)),
                     tarihMatcher.start(),
                     tarihMatcher.end(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1359,7 +1621,7 @@ private void sohbetYukle(String id) {
 
         while (sonucMatcher.find()) {
             styled.setSpan(
-                    new ForegroundColorSpan(Color.rgb(0, 150, 90)),
+                    new ForegroundColorSpan(Color.rgb(105, 220, 165)),
                     sonucMatcher.start(),
                     sonucMatcher.end(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1390,7 +1652,7 @@ private void sohbetYukle(String id) {
                 int spor2Bitis = sporMatcher.end(2);
 
                 styled.setSpan(
-                        new ForegroundColorSpan(Color.rgb(0, 90, 180)),
+                        new ForegroundColorSpan(Color.rgb(105, 205, 235)),
                         spor1Baslangic,
                         spor1Bitis,
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1403,7 +1665,7 @@ private void sohbetYukle(String id) {
                 );
 
                 styled.setSpan(
-                        new ForegroundColorSpan(Color.rgb(180, 30, 45)),
+                        new ForegroundColorSpan(Color.rgb(255, 145, 150)),
                         spor2Baslangic,
                         spor2Bitis,
                         Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
@@ -1432,7 +1694,7 @@ private void sohbetYukle(String id) {
         }
 
         tv.setTextSize(16);
-        tv.setTextColor(Color.rgb(25, 25, 25));
+        tv.setTextColor(Color.rgb(35, 48, 64));
         tv.setTypeface(Typeface.create("sans-serif", Typeface.NORMAL));
         tv.setLineSpacing(2f, 1.05f);
         tv.setTextIsSelectable(true);
@@ -1466,13 +1728,13 @@ private void sohbetYukle(String id) {
         devamBtn.setText("Daha fazlasını göster");
         devamBtn.setTextSize(14);
         devamBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        devamBtn.setTextColor(Color.rgb(0, 122, 255));
+        devamBtn.setTextColor(Color.rgb(39, 103, 120));
         devamBtn.setGravity(Gravity.CENTER);
         devamBtn.setPadding(18, 12, 18, 12);
 
         GradientDrawable kenarlik = new GradientDrawable();
         kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 122, 255));
+        kenarlik.setStroke(2, Color.rgb(177, 205, 211));
         kenarlik.setCornerRadius(24);
         devamBtn.setBackground(kenarlik);
 
@@ -1521,7 +1783,7 @@ private void sohbetYukle(String id) {
 
         TextView dilEtiketi = new TextView(this);
         dilEtiketi.setText("Kod");
-        dilEtiketi.setTextColor(Color.GRAY);
+        dilEtiketi.setTextColor(Color.rgb(75, 99, 115));
         dilEtiketi.setTextSize(13);
         LinearLayout.LayoutParams dilLp = new LinearLayout.LayoutParams(
                 0,
@@ -1551,6 +1813,7 @@ private void sohbetYukle(String id) {
             dialogTv.setText(renklendirKod(kodTrim), TextView.BufferType.SPANNABLE);
             dialogTv.setTypeface(Typeface.MONOSPACE);
             dialogTv.setTextSize(15);
+            dialogTv.setTextColor(Color.rgb(35, 48, 64));
             dialogTv.setPadding(24, 24, 24, 24);
             dialogTv.setTextIsSelectable(true);
 
@@ -1571,6 +1834,7 @@ private void sohbetYukle(String id) {
         TextView tv = new TextView(this);
         tv.setText(renklendirKod(kodTrim), TextView.BufferType.SPANNABLE);
         tv.setTextSize(13);
+        tv.setTextColor(Color.rgb(35, 48, 64));
         tv.setTypeface(Typeface.MONOSPACE);
         tv.setTextIsSelectable(true);
 
@@ -1812,9 +2076,107 @@ private void sohbetYukle(String id) {
         kutu.addView(kart, lp);
     }
 
+    private boolean sonucKartiEkle(LinearLayout kutu, String metin) {
+        if (metin == null || metin.trim().isEmpty()) return false;
+
+        String alt = metin.toLowerCase(Locale.ROOT).trim();
+        if (alt.contains("```")) return false;
+
+        boolean sadeceSayi = alt.matches("(?i)[+-]?\\d[\\d.,]*\\s*(tl)?");
+        boolean matematik =
+                sadeceSayi
+                || alt.contains("hesaplama")
+                || alt.contains("hesap sonucu")
+                || alt.contains("indirim")
+                || alt.contains("yüzde")
+                || alt.contains("zam")
+                || alt.contains("işlem sonucu")
+                || (alt.contains("tl") && (alt.contains("=") || alt.contains("×")));
+
+        boolean hata =
+                alt.contains("hata")
+                || alt.contains("yanlış")
+                || alt.contains("başarısız")
+                || alt.contains("geçersiz");
+
+        boolean uyari =
+                alt.contains("uyarı")
+                || alt.contains("dikkat")
+                || alt.contains("kontrol edilmeli")
+                || alt.contains("emin değil");
+
+        boolean basari =
+                alt.contains("başarılı")
+                || alt.contains("tamamlandı")
+                || alt.contains("doğru sonuç");
+
+        if (!matematik && !hata && !uyari && !basari) return false;
+
+        int arkaPlan;
+        int kenarlik;
+        int vurgu;
+        String baslik;
+        String simge;
+
+        if (hata) {
+            arkaPlan = Color.rgb(255, 240, 240);
+            kenarlik = Color.rgb(220, 85, 85);
+            vurgu = Color.rgb(170, 35, 45);
+            baslik = "HATA / BAŞARISIZ";
+            simge = "✕";
+        } else if (uyari || (matematik && alt.matches("(?s).*\\d\\.\\d{6,}.*"))) {
+            arkaPlan = Color.rgb(255, 247, 230);
+            kenarlik = Color.rgb(224, 157, 55);
+            vurgu = Color.rgb(151, 91, 20);
+            baslik = matematik ? "HESAPLAMA - HASSASİYET UYARISI" : "DİKKAT / UYARI";
+            simge = "⚠";
+        } else if (basari) {
+            arkaPlan = Color.rgb(235, 249, 239);
+            kenarlik = Color.rgb(67, 164, 104);
+            vurgu = Color.rgb(35, 119, 69);
+            baslik = "BAŞARILI";
+            simge = "✓";
+        } else {
+            arkaPlan = Color.rgb(235, 246, 250);
+            kenarlik = Color.rgb(65, 151, 177);
+            vurgu = Color.rgb(35, 103, 133);
+            baslik = "HESAPLAMA SONUCU";
+            simge = "∑";
+        }
+
+        float yogunluk = getResources().getDisplayMetrics().density;
+        int bosluk = (int) (12 * yogunluk + 0.5f);
+
+        LinearLayout kart = new LinearLayout(this);
+        kart.setOrientation(LinearLayout.VERTICAL);
+        kart.setPadding(bosluk, bosluk, bosluk, bosluk);
+        kart.setBackground(yuvarlakArkaPlan(arkaPlan, kenarlik, 14));
+
+        TextView baslikTv = new TextView(this);
+        baslikTv.setText(simge + "  " + baslik);
+        baslikTv.setTextSize(12);
+        baslikTv.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        baslikTv.setTextColor(vurgu);
+        baslikTv.setPadding(0, 0, 0, (int) (7 * yogunluk));
+        kart.addView(baslikTv);
+
+        TextView sonucTv = normalMetinOlustur(metin.trim());
+        sonucTv.setTextColor(Color.rgb(42, 53, 65));
+        kart.addView(sonucTv);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.bottomMargin = (int) (10 * yogunluk);
+        kutu.addView(kart, lp);
+        return true;
+    }
+
     private void mesajIcerigiEkle(LinearLayout kutu, String metin) {
         if (superLigPuanKartlariEkle(kutu, metin)) return;
         if (voleybolSonucKartlariEkle(kutu, metin)) return;
+        if (sonucKartiEkle(kutu, metin)) return;
         Pattern blockPattern = Pattern.compile("```[a-zA-Z]*\\n([\\s\\S]*?)```");
         Matcher blockMatcher = blockPattern.matcher(metin);
 
@@ -1895,13 +2257,13 @@ private void sohbetYukle(String id) {
         devamBtn.setText("Daha fazlasını göster");
         devamBtn.setTextSize(14);
         devamBtn.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        devamBtn.setTextColor(Color.rgb(0, 122, 255));
+        devamBtn.setTextColor(Color.rgb(39, 103, 120));
         devamBtn.setGravity(Gravity.CENTER);
         devamBtn.setPadding(18, 14, 18, 14);
 
         GradientDrawable kenarlik = new GradientDrawable();
         kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 122, 255));
+        kenarlik.setStroke(2, Color.rgb(177, 205, 211));
         kenarlik.setCornerRadius(24);
         devamBtn.setBackground(kenarlik);
 
@@ -1934,10 +2296,1171 @@ private void sohbetYukle(String id) {
         kutu.addView(alan);
     }
 
+    private boolean gorselAramasiUygunMu(String soru, String cevap) {
+        if (soru == null || cevap == null) return false;
+
+        String q = soru.toLowerCase(Locale.ROOT).trim();
+        String a = cevap.toLowerCase(Locale.ROOT).trim();
+
+        // Tek kelimelik konu sorularını da destekle: "Adana", "İzmir", "Norveç".
+        if (q.length() < 3) return false;
+
+        // Görsel gerektirmeyen sohbet, hesaplama, kod ve özel konuları dışarıda tut.
+        String[] engeller = {
+                "merhaba", "selam", "teşekkür", "teşekkur", "nasılsın",
+                "kaç eder", "hesapla", "kökünü bul", "kod yaz", "kodla",
+                "python", "java", "javascript", "hata ayıkla", "debug",
+                "şifre", "parola", "kişisel", "tanı koy"
+        };
+        for (String e : engeller) {
+            if (q.contains(e)) return false;
+        }
+
+        // Artık yalnızca belirli soru kalıplarına bağlı değil.
+        // Konu içeren kısa ve doğal sorular da görsel aramasına gider.
+        return true;
+    }
+
+    private void commonsGorselleriEkle(LinearLayout kart, String soru, String cevap) {
+        android.util.Log.i("EagleGorsel", "1 - Görsel araması çağrıldı: " + soru);
+        gorselExecutor.execute(() -> {
+            HttpURLConnection baglanti = null;
+            try {
+                // Backend'in doğrulanmış orijinal görselini Commons aramasından önce kullan.
+                if (cevap != null) {
+                    java.util.regex.Matcher dogrudan = java.util.regex.Pattern
+                            .compile("(?i)Görsel\\s*:\\s*(https://upload\\.wikimedia\\.org/[^\\s|<>\"']+)")
+                            .matcher(cevap);
+
+                    if (dogrudan.find()) {
+                        String adres = dogrudan.group(1).trim();
+                        android.net.Uri uri = android.net.Uri.parse(adres);
+
+                        if ("https".equalsIgnoreCase(uri.getScheme())
+                                && "upload.wikimedia.org".equalsIgnoreCase(uri.getHost())) {
+                            android.util.Log.i("EagleGorsel",
+                                    "Orijinal backend görseli doğrudan kullanılacak.");
+                            dogrudanWikimediaGorseliEkle(kart, adres);
+                            return;
+                        }
+                    }
+                }
+
+                // Sorudaki istek kalıplarını ve Türkçe hâl eklerini temizle.
+                // Böylece "Adana'yı tanıtır mısın?" -> "Adana" olur.
+                // Orijinal harfleri koru. Özellikle "İzmir" kelimesi
+                // Locale.ROOT ile küçük harfe çevrilince birleşen nokta
+                // karakteri içerir; onu harf dışı sayıp silmek "zmir" hatası üretirdi.
+                String hamKonu = soru == null ? "" : soru.trim();
+
+                if (hamKonu.length() > 120) {
+                    int konuSiniri = -1;
+                    char[] ayiricilar = {'(', ',', ':', '.', '\n'};
+                    for (char ayirici : ayiricilar) {
+                        int konum = hamKonu.indexOf(ayirici);
+                        if (konum > 0 && konum < 100
+                                && (konuSiniri < 0 || konum < konuSiniri)) {
+                            konuSiniri = konum;
+                        }
+                    }
+                    if (konuSiniri > 0) {
+                        String kisaKonu = hamKonu.substring(0, konuSiniri).trim();
+                        if (!kisaKonu.isEmpty() && kisaKonu.split("\\s+").length <= 4) {
+                            hamKonu = kisaKonu;
+                        }
+                    }
+                }
+                hamKonu = hamKonu.replaceAll("[^\\p{L}\\p{M}\\p{N}]+", " ").trim();
+                String[] durKelimeler = {
+                        "bilgi", "ver", "verir", "misin", "misiniz", "mi", "mu", "mı", "mü",
+                        "hakkinda", "nedir", "kimdir", "anlat", "tanit", "goster",
+                        "gosterir", "resim", "resimleri", "fotograf", "fotograflari",
+                        "lutfen", "ile", "icin", "ve", "bir", "bana", "lazim",
+                        "yi", "yı", "yu", "yü", "nin", "nın", "nun", "nün",
+                        "den", "dan", "de", "da", "ye", "ya", "e", "a", "i", "in",
+                        "dizi", "dizisi", "dizisinin", "dizisini", "dizisinde",
+                        "diziden", "diziye", "diziler", "dizileri"
+                };
+                java.util.Set<String> durSet = new java.util.HashSet<>(java.util.Arrays.asList(durKelimeler));
+                StringBuilder konuBuilder = new StringBuilder();
+                for (String kelime : hamKonu.split("\\s+")) {
+                    String normalizeKelime = java.text.Normalizer.normalize(
+                            kelime.toLowerCase(Locale.ROOT), java.text.Normalizer.Form.NFD)
+                            .replaceAll("\\p{M}+", "")
+                            .replace('ı', 'i').replace('ş', 's').replace('ğ', 'g')
+                            .replace('ü', 'u').replace('ö', 'o').replace('ç', 'c');
+                    // Çok kelimeli özel adlarda tek harfli parçaları da koru (X Files gibi).
+                    if ((normalizeKelime.length() < 2
+                            && hamKonu.split("\\s+").length <= 1)
+                            || durSet.contains(normalizeKelime)) continue;
+                    if (konuBuilder.length() > 0) konuBuilder.append(' ');
+                    konuBuilder.append(kelime);
+                }
+                String konu = konuBuilder.toString().trim();
+
+// Cevabın başında "Gizli Dosyalar (The X-Files)" gibi
+// alternatif bir eser adı varsa Wikimedia aramasında onu da kullan.
+if (cevap != null && !konu.isEmpty()) {
+    String ilkSatir = cevap.substring(0, Math.min(cevap.length(), 2000));
+    java.util.regex.Matcher alternatif = java.util.regex.Pattern
+            .compile("(?s)\\(([^()]{2,100})\\)")
+            .matcher(ilkSatir);
+
+    if (alternatif.find()) {
+        String aday = alternatif.group(1).trim();
+
+        String ilkSatirNorm = java.text.Normalizer.normalize(
+                ilkSatir.toLowerCase(Locale.ROOT),
+                java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace('ı', 'i')
+                .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+
+        String konuNormKontrol = java.text.Normalizer.normalize(
+                konu.toLowerCase(Locale.ROOT),
+                java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace('ı', 'i')
+                .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+
+        String adayNorm = java.text.Normalizer.normalize(
+                aday.toLowerCase(Locale.ROOT),
+                java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .replace('ı', 'i')
+                .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+
+        if (!adayNorm.isEmpty()
+                && ilkSatirNorm.contains(konuNormKontrol)
+                && !adayNorm.equals(konuNormKontrol)
+                && aday.matches("(?s).*\\p{L}.*")) {
+            android.util.Log.i("EagleGorsel",
+                    "Alternatif konu adı bulundu: " + aday);
+            konu = aday;
+        }
+    }
+}
+                if (konu.length() < 2) {
+                    android.util.Log.w("EagleGorsel", "Arama konusu çıkarılamadı: " + soru);
+                    return;
+                }
+                android.util.Log.i("EagleGorsel", "Temizlenen görsel konusu: " + konu);
+
+                // Konuyu genel biçimde koru; şehir ve ülke listesi kullanma.
+                String sorgu = URLEncoder.encode(konu, "UTF-8");
+                String api = "https://commons.wikimedia.org/w/api.php"
+                        + "?action=query&generator=search&gsrnamespace=6&gsrlimit=40"
+                        + "&gsrsearch=" + sorgu
+                        + "&prop=imageinfo&iiprop=url%7Cmime%7Cextmetadata&iiurlwidth=640&format=json";
+
+                URL url = new URL(api);
+                baglanti = (HttpURLConnection) url.openConnection();
+                baglanti.setConnectTimeout(7000);
+                baglanti.setReadTimeout(9000);
+                baglanti.setRequestProperty("User-Agent", "EagleAI-Android/1.0 (Wikimedia Commons image preview)");
+                baglanti.setRequestProperty("Accept", "application/json");
+                int httpKod = baglanti.getResponseCode();
+                android.util.Log.i("EagleGorsel", "2 - Wikimedia HTTP: " + httpKod);
+                if (httpKod != HttpURLConnection.HTTP_OK) {
+                    gorselDurumunuGoster(kart, "Görseller şu anda alınamadı (HTTP " + httpKod + ").");
+                    return;
+                }
+
+                StringBuilder jsonMetni = new StringBuilder();
+                try (InputStream in = baglanti.getInputStream();
+                     BufferedReader r = new BufferedReader(
+                             new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                    String satir;
+                    while ((satir = r.readLine()) != null) jsonMetni.append(satir);
+                }
+
+                String hamJson = jsonMetni.toString().trim();
+if (hamJson.startsWith("\uFEFF")) {
+    hamJson = hamJson.substring(1);
+}
+if (hamJson.isEmpty()) {
+    throw new IOException("Wikimedia boş yanıt döndürdü.");
+}
+
+JSONObject kok;
+try {
+    kok = new JSONObject(hamJson);
+} catch (org.json.JSONException jsonHata) {
+    String onizleme = hamJson.substring(0, Math.min(180, hamJson.length()))
+            .replace('\n', ' ').replace('\r', ' ');
+    throw new IOException(
+            "JSON okunamadı. Uzunluk=" + hamJson.length()
+                    + " Yanıt=" + onizleme,
+            jsonHata
+    );
+}
+                JSONObject apiHata = kok.optJSONObject("error");
+                if (apiHata != null) {
+                    String hataMetni = apiHata.optString("info", "Wikimedia arama hatası");
+                    android.util.Log.e("EagleGorsel", hataMetni);
+                    gorselDurumunuGoster(kart, "Görsel araması tamamlanamadı: " + hataMetni);
+                    return;
+                }
+                JSONObject query = kok.optJSONObject("query");
+                JSONObject pages = query == null ? null : query.optJSONObject("pages");
+                android.util.Log.i("EagleGorsel", "3 - API sayfa sayısı: "
+                        + (pages == null ? 0 : pages.length()));
+
+                // Arama konusunu ve dosya başlıklarını aynı biçimde normalleştir.
+                String konuNorm = java.text.Normalizer.normalize(
+                        konu.toLowerCase(Locale.ROOT),
+                        java.text.Normalizer.Form.NFD)
+                        .replaceAll("\\p{M}+", "")
+                        .replace('ı', 'i')
+                        .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+                String[] kelimeler = konuNorm.split("\\s+");
+                List<JSONObject> secilenler = new ArrayList<>();
+                // Backend cevabındaki güvenilir Wikimedia görselini öncelikli ekle.
+                if (cevap != null) {
+                    java.util.regex.Matcher dogrudanGorsel =
+                            java.util.regex.Pattern.compile(
+                                    "(?i)Görsel\\s*:\\s*(https://upload\\.wikimedia\\.org/[^\\s|<>\"']+)"
+                            ).matcher(cevap);
+
+                    if (dogrudanGorsel.find()) {
+                        String gorselUrl = dogrudanGorsel.group(1).trim();
+                        android.net.Uri gorselUri = android.net.Uri.parse(gorselUrl);
+
+                        if ("https".equalsIgnoreCase(gorselUri.getScheme())
+                                && "upload.wikimedia.org".equalsIgnoreCase(gorselUri.getHost())) {
+                            JSONObject dogrudanItem = new JSONObject();
+                            dogrudanItem.put("title", konu + " — doğrudan kaynak görseli");
+                            dogrudanItem.put("thumb", gorselUrl);
+                            dogrudanItem.put("original", gorselUrl);
+                            dogrudanItem.put("source", gorselUrl);
+                            dogrudanItem.put("category", "diger");
+                            dogrudanItem.put("score", 100000);
+                            secilenler.add(dogrudanItem);
+                            android.util.Log.i("EagleGorsel",
+                                    "Backend doğrudan Wikimedia görseli bulundu.");
+                        }
+                    }
+                }
+
+                JSONArray pageIds = pages == null ? new JSONArray() : pages.names();
+                if (pageIds == null) pageIds = new JSONArray();
+
+                for (int i = 0; i < pageIds.length(); i++) {
+                    JSONObject page = pages.optJSONObject(pageIds.optString(i));
+                    if (page == null) continue;
+
+
+                    String baslik = page.optString("title", "")
+                            .replaceFirst("(?i)^File:", "")
+                            .replace('_', ' ')
+                            .toLowerCase(Locale.ROOT);
+
+                    JSONArray infos = page.optJSONArray("imageinfo");
+                    if (infos == null || infos.length() == 0) continue;
+                    JSONObject info = infos.optJSONObject(0);
+                    if (info == null) continue;
+
+                    // Wikimedia görsel açıklamasını da eşleştirmede kullan.
+                    JSONObject ext = info.optJSONObject("extmetadata");
+                    JSONObject descObj = ext == null
+                            ? null : ext.optJSONObject("ImageDescription");
+                    String aciklama = descObj == null
+                            ? ""
+                            : descObj.optString("value", "")
+                                    .replaceAll("<[^>]*>", " ")
+                                    .replaceAll("\\s+", " ")
+                                    .toLowerCase(Locale.ROOT);
+
+                    String baslikNorm = java.text.Normalizer.normalize(
+                            baslik, java.text.Normalizer.Form.NFD)
+                            .replaceAll("\\p{M}+", "")
+                            .replace('ı', 'i')
+                            .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+
+                    String aciklamaNorm = java.text.Normalizer.normalize(
+                            aciklama, java.text.Normalizer.Form.NFD)
+                            .replaceAll("\\p{M}+", "")
+                            .replace('ı', 'i')
+                            .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+
+                    // Boşluklu ve bitişik yazımları birlikte karşılaştır.
+                    // Örnek: "X Files" ile "TheX-Files".
+                    String konuBitisik = konuNorm.replace(" ", "");
+                    String baslikBitisik = baslikNorm.replace(" ", "");
+                    String aciklamaBitisik = aciklamaNorm.replace(" ", "");
+
+                    boolean baslikTamEslesme =
+                            (" " + baslikNorm + " ").contains(" " + konuNorm + " ")
+                            || (!konuBitisik.isEmpty()
+                                && baslikBitisik.contains(konuBitisik));
+
+                    boolean aciklamaTamEslesme =
+                            (" " + aciklamaNorm + " ").contains(" " + konuNorm + " ")
+                            || (!konuBitisik.isEmpty()
+                                && aciklamaBitisik.contains(konuBitisik));
+
+                    // Film/dizi aramalarında yapım adı dosya başlığında da bulunmalı.
+                    // Açıklamadaki tesadüfi eşleşmeler tek başına yeterli değil.
+                    if (konuNorm.isEmpty() || !baslikTamEslesme) continue;
+
+                    int puan = baslikTamEslesme ? 50 : 30;
+
+                    if (baslikTamEslesme) {
+                        puan += 20;
+                    }
+                    if (aciklamaTamEslesme) {
+                        puan += 10;
+                    }
+
+                    if (baslik.matches("(?s).*\\b(map|maps|chart|diagram|"
+                            + "drawing|engraving|blueprint)\\b.*")) {
+                        puan -= 5;
+                    }
+
+                    if (baslik.matches("(?s).*\\b(photo|photograph|view|"
+                            + "panorama|skyline|coast|beach)\\b.*")) {
+                        puan += 2;
+                    }
+
+// Yalnızca görüntü dosyalarını kabul et; ses ve videoları ele.
+                    String mime = info.optString("mime", "").toLowerCase(Locale.ROOT);
+                    if (!mime.startsWith("image/")) continue;
+
+                    // Başlığı normalize ederek istatistik ve zaman çizelgelerini ele.
+                    String baslikFiltre = java.text.Normalizer.normalize(
+                            baslik, java.text.Normalizer.Form.NFD)
+                            .replaceAll("\\p{M}+", "")
+                            .replace('ı', 'i')
+                            .replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
+                    if (baslikFiltre.matches("(?s).*\\b(audience|audiences|rating|ratings|"
+                            + "viewer|viewers|timeline|statistics|statistic|"
+                            + "infographic|chart|graph|diagram|"
+                            + "soundtrack|audio|theme)\\b.*")) continue;
+
+                    String thumb = info.optString("thumburl", "");
+                    if (!thumb.startsWith("https://")) continue;
+
+
+String turMetni = (baslik + " " + aciklama).toLowerCase(Locale.ROOT);
+String kategori = "diger";
+
+if (turMetni.matches("(?s).*\\b(waterfall|waterfalls|cascade|falls)\\b.*")) {
+    kategori = "selale";
+} else if (turMetni.matches("(?s).*\\b(glacier|glaciers|iceberg|icefield)\\b.*")) {
+    kategori = "buzul";
+} else if (turMetni.matches("(?s).*\\b(volcano|volcanic|geyser|crater)\\b.*")) {
+    kategori = "volkan";
+} else if (turMetni.matches("(?s).*\\b(coast|coastal|beach|shore|seaside)\\b.*")) {
+    kategori = "kiyi";
+} else if (turMetni.matches("(?s).*\\b(city|town|urban|skyline|capital|street)\\b.*")) {
+    kategori = "sehir";
+} else if (turMetni.matches("(?s).*\\b(architecture|building|church|house|cathedral|museum)\\b.*")) {
+    kategori = "mimari";
+} else if (turMetni.matches("(?s).*\\b(mountain|mountains|landscape|panorama|forest|nature)\\b.*")) {
+    kategori = "doga";
+} else if (turMetni.matches("(?s).*\\b(lake|river|water|island)\\b.*")) {
+    kategori = "su";
+} else if (turMetni.matches("(?s).*\\b(wildlife|animal|animals|bird|birds)\\b.*")) {
+    kategori = "canli";
+}
+
+JSONObject item = new JSONObject();
+                    item.put("title", page.optString("title", "Wikimedia Commons"));
+                    item.put("thumb", thumb);
+                        item.put("original", info.optString("url", ""));
+                    item.put("source", info.optString("descriptionurl",
+                            "https://commons.wikimedia.org/"));
+                    item.put("category", kategori);
+                    item.put("score", puan);
+
+                    // Sonuçları puana göre azalan sırada tut.
+                    int konum = 0;
+                    while (konum < secilenler.size()
+                            && secilenler.get(konum).optInt("score") >= puan) {
+                        konum++;
+                    }
+                    secilenler.add(konum, item);
+                }
+
+                List<JSONObject> cesitliSecilenler = new ArrayList<>();
+                java.util.Set<String> kullanilanTurler = new java.util.HashSet<>();
+
+                // Yalnızca en yüksek puanlı iki kesin başlık eşleşmesini göster.
+                // Kategori çeşitliliği için alakasız sonuç ekleme.
+                for (JSONObject aday : secilenler) {
+                    if (cesitliSecilenler.size() >= 2) break;
+                    cesitliSecilenler.add(aday);
+                }
+
+                secilenler.clear();
+                secilenler.addAll(cesitliSecilenler);
+
+                android.util.Log.i("EagleGorsel", "4 - Gösterilecek görsel sayısı: " + secilenler.size());
+                if (secilenler.isEmpty()) {
+                    gorselDurumunuGoster(kart, "Arama yapıldı ancak görüntülenebilir görsel bulunamadı.");
+                    return;
+                }
+                if (isFinishing()) return;
+
+                runOnUiThread(() -> {
+                    android.util.Log.i("EagleGorsel", "5 - Galeri ekleme aşamasına ulaşıldı");
+                    if (isFinishing() || kart.getParent() == null) return;
+                    int altSatirIndex = kart.getChildCount() - 1;
+                    if (altSatirIndex < 0) return;
+
+                    LinearLayout galeri = new LinearLayout(this);
+                    galeri.setOrientation(LinearLayout.VERTICAL);
+                    galeri.setPadding(0, 10, 0, 10);
+
+                    for (JSONObject item : secilenler) {
+                        String baslik = item.optString("title", "Wikimedia Commons")
+                                .replaceFirst("(?i)^File:", "").replace('_', ' ');
+                        String thumb = item.optString("thumb", "");
+                        String kaynak = item.optString("source", "");
+
+                        TextView baslikView = new TextView(this);
+                        baslikView.setText("🖼 " + baslik);
+                        baslikView.setTextSize(12);
+                        baslikView.setTextColor(Color.GRAY);
+                        galeri.addView(baslikView);
+
+                        ImageView resim = new ImageView(this);
+                        resim.setAdjustViewBounds(true);
+                        resim.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                        resim.setContentDescription(baslik);
+                        resim.setMaxHeight(420);
+                        resim.setLayoutParams(new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                        ));
+                        resim.setOnClickListener(v -> {
+                            try {
+                                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(kaynak)));
+                            } catch (Exception ignored) {}
+                        });
+                        galeri.addView(resim);
+
+                        TextView kaynakView = new TextView(this);
+                        kaynakView.setText("Kaynak: Wikimedia Commons");
+                        kaynakView.setTextSize(11);
+                        kaynakView.setTextColor(Color.GRAY);
+                        kaynakView.setOnClickListener(v -> {
+                            try {
+                                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(kaynak)));
+                            } catch (Exception ignored) {}
+                        });
+                        galeri.addView(kaynakView);
+
+                        gorselExecutor.execute(() -> {
+                            try {
+                                Bitmap bitmap = wikimediaGorselIndir(
+                                        thumb, item.optString("original", ""));
+                                if (bitmap != null && !isFinishing()) {
+                                    runOnUiThread(() -> {
+                                        if (resim.getParent() != null) {
+                                            resim.setImageBitmap(bitmap);
+                                        }
+                                    });
+                                } else {
+                                    android.util.Log.e("EagleGorsel",
+                                            "Görsel iki adresle de indirilemedi: " + baslik);
+                                    runOnUiThread(() -> {
+                                        if (resim.getParent() != null) {
+                                            resim.setImageResource(android.R.drawable.ic_menu_report_image);
+                                            resim.setContentDescription("Görsel yüklenemedi: " + baslik);
+                                        }
+                                    });
+                                }
+                            } catch (Exception hata) {
+                                android.util.Log.e("EagleGorsel",
+                                        "Görsel indirilemedi: " + thumb, hata);
+                                runOnUiThread(() -> {
+                                    if (resim.getParent() != null) {
+                                        resim.setImageResource(android.R.drawable.ic_menu_report_image);
+                                        resim.setContentDescription("Görsel yüklenemedi: " + baslik);
+                                    }
+                                });
+                            }
+                        });
+                    }
+
+                    kart.addView(galeri, altSatirIndex);
+                    kaydirma.post(() -> kaydirma.fullScroll(View.FOCUS_DOWN));
+                });
+
+            } catch (Exception e) {
+                android.util.Log.e("EagleGorsel", "Commons görsel araması başarısız", e);
+                gorselDurumunuGoster(kart, "Görsel araması sırasında bağlantı hatası oluştu: "
+                        + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            } finally {
+                if (baglanti != null) baglanti.disconnect();
+            }
+        });
+    }
+
+
+
+    private void tmdbOneriKartlariEkle(LinearLayout kart, JSONArray oneriler) {
+        runOnUiThread(() -> {
+            if (isFinishing() || kart == null || kart.getParent() == null) return;
+
+            float yogunluk = getResources().getDisplayMetrics().density;
+            int dp = (int) (yogunluk + 0.5f);
+            LinearLayout liste = new LinearLayout(this);
+            liste.setOrientation(LinearLayout.VERTICAL);
+            liste.setPadding(0, 10 * dp, 0, 10 * dp);
+
+            TextView baslik = new TextView(this);
+            baslik.setText("🎬 Sana özel yapım önerileri");
+            baslik.setTextSize(15);
+            baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            baslik.setTextColor(Color.WHITE);
+            baslik.setPadding(0, 0, 0, 10 * dp);
+            liste.addView(baslik);
+
+            for (int i = 0; i < oneriler.length(); i++) {
+                JSONObject item = oneriler.optJSONObject(i);
+                if (item == null) continue;
+
+                String afisAdresi = item.optString("poster_url", "");
+                if (!afisAdresi.startsWith("https://image.tmdb.org/t/p/")) continue;
+
+                String ad = item.optString("title", "İsimsiz yapım").trim();
+                if (ad.isEmpty()) ad = "İsimsiz yapım";
+
+                String tarih = item.optString("release_date", "");
+                String yil = tarih.length() >= 4 ? tarih.substring(0, 4) : "";
+                String ozet = item.optString("overview", "").trim();
+                String kaynakAdresi = item.optString("source_url", "");
+
+                LinearLayout satir = new LinearLayout(this);
+                satir.setOrientation(LinearLayout.HORIZONTAL);
+                satir.setGravity(Gravity.TOP);
+                satir.setPadding(10 * dp, 10 * dp, 10 * dp, 10 * dp);
+                satir.setBackground(yuvarlakArkaPlan(
+                        Color.rgb(35, 43, 48),
+                        Color.rgb(75, 88, 94),
+                        12f
+                ));
+
+                LinearLayout.LayoutParams satirParams =
+                        new LinearLayout.LayoutParams(
+                                LinearLayout.LayoutParams.MATCH_PARENT,
+                                LinearLayout.LayoutParams.WRAP_CONTENT
+                        );
+                satirParams.bottomMargin = 10 * dp;
+                liste.addView(satir, satirParams);
+
+                ImageView poster = new ImageView(this);
+                poster.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                poster.setImageResource(android.R.drawable.ic_menu_report_image);
+                poster.setContentDescription(ad + " afişi");
+
+                LinearLayout.LayoutParams posterParams =
+                        new LinearLayout.LayoutParams(92 * dp, 138 * dp);
+                posterParams.rightMargin = 12 * dp;
+                satir.addView(poster, posterParams);
+
+                LinearLayout metinler = new LinearLayout(this);
+                metinler.setOrientation(LinearLayout.VERTICAL);
+                satir.addView(metinler, new LinearLayout.LayoutParams(
+                        0,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        1f
+                ));
+
+                TextView adView = new TextView(this);
+                adView.setText(ad);
+                adView.setTextSize(15);
+                adView.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+                adView.setTextColor(Color.WHITE);
+                metinler.addView(adView);
+
+                if (!yil.isEmpty()) {
+                    TextView yilView = new TextView(this);
+                    yilView.setText(yil);
+                    yilView.setTextSize(12);
+                    yilView.setTextColor(Color.LTGRAY);
+                    yilView.setPadding(0, 3 * dp, 0, 5 * dp);
+                    metinler.addView(yilView);
+                }
+
+                if (!ozet.isEmpty()) {
+                    TextView ozetView = new TextView(this);
+                    ozetView.setText(ozet);
+                    ozetView.setTextSize(12);
+                    ozetView.setTextColor(Color.rgb(220, 225, 228));
+                    ozetView.setMaxLines(5);
+                    ozetView.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                    ozetView.setLineSpacing(2 * dp, 1f);
+                    metinler.addView(ozetView);
+                }
+
+                if (kaynakAdresi.startsWith("https://www.themoviedb.org/")) {
+                    satir.setOnClickListener(v -> {
+                        try {
+                            startActivity(new Intent(
+                                    Intent.ACTION_VIEW,
+                                    Uri.parse(kaynakAdresi)
+                            ));
+                        } catch (Exception hata) {
+                            Toast.makeText(
+                                    this,
+                                    "TMDb sayfası açılamadı.",
+                                    Toast.LENGTH_SHORT
+                            ).show();
+                        }
+                    });
+                }
+
+                final String indirilecekAdres = afisAdresi;
+                gorselExecutor.execute(() -> {
+                    try {
+                        Bitmap bitmap = wikimediaGorselIndir(
+                                indirilecekAdres,
+                                indirilecekAdres
+                        );
+                        if (bitmap != null && !isFinishing()) {
+                            runOnUiThread(() -> {
+                                if (poster.getParent() != null) {
+                                    poster.setImageBitmap(bitmap);
+                                }
+                            });
+                        }
+                    } catch (Exception hata) {
+                        android.util.Log.e(
+                                "EagleTMDB",
+                                "Öneri afişi yüklenemedi: " + indirilecekAdres,
+                                hata
+                        );
+                    }
+                });
+            }
+
+            TextView kaynak = new TextView(this);
+            kaynak.setText("Yapım ve afiş verileri: TMDb");
+            kaynak.setTextSize(11);
+            kaynak.setTextColor(Color.GRAY);
+            kaynak.setPadding(0, 4 * dp, 0, 4 * dp);
+            kaynak.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse("https://www.themoviedb.org/")
+                    ));
+                } catch (Exception ignored) {}
+            });
+            liste.addView(kaynak);
+
+            TextView atif = new TextView(this);
+            atif.setText(
+                    "This product uses the TMDB API but is not endorsed or certified by TMDB."
+            );
+            atif.setTextSize(10);
+            atif.setTextColor(Color.GRAY);
+            liste.addView(atif);
+
+            int index = Math.max(0, kart.getChildCount() - 1);
+            kart.addView(liste, index);
+            kaydirma.post(() -> kaydirma.fullScroll(View.FOCUS_DOWN));
+        });
+    }
+
+    private void tmdbGorselleriEkle(LinearLayout kart, JSONArray gorseller) {
+        runOnUiThread(() -> {
+            if (isFinishing() || kart == null || kart.getParent() == null) return;
+
+            LinearLayout galeri = new LinearLayout(this);
+            galeri.setOrientation(LinearLayout.VERTICAL);
+            galeri.setPadding(0, 10, 0, 10);
+
+            TextView baslik = new TextView(this);
+            baslik.setText("🎬 Yapım görselleri");
+            baslik.setTextSize(14);
+            baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            baslik.setTextColor(Color.WHITE);
+            galeri.addView(baslik);
+
+            String afisAdresi = "";
+            String arkaPlanAdresi = "";
+
+            for (int i = 0; i < gorseller.length(); i++) {
+                JSONObject item = gorseller.optJSONObject(i);
+                if (item == null) continue;
+
+                String adres = item.optString("url", "");
+                if (!adres.startsWith("https://image.tmdb.org/")) continue;
+
+                String tur = item.optString("type", "image");
+
+                if ("poster".equals(tur)) {
+                    if (!afisAdresi.isEmpty() || adres.equals(arkaPlanAdresi)) continue;
+                    afisAdresi = adres;
+                } else if ("backdrop".equals(tur)) {
+                    if (!arkaPlanAdresi.isEmpty() || adres.equals(afisAdresi)) continue;
+                    arkaPlanAdresi = adres;
+                } else {
+                    continue;
+                }
+
+                String ad = item.optString("name", "");
+                String karakter = item.optString("character", "");
+
+                String etiket;
+                if ("poster".equals(tur)) {
+                    etiket = "Afiş";
+                } else if ("backdrop".equals(tur)) {
+                    etiket = "Arka plan";
+                } else if ("logo".equals(tur)) {
+                    etiket = "Logo";
+                } else if ("cast".equals(tur)) {
+                    etiket = "Oyuncu";
+                } else {
+                    etiket = "Yapım görseli";
+                }
+
+                if (!ad.isEmpty()) {
+                    etiket += ": " + ad;
+                    if (!karakter.isEmpty()) etiket += " (" + karakter + ")";
+                }
+
+                TextView etiketView = new TextView(this);
+                etiketView.setText(etiket);
+                etiketView.setTextSize(12);
+                etiketView.setTextColor(Color.LTGRAY);
+                etiketView.setPadding(0, 10, 0, 4);
+                galeri.addView(etiketView);
+
+                ImageView resim = new ImageView(this);
+                resim.setAdjustViewBounds(true);
+                resim.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                resim.setMaxHeight(520);
+                resim.setContentDescription(etiket);
+                galeri.addView(resim, new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                ));
+
+                gorselExecutor.execute(() -> {
+                    try {
+                        Bitmap bitmap = wikimediaGorselIndir(adres, adres);
+                        if (bitmap != null && !isFinishing()) {
+                            runOnUiThread(() -> {
+                                if (resim.getParent() != null) {
+                                    resim.setImageBitmap(bitmap);
+                                }
+                            });
+                        }
+                    } catch (Exception hata) {
+                        android.util.Log.e("EagleTMDB",
+                                "TMDb görseli yüklenemedi: " + adres, hata);
+                    }
+                });
+            }
+
+            TextView kaynak = new TextView(this);
+            kaynak.setText("Görsel ve yapım verileri: TMDb");
+            kaynak.setTextSize(11);
+            kaynak.setTextColor(Color.GRAY);
+            kaynak.setPadding(0, 8, 0, 2);
+            kaynak.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW,
+                            Uri.parse("https://www.themoviedb.org/")));
+                } catch (Exception ignored) {}
+            });
+            galeri.addView(kaynak);
+
+            TextView atif = new TextView(this);
+            atif.setText("This product uses the TMDB API but is not endorsed or certified by TMDB.");
+            atif.setTextSize(10);
+            atif.setTextColor(Color.GRAY);
+            galeri.addView(atif);
+
+            int index = Math.max(0, kart.getChildCount() - 1);
+            kart.addView(galeri, index);
+            kaydirma.post(() -> kaydirma.fullScroll(View.FOCUS_DOWN));
+        });
+    }
+
+    // Hata/sonuç mesajını cevap kartına güvenli biçimde ekle.
+    private void gorselDurumunuGoster(LinearLayout kart, String mesaj) {
+        runOnUiThread(() -> {
+            if (isFinishing() || kart == null || kart.getParent() == null) return;
+            TextView durum = new TextView(this);
+            durum.setText("🖼 " + mesaj);
+            durum.setTextSize(12);
+            durum.setTextColor(Color.GRAY);
+            durum.setPadding(0, 8, 0, 8);
+            int index = Math.max(0, kart.getChildCount() - 1);
+            kart.addView(durum, index);
+        });
+    }
+
+    private void dogrudanWikimediaGorseliEkle(
+            LinearLayout kart, String adres) {
+        runOnUiThread(() -> {
+            if (isFinishing() || kart == null || kart.getParent() == null) return;
+
+            LinearLayout galeri = new LinearLayout(this);
+            galeri.setOrientation(LinearLayout.VERTICAL);
+            galeri.setPadding(0, 10, 0, 10);
+
+            TextView baslik = new TextView(this);
+            baslik.setText("🖼 Orijinal kaynak görseli");
+            baslik.setTextSize(12);
+            baslik.setTextColor(Color.GRAY);
+            galeri.addView(baslik);
+
+            ImageView resim = new ImageView(this);
+            resim.setAdjustViewBounds(true);
+            resim.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            resim.setMaxHeight(420);
+            resim.setContentDescription("Orijinal Wikimedia görseli");
+            resim.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+            galeri.addView(resim);
+
+            TextView kaynak = new TextView(this);
+            kaynak.setText("Kaynak: Wikimedia");
+            kaynak.setTextSize(11);
+            kaynak.setTextColor(Color.GRAY);
+            kaynak.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(adres)));
+                } catch (Exception ignored) {}
+            });
+            galeri.addView(kaynak);
+
+            int index = Math.max(0, kart.getChildCount() - 1);
+            kart.addView(galeri, index);
+
+            gorselExecutor.execute(() -> {
+                try {
+                    Bitmap bitmap = wikimediaGorselIndir(adres, adres);
+                    if (bitmap != null && !isFinishing()) {
+                        runOnUiThread(() -> {
+                            if (resim.getParent() != null) {
+                                resim.setImageBitmap(bitmap);
+                            }
+                        });
+                    } else {
+                        runOnUiThread(() -> {
+                            if (resim.getParent() != null) {
+                                resim.setImageResource(
+                                        android.R.drawable.ic_menu_report_image);
+                            }
+                        });
+                    }
+                } catch (Exception hata) {
+                    android.util.Log.e("EagleGorsel",
+                            "Orijinal görsel indirilemedi.", hata);
+                    runOnUiThread(() -> {
+                        if (resim.getParent() != null) {
+                            resim.setImageResource(
+                                    android.R.drawable.ic_menu_report_image);
+                        }
+                    });
+                }
+            });
+        });
+    }
+
+    private Bitmap wikimediaGorselIndir(String kucukResimUrl, String orijinalUrl)
+            throws IOException {
+        String[] adresler = {kucukResimUrl, orijinalUrl};
+
+        for (String adres : adresler) {
+            if (adres == null || !adres.startsWith("https://")) continue;
+
+            HttpURLConnection bag = null;
+            try {
+                bag = (HttpURLConnection) new URL(adres).openConnection();
+                bag.setInstanceFollowRedirects(true);
+                bag.setConnectTimeout(10000);
+                bag.setReadTimeout(15000);
+                bag.setRequestProperty("User-Agent",
+                        "EagleAI-Android/1.0 (Wikimedia Commons image preview)");
+
+                int kod = bag.getResponseCode();
+                String tip = bag.getContentType();
+
+                android.util.Log.i("EagleGorsel",
+                        "Görsel HTTP=" + kod + ", tür=" + tip + ", adres=" + adres);
+
+                if (kod != HttpURLConnection.HTTP_OK
+                        || tip == null
+                        || !tip.toLowerCase(Locale.ROOT).startsWith("image/")) {
+                    continue;
+                }
+
+                try (InputStream akis = bag.getInputStream()) {
+                    Bitmap bitmap = BitmapFactory.decodeStream(akis);
+                    if (bitmap != null) return bitmap;
+                }
+            } catch (Exception hata) {
+                android.util.Log.w("EagleGorsel",
+                        "Adres başarısız, diğer adres denenecek: " + adres, hata);
+            } finally {
+                if (bag != null) bag.disconnect();
+            }
+        }
+        return null;
+    }
+
+    private GradientDrawable yuvarlakArkaPlan(int renk, int kenarlikRengi, float yaricapDp) {
+        float yogunluk = getResources().getDisplayMetrics().density;
+        GradientDrawable arkaPlan = new GradientDrawable();
+        arkaPlan.setColor(renk);
+        arkaPlan.setCornerRadius(yaricapDp * yogunluk);
+        arkaPlan.setStroke(Math.max(1, (int) (yogunluk + 0.5f)), kenarlikRengi);
+        return arkaPlan;
+    }
+
+    private LinearLayout bitcoinFiyatKartiOlustur(String fiyatHam, String guncelleme) {
+        float yogunluk = getResources().getDisplayMetrics().density;
+        int dp = (int) (16 * yogunluk + 0.5f);
+
+        String fiyatMetni;
+        try {
+            double fiyat = Double.parseDouble(fiyatHam);
+            fiyatMetni = String.format(Locale.US, "$%,.2f", fiyat);
+        } catch (Exception hata) {
+            fiyatMetni = "$" + fiyatHam;
+        }
+
+        LinearLayout kart = new LinearLayout(this);
+        kart.setOrientation(LinearLayout.VERTICAL);
+        kart.setPadding(dp, dp, dp, dp);
+        kart.setBackground(yuvarlakArkaPlan(
+                Color.rgb(12, 48, 55),
+                Color.rgb(49, 139, 137),
+                18
+        ));
+        kart.setElevation(6f);
+
+        TextView baslik = new TextView(this);
+        baslik.setText("BITCOIN  /  BTC");
+        baslik.setTextSize(14);
+        baslik.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        baslik.setTextColor(Color.rgb(126, 220, 207));
+        kart.addView(baslik);
+
+        TextView altBaslik = new TextView(this);
+        altBaslik.setText("GÜNCEL FİYAT");
+        altBaslik.setTextSize(11);
+        altBaslik.setTextColor(Color.rgb(190, 211, 211));
+        LinearLayout.LayoutParams altLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        altLp.topMargin = (int) (12 * yogunluk);
+        kart.addView(altBaslik, altLp);
+
+        TextView fiyat = new TextView(this);
+        fiyat.setText(fiyatMetni);
+        fiyat.setTextSize(30);
+        fiyat.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        fiyat.setTextColor(Color.WHITE);
+        fiyat.setSingleLine(true);
+        fiyat.setTextIsSelectable(true);
+        LinearLayout.LayoutParams fiyatLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        fiyatLp.topMargin = (int) (4 * yogunluk);
+        kart.addView(fiyat, fiyatLp);
+
+        TextView bilgi = new TextView(this);
+        bilgi.setText("Kaynak: CoinGecko\nGüncelleme: " +
+                (guncelleme == null || guncelleme.isEmpty()
+                        ? "Bilinmiyor" : guncelleme));
+        bilgi.setTextSize(11);
+        bilgi.setTextColor(Color.rgb(177, 202, 202));
+        LinearLayout.LayoutParams bilgiLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        bilgiLp.topMargin = (int) (10 * yogunluk);
+        kart.addView(bilgi, bilgiLp);
+
+        TextView kopyala = new TextView(this);
+        kopyala.setText("📋  FİYATI KOPYALA");
+        kopyala.setTextSize(12);
+        kopyala.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        kopyala.setTextColor(Color.WHITE);
+        kopyala.setGravity(Gravity.CENTER);
+        kopyala.setPadding(dp, (int) (10 * yogunluk), dp, (int) (10 * yogunluk));
+        kopyala.setBackground(yuvarlakArkaPlan(
+                Color.rgb(25, 91, 91),
+                Color.rgb(77, 165, 154),
+                12
+        ));
+        final String kopyalanacakFiyat = fiyatMetni;
+        kopyala.setOnClickListener(v -> {
+            ClipboardManager clipboard =
+                    (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("Bitcoin fiyatı", kopyalanacakFiyat);
+            clipboard.setPrimaryClip(clip);
+            Toast.makeText(this, "📋 Bitcoin fiyatı kopyalandı",
+                    Toast.LENGTH_SHORT).show();
+        });
+        LinearLayout.LayoutParams kopyalaLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        kopyalaLp.topMargin = (int) (14 * yogunluk);
+        kart.addView(kopyala, kopyalaLp);
+
+        int ekranGenisligi = getResources().getDisplayMetrics().widthPixels;
+        int maxGenislik = Math.min(
+                (int) (ekranGenisligi * 0.84f),
+                (int) (640 * yogunluk)
+        );
+        LinearLayout.LayoutParams kartLp = new LinearLayout.LayoutParams(
+                maxGenislik,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        kartLp.gravity = Gravity.START;
+        kartLp.setMargins(0, 0, 0, (int) (12 * yogunluk));
+        kart.setLayoutParams(kartLp);
+
+        return kart;
+    }
+
+    private LinearLayout finansKartlariOlustur(JSONObject veri) {
+        LinearLayout liste = new LinearLayout(this);
+        liste.setOrientation(LinearLayout.VERTICAL);
+
+        JSONArray ogeler = veri.optJSONArray("items");
+        if (ogeler == null) return liste;
+
+        float yogunluk = getResources().getDisplayMetrics().density;
+        int ekranGenisligi = getResources().getDisplayMetrics().widthPixels;
+        int maxGenislik = Math.min(
+                (int) (ekranGenisligi * 0.84f),
+                (int) (640 * yogunluk)
+        );
+        boolean altin = "gold".equalsIgnoreCase(veri.optString("type"));
+
+        for (int i = 0; i < ogeler.length(); i++) {
+            JSONObject oge = ogeler.optJSONObject(i);
+            if (oge == null) continue;
+
+            String kod = altin
+                    ? oge.optString("name", "ALTIN")
+                    : oge.optString("code", "");
+
+            String fiyatMetni;
+            if (altin) {
+                String alis = oge.optString("buy", "");
+                String satis = oge.optString("sell", "");
+                if (alis.isEmpty() || satis.isEmpty()) continue;
+                fiyatMetni = "ALIŞ   " + alis + " TL\nSATIŞ  " + satis + " TL";
+            } else {
+                String deger = oge.optString("value", "");
+                if (deger.isEmpty()) continue;
+                fiyatMetni = deger + " TL";
+            }
+
+            int arkaRenk;
+            int kenarlik;
+            int vurgu;
+
+            if (altin) {
+                arkaRenk = Color.rgb(61, 45, 19);
+                kenarlik = Color.rgb(190, 143, 54);
+                vurgu = Color.rgb(255, 211, 125);
+            } else if ("USD".equalsIgnoreCase(kod)) {
+                arkaRenk = Color.rgb(15, 53, 39);
+                kenarlik = Color.rgb(53, 151, 103);
+                vurgu = Color.rgb(125, 232, 168);
+            } else if ("EUR".equalsIgnoreCase(kod)) {
+                arkaRenk = Color.rgb(18, 43, 75);
+                kenarlik = Color.rgb(72, 132, 207);
+                vurgu = Color.rgb(151, 195, 255);
+            } else {
+                arkaRenk = Color.rgb(48, 35, 65);
+                kenarlik = Color.rgb(133, 102, 177);
+                vurgu = Color.rgb(205, 175, 255);
+            }
+
+            int dp = (int) (16 * yogunluk + 0.5f);
+            LinearLayout kart = new LinearLayout(this);
+            kart.setOrientation(LinearLayout.VERTICAL);
+            kart.setPadding(dp, dp, dp, dp);
+            kart.setBackground(yuvarlakArkaPlan(arkaRenk, kenarlik, 18));
+            kart.setElevation(6f);
+
+            TextView baslik = new TextView(this);
+            baslik.setText(altin ? "🟡 " + kod : kod + "  /  TÜRK LİRASI");
+            baslik.setTextSize(14);
+            baslik.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+            baslik.setTextColor(vurgu);
+            kart.addView(baslik);
+
+            TextView fiyat = new TextView(this);
+            fiyat.setText(fiyatMetni);
+            fiyat.setTextSize(altin ? 19 : 29);
+            fiyat.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+            fiyat.setTextColor(Color.WHITE);
+            fiyat.setTextIsSelectable(true);
+
+            LinearLayout.LayoutParams fiyatLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            fiyatLp.topMargin = (int) (12 * yogunluk);
+            kart.addView(fiyat, fiyatLp);
+
+            TextView kopyala = new TextView(this);
+            kopyala.setText("📋  FİYATLARI KOPYALA");
+            kopyala.setTextSize(12);
+            kopyala.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+            kopyala.setTextColor(Color.WHITE);
+            kopyala.setGravity(Gravity.CENTER);
+            kopyala.setPadding(dp, (int) (10 * yogunluk), dp, (int) (10 * yogunluk));
+            kopyala.setBackground(yuvarlakArkaPlan(
+                    Color.rgb(35, 65, 75), kenarlik, 12
+            ));
+
+            final String kopyalanacak = kod + "\n" + fiyatMetni;
+            kopyala.setOnClickListener(v -> {
+                ClipboardManager clipboard =
+                        (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                if (clipboard != null) {
+                    clipboard.setPrimaryClip(
+                            ClipData.newPlainText("Finans fiyatı", kopyalanacak)
+                    );
+                    Toast.makeText(this, "Fiyatlar kopyalandı", Toast.LENGTH_SHORT).show();
+                }
+            });
+
+            LinearLayout.LayoutParams kopyalaLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            kopyalaLp.topMargin = (int) (12 * yogunluk);
+            kart.addView(kopyala, kopyalaLp);
+
+            LinearLayout.LayoutParams kartLp = new LinearLayout.LayoutParams(
+                    maxGenislik,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            kartLp.gravity = Gravity.START;
+            kartLp.bottomMargin = (int) (12 * yogunluk);
+            liste.addView(kart, kartLp);
+        }
+
+        return liste;
+    }
+
     private LinearLayout mesajOlustur(String metin) {
         LinearLayout kutu = new LinearLayout(this);
         kutu.setOrientation(LinearLayout.VERTICAL);
-        kutu.setPadding(18, 18, 18, 18);
+        kutu.setPadding(16, 14, 16, 14);
 
         if (metin.startsWith("Sen: ")) {
             kutu.setBackgroundResource(R.drawable.kullanici_mesaji_cercevesi);
@@ -1946,7 +3469,52 @@ private void sohbetYukle(String id) {
         }
         kutu.setElevation(6f);
 
-        icerikleriGuvenliEkle(kutu, metin);
+        boolean kullaniciMesaji = metin.startsWith("Sen: ");
+
+        LinearLayout kimlikSatiri = new LinearLayout(this);
+        kimlikSatiri.setOrientation(LinearLayout.HORIZONTAL);
+        kimlikSatiri.setGravity(Gravity.CENTER_VERTICAL);
+        kimlikSatiri.setPadding(0, 0, 0, 8);
+
+        TextView avatar = new TextView(this);
+        avatar.setText(kullaniciMesaji ? "👤" : "🦅");
+        avatar.setTextSize(17);
+        avatar.setGravity(Gravity.CENTER);
+        avatar.setBackground(yuvarlakArkaPlan(
+                kullaniciMesaji
+                        ? Color.rgb(231, 218, 194)
+                        : Color.rgb(196, 232, 234),
+                kullaniciMesaji
+                        ? Color.rgb(199, 169, 121)
+                        : Color.rgb(85, 174, 181),
+                18
+        ));
+        kimlikSatiri.addView(avatar, new LinearLayout.LayoutParams(34, 34));
+
+        TextView kimlik = new TextView(this);
+        kimlik.setText(kullaniciMesaji ? "SEN" : "EAGLE-AI");
+        kimlik.setTextSize(11);
+        kimlik.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        kimlik.setTextColor(kullaniciMesaji
+                ? Color.rgb(145, 105, 45)
+                : Color.rgb(39, 103, 120));
+
+        LinearLayout.LayoutParams kimlikLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        kimlikLp.setMargins(9, 0, 0, 0);
+        kimlikSatiri.addView(kimlik, kimlikLp);
+
+        kutu.addView(kimlikSatiri);
+        // Kart başlığındaki kimlik bilgileri mesaj gövdesinde tekrar etmesin.
+        String gorunenMetin = metin;
+        if (kullaniciMesaji && gorunenMetin.startsWith("Sen: ")) {
+            gorunenMetin = gorunenMetin.substring(5).trim();
+        } else if (gorunenMetin.startsWith("🦅")) {
+            gorunenMetin = gorunenMetin.replaceFirst("^🦅\\s*", "").trim();
+        }
+        icerikleriGuvenliEkle(kutu, gorunenMetin);
 
         LinearLayout altSatir = new LinearLayout(this);
         altSatir.setOrientation(LinearLayout.HORIZONTAL);
@@ -1958,7 +3526,7 @@ private void sohbetYukle(String id) {
                         .format(new Date())
         );
         saat.setTextSize(11);
-        saat.setTextColor(Color.GRAY);
+        saat.setTextColor(Color.rgb(119, 132, 145));
         LinearLayout.LayoutParams saatLp = new LinearLayout.LayoutParams(
                 0,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -1990,11 +3558,17 @@ private void sohbetYukle(String id) {
         altSatir.addView(kopyalaBtn);
         kutu.addView(altSatir);
 
-        LinearLayout.LayoutParams lp =
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT
-                );
+        int ekranGenisligi = getResources().getDisplayMetrics().widthPixels;
+        int maxBalonGenisligi = (int) (ekranGenisligi * 0.84f);
+        int ekranSiniri = (int) (640 * getResources().getDisplayMetrics().density);
+        maxBalonGenisligi = Math.min(maxBalonGenisligi, ekranSiniri);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                maxBalonGenisligi,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.gravity = metin.startsWith("Sen: ")
+                ? Gravity.END : Gravity.START;
 
         lp.setMargins(0, 0, 0, 12);
         kutu.setLayoutParams(lp);
@@ -2025,13 +3599,13 @@ private void sohbetYukle(String id) {
         devamBtn.setTypeface(
                 Typeface.create("sans-serif-medium", Typeface.NORMAL)
         );
-        devamBtn.setTextColor(Color.rgb(0, 122, 255));
+        devamBtn.setTextColor(Color.rgb(39, 103, 120));
         devamBtn.setGravity(Gravity.CENTER);
         devamBtn.setPadding(18, 12, 18, 12);
 
         GradientDrawable kenarlik = new GradientDrawable();
         kenarlik.setColor(Color.TRANSPARENT);
-        kenarlik.setStroke(2, Color.rgb(0, 122, 255));
+        kenarlik.setStroke(2, Color.rgb(177, 205, 211));
         kenarlik.setCornerRadius(24);
         devamBtn.setBackground(kenarlik);
 
@@ -2265,6 +3839,137 @@ private void sohbetYukle(String id) {
                 .show();
     }
 
+    private String guvenliProjeAdi(String ad) {
+        if (ad == null || ad.trim().isEmpty()) {
+            return "eagle_project";
+        }
+        String temiz = ad.trim().replaceAll("[^A-Za-z0-9._-]", "_");
+        if (temiz.isEmpty() || temiz.equals(".") || temiz.equals("..")) {
+            return "eagle_project";
+        }
+        return temiz;
+    }
+
+    private void projeZipIndirmeButonuEkle(
+            LinearLayout kart, JSONObject dosyalar, String projeAdi) {
+
+        Button kaydetBtn = new Button(this);
+        kaydetBtn.setText("📦 Projeyi ZIP olarak kaydet");
+        kaydetBtn.setAllCaps(false);
+        kaydetBtn.setTextColor(Color.rgb(42, 58, 72));
+        kaydetBtn.setBackground(yuvarlakArkaPlan(
+                Color.rgb(226, 234, 239),
+                Color.rgb(194, 211, 221),
+                14
+        ));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        lp.setMargins(12, 8, 12, 12);
+        kart.addView(kaydetBtn, lp);
+
+        kaydetBtn.setOnClickListener(v -> {
+            bekleyenProjeDosyalari = dosyalar;
+            bekleyenProjeAdi = guvenliProjeAdi(projeAdi);
+
+            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("application/zip");
+            intent.putExtra(
+                    Intent.EXTRA_TITLE,
+                    bekleyenProjeAdi + ".zip"
+            );
+
+            try {
+                startActivityForResult(intent, PROJE_ZIP_KAYDET);
+            } catch (Exception e) {
+                bekleyenProjeDosyalari = null;
+                Toast.makeText(
+                        this,
+                        "Dosya kaydetme ekranı açılamadı",
+                        Toast.LENGTH_LONG
+                ).show();
+            }
+        });
+    }
+
+    private void projeZipDosyasiniKaydet(Uri hedef) {
+        if (hedef == null || bekleyenProjeDosyalari == null) {
+            Toast.makeText(this, "Kaydedilecek proje bulunamadı",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            OutputStream raw = getContentResolver().openOutputStream(hedef);
+            if (raw == null) {
+                throw new IOException("Dosya akışı açılamadı");
+            }
+
+            int eklenen = 0;
+            try (java.util.zip.ZipOutputStream zip =
+                         new java.util.zip.ZipOutputStream(raw)) {
+
+                java.util.Iterator<String> keys =
+                        bekleyenProjeDosyalari.keys();
+
+                while (keys.hasNext()) {
+                    String yol = keys.next();
+
+                    if (yol == null || yol.trim().isEmpty()
+                            || yol.startsWith("/")
+                            || yol.contains("\\")
+                            || yol.matches("(^|/)\\.\\.(/|$)")
+                            || yol.matches("^[A-Za-z]:.*")) {
+                        continue;
+                    }
+
+                    Object deger = bekleyenProjeDosyalari.opt(yol);
+                    if (!(deger instanceof String)) {
+                        continue;
+                    }
+
+                    String icerik = (String) deger;
+                    String zipYolu = guvenliProjeAdi(bekleyenProjeAdi)
+                            + "/" + yol;
+
+                    zip.putNextEntry(new java.util.zip.ZipEntry(zipYolu));
+                    zip.write(icerik.getBytes(StandardCharsets.UTF_8));
+                    zip.closeEntry();
+                    eklenen++;
+                }
+
+                zip.finish();
+            }
+
+            if (eklenen == 0) {
+                throw new IOException("ZIP içine yazılabilir dosya bulunamadı");
+            }
+
+            Toast.makeText(
+                    this,
+                    "📦 " + eklenen + " dosya ZIP olarak kaydedildi",
+                    Toast.LENGTH_LONG
+            ).show();
+
+        } catch (Exception e) {
+            android.util.Log.e(
+                    "EAGLE_PROJECT",
+                    "ZIP kaydedilemedi: " + e.getMessage(),
+                    e
+            );
+            Toast.makeText(
+                    this,
+                    "ZIP kaydedilemedi: " + e.getMessage(),
+                    Toast.LENGTH_LONG
+            ).show();
+        } finally {
+            bekleyenProjeDosyalari = null;
+        }
+    }
+
     private void galeriAc() {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -2291,6 +3996,15 @@ private void sohbetYukle(String id) {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == PROJE_ZIP_KAYDET) {
+            if (resultCode == RESULT_OK && data != null) {
+                projeZipDosyasiniKaydet(data.getData());
+            } else {
+                bekleyenProjeDosyalari = null;
+            }
+            return;
+        }
 
         if (requestCode == 1002) {
             if (resultCode == RESULT_OK && data != null && data.getExtras() != null) {
@@ -2366,7 +4080,7 @@ private void sohbetYukle(String id) {
             }
             return;
         }
-        
+
         if (requestCode != 1001 || resultCode != RESULT_OK || data == null) {
             return;
         }
@@ -2520,8 +4234,9 @@ private void sohbetYukle(String id) {
             konusmaMotoru.stop();
             konusmaMotoru.shutdown();
         }
-    
+
         executor.shutdownNow();
+        gorselExecutor.shutdownNow();
 
         super.onDestroy();
     }

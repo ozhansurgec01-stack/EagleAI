@@ -1658,5 +1658,11 @@
         "damla cikolatali kurabiye tarifi"
       ]
     }
-  }
+  },
+  "yapay_zeka": [
+    {
+      "soru": "Yapay zekâ nedir?",
+      "cevap": "Yapay zekâ (YZ), bilgisayarların öğrenme, dili anlama, görüntü tanıma ve tahmin yapma gibi görevleri yerine getirmesini sağlayan teknolojilerdir. Günlük hayattan iki örnek: 1) Siri veya Google Asistan'ın sesli komutları anlaması. 2) YouTube veya Netflix'in izleme geçmişine göre video önermesi."
+    }
+  ]
 }

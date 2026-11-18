@@ -482,6 +482,7 @@ def _soru_gibi_mi(metin):
         "hangi",
         "kim",
         "nerede",
+        "neresi",
         "ne zaman",
         "kaç",
     )
