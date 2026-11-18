@@ -1667,7 +1667,7 @@ def merkez_finans_bos_web_verisi_test():
 
 def doviz_miktar_donusum_regresyon_test():
     from eagle_merkez_motoru import EagleMerkezMotoru
-    from eagle_api import doviz_arama_sorgusu, finans_fiyat_sorgusu_mu
+    from eagle_api import doviz_arama_sorgusu, finans_fiyat_sorgusu_mu, web_arastirma_gerekli
     from unittest.mock import patch
 
     def doviz_cevabi(*args, **kwargs):
@@ -1768,6 +1768,12 @@ def doviz_miktar_donusum_regresyon_test():
 
     # İki ayrı finans niyet algılayıcısı da Türk lirası kalıbını tanımalı.
     assert finans_fiyat_sorgusu_mu("250 dolar kaç Türk lirası eder?")
+    assert finans_fiyat_sorgusu_mu("1000 pound kaç TL?")
+    assert finans_fiyat_sorgusu_mu("1000 pounds kaç TL?")
+    assert web_arastirma_gerekli("1000 pound kaç TL?")
+    assert web_arastirma_gerekli("1000 pounds kaç TL?")
+    assert finans_fiyat_sorgusu_mu("1000 GBP kaç TL?")
+    assert web_arastirma_gerekli("1000 GBP kaç TL?")
     assert EagleMerkezMotoru.finans_fiyat_sorgusu_mu(
         "250 dolar kaç Türk lirası eder?"
     )

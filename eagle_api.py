@@ -736,7 +736,7 @@ def finans_fiyat_sorgusu_mu(mesaj):
         and any(x in metin for x in ("altın", "altin"))
     )
     para_birimi = bool(re.search(
-        r"(?<!\w)(?:usd|dolar|eur|euro|gbp|sterlin)(?!\w)", metin
+        r"(?<!\w)(?:usd|dolar|eur|euro|gbp|sterlin|pound|pounds)(?!\w)", metin
     ))
     genel_doviz = bool(re.search(
         r"(?<!\w)(?:döviz|doviz)(?!\w)", metin
@@ -4133,7 +4133,7 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         "son dakika", "haber", "araştır", "arastir",
         "internetten", "webde", "web'de",
         "en son", "son durum", "ne oldu",
-        "dolar", "euro", "sterlin", "bitcoin", "btc",
+        "dolar", "euro", "sterlin", "pound", "pounds", "gbp", "bitcoin", "btc",
         "ethereum", "eth", "altın", "gram altın"
     ]
 
@@ -4308,7 +4308,7 @@ def web_arastirma_gerekli(mesaj):
         "skor", "puan durumu",
         "bitcoin", "btc", "ethereum",
         "altın", "gram altın",
-        "dolar", "euro", "sterlin",
+        "dolar", "euro", "sterlin", "pound", "pounds", "gbp",
         "en son", "son durum",
         "ne oldu",
         "araştır", "arastir",
@@ -12819,7 +12819,7 @@ def sohbet():
             "şimdi", "şu an", "son dakika", "güncel", "guncel",
             "haber", "haberler", "maç", "mac", "skor", "puan durumu",
             "bitcoin", "btc", "ethereum", "eth",
-            "altın", "gram altın", "dolar", "euro", "sterlin",
+            "altın", "gram altın", "dolar", "euro", "sterlin", "pound", "pounds", "gbp",
             "en son", "son durum", "ne oldu",
             "yeni bölüm", "yeni bolum", "bölüm", "bolum",
             "yayınlandı", "yayimlandi", "yayında", "yayinda",
