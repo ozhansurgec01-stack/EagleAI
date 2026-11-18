@@ -1607,6 +1607,8 @@ class EagleMerkezMotoru:
             )
 
         def sayisal_deger(metin):
+            if isinstance(metin, (int, float)) and not isinstance(metin, bool):
+                return float(metin)
             x = str(metin).strip().replace(" ", "")
             try:
                 if "," in x and "." in x:
@@ -1703,6 +1705,51 @@ class EagleMerkezMotoru:
                     or kaynak_sayisi > bulunan[kod][1]
                 ):
                     bulunan[kod] = (deger, kaynak_sayisi)
+
+        # Eksik kurları ücretsiz Frankfurter API üzerinden tamamla.
+        for kod, _adlar in para_birimleri:
+            if kod in bulunan:
+                continue
+
+            try:
+                import json
+                from datetime import date, timedelta
+                from urllib.request import Request, urlopen
+
+                adres = (
+                    "https://api.frankfurter.dev/v1/latest"
+                    f"?base={kod}&symbols=TRY"
+                )
+                istek = Request(
+                    adres,
+                    headers={"User-Agent": "EagleAI/1.0"}
+                )
+
+                with urlopen(istek, timeout=12) as yanit:
+                    veri = json.loads(yanit.read().decode("utf-8"))
+
+                kur_tarihi = date.fromisoformat(veri["date"])
+                bugun = date.today()
+                kur = float(veri["rates"]["TRY"])
+
+                if (
+                    date.min < kur_tarihi <= bugun
+                    and bugun - kur_tarihi <= timedelta(days=7)
+                    and 1 <= kur <= 1000
+                    and veri.get("base") == kod
+                ):
+                    bulunan[kod] = (kur, 1)
+                    print(
+                        f"Frankfurter: {kod}/TRY = {kur} "
+                        f"({kur_tarihi.isoformat()})",
+                        flush=True
+                    )
+
+            except Exception as hata:
+                print(
+                    f"Frankfurter {kod} kur alınamadı: {hata}",
+                    flush=True
+                )
 
         # Tekil kur sorgusunda bir para birimi yeterlidir.
         # Genel döviz sorgusunda en az iki para birimi gerekir.
