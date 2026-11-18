@@ -504,6 +504,42 @@ def doviz_miktar_donusum_regresyon_test():
     for kod in ("USD:", "EUR:", "GBP:"):
         assert kod in liste, f"Genel döviz listesinde {kod} eksik: {liste}"
 
+    # Frankfurter API yanıtındaki float kur değerini koru.
+    import io
+    import json
+    from datetime import date
+    from unittest.mock import patch
+
+    sahte_veri = {
+        "amount": 1.0,
+        "base": "GBP",
+        "date": date.today().isoformat(),
+        "rates": {"TRY": 66.501},
+    }
+
+    sahte_yanit = io.BytesIO(
+        json.dumps(sahte_veri).encode("utf-8")
+    )
+
+    with patch(
+        "urllib.request.urlopen",
+        return_value=sahte_yanit
+    ) as sahte_urlopen:
+        cevap, guven = EagleMerkezMotoru.genel_doviz_cevabi(
+            "1000 pound kaç TL?", [], web_arayici=None
+        )
+
+    assert "66.501 TL" in cevap, (
+        f"Frankfurter hesaplaması hatalı: {cevap}"
+    )
+    assert "66.501.000" not in cevap, (
+        f"Kur binlik sayı olarak yorumlandı: {cevap}"
+    )
+    assert guven >= 0.75, f"Frankfurter güveni düşük: {guven}"
+    assert sahte_urlopen.call_count == 1, (
+        "Frankfurter API beklenen sayıda çağrılmadı."
+    )
+
     api_senaryolari = (
         ("1000 pound kaç TL?", "1 Sterlin kaç TL"),
         ("100 dolar kaç TL?", "1 USD"),
