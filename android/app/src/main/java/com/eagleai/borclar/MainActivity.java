@@ -2599,18 +2599,34 @@ try {
                             || (!konuBitisik.isEmpty()
                                 && aciklamaBitisik.contains(konuBitisik));
 
-                    // Film/dizi aramalarında yapım adı dosya başlığında da bulunmalı.
-                    // Açıklamadaki tesadüfi eşleşmeler tek başına yeterli değil.
-                    if (konuNorm.isEmpty() || !baslikTamEslesme) continue;
+                    if (konuNorm.isEmpty()) continue;
 
-                    int puan = baslikTamEslesme ? 50 : 30;
+                    // Genel konularda başlık ve açıklama birlikte puanlanır.
+                    java.util.Set<String> konuKelimeleri =
+                            new java.util.HashSet<>(java.util.Arrays.asList(konuNorm.split("\\s+")));
+                    int baslikEslesme = 0;
+                    int aciklamaEslesme = 0;
+                    int toplamEslesme = 0;
+                    int gecerliKelime = 0;
 
-                    if (baslikTamEslesme) {
-                        puan += 20;
+                    for (String kelime : konuKelimeleri) {
+                        if (kelime.length() < 2) continue;
+                        gecerliKelime++;
+                        boolean basliktaVar =
+                                (" " + baslikNorm + " ").contains(" " + kelime + " ");
+                        boolean aciklamadaVar =
+                                (" " + aciklamaNorm + " ").contains(" " + kelime + " ");
+                        if (basliktaVar) baslikEslesme++;
+                        if (aciklamadaVar) aciklamaEslesme++;
+                        if (basliktaVar || aciklamadaVar) toplamEslesme++;
                     }
-                    if (aciklamaTamEslesme) {
-                        puan += 10;
-                    }
+
+                    int gerekliEslesme = Math.max(1, (gecerliKelime + 1) / 2);
+                    if (!baslikTamEslesme && toplamEslesme < gerekliEslesme) continue;
+
+                    int puan = baslikTamEslesme ? 70
+                            : toplamEslesme * 15 + baslikEslesme * 5 + aciklamaEslesme * 3;
+                    if (aciklamaTamEslesme) puan += 10;
 
                     if (baslik.matches("(?s).*\\b(map|maps|chart|diagram|"
                             + "drawing|engraving|blueprint)\\b.*")) {

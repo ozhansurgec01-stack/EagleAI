@@ -7253,7 +7253,7 @@ def web_arastir(sorgu, limit=6):
         return []
 
 
-def web_sayfa_oku(url, limit=7000):
+def web_sayfa_oku(url, limit=7000, metaveri_dahil=True):
     """Web sayfasını indirir ve temiz metne dönüştürür."""
     try:
         url = web_kaynak_url(url)
@@ -7400,7 +7400,7 @@ def web_sayfa_oku(url, limit=7000):
             metin = " ".join(kaynak.stripped_strings)
         metin = re.sub(r"\s+", " ", metin).strip()
 
-        if yapilandirilmis_bilgiler:
+        if metaveri_dahil and yapilandirilmis_bilgiler:
             ek_bilgi = " | ".join(yapilandirilmis_bilgiler)
             metin = (ek_bilgi + " | " + metin).strip(" |")
 
@@ -13629,6 +13629,7 @@ def sohbet():
                 karar=karar,
                 web_verisi=web_verisi,
                 sayfa_okuyucu=web_sayfa_oku,
+                genel_sayfa_okuyucu=lambda url: web_sayfa_oku(url, metaveri_dahil=False),
                 web_arayici=web_arastir,
             )
 

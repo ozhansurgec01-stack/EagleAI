@@ -2545,6 +2545,55 @@ def tmdb_sohbet_api_uc_tan_uca_test():
 
 test("TMDb sohbet API uçtan uca yönlendirmesi", tmdb_sohbet_api_uc_tan_uca_test)
 test("Medya öneri niyeti ve yönlendirmesi", medya_oneri_algilama_test)
+
+
+def genel_baslik_cumle_uyumu_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    vakalar = [
+        (
+            "Kanada hakkında bilgi verir misin?",
+            "Kanada - Kuzey Amerika'da bir ülke",
+            "Kanada, Kuzey Amerika'da bulunan bir ülkedir. "
+            "Kanada'nın başkenti Ottawa'dır. "
+            "Kanada'nın güneyinde Amerika Birleşik Devletleri yer alır.",
+            ("Kuzey Amerika", "Ottawa"),
+            ("Atlantik Okyanusu",),
+        ),
+        (
+            "Atlantis hakkında bilgi verir misin?",
+            "Atlantis uygarlığı ve efsanesi",
+            "Atlantis, Platon'un eserlerinde sözünü ettiği efsanevi "
+            "bir ada uygarlığıdır. Atlantis'in varlığı tarihçiler "
+            "tarafından kanıtlanmış değildir.",
+            ("Platon", "efsanevi"),
+            ("Kanada",),
+        ),
+    ]
+
+    for i, (soru, baslik, sayfa, gerekli, yasak) in enumerate(vakalar):
+        cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+            soru,
+            [{
+                "title": baslik,
+                "snippet": "",
+                "url": f"https://test.example/baslik-uyumu-{i}",
+            }],
+            genel_sayfa_okuyucu=lambda url, metin=sayfa: metin,
+        )
+        norm = cevap.casefold()
+        assert cevap, f"{soru}: cevap boş"
+        for ifade in gerekli:
+            assert ifade.casefold() in norm, (
+                f"{soru}: gerekli bilgi bulunamadı ({ifade}): {cevap}"
+            )
+        for ifade in yasak:
+            assert ifade.casefold() not in norm, (
+                f"{soru}: ilgisiz bilgi bulundu ({ifade}): {cevap}"
+            )
+        assert guven >= 0.75, f"{soru}: güven düşük: {guven}"
+
+test("Genel başlık-cümle uyumu", genel_baslik_cumle_uyumu_test)
 test("TMDb yabancı yapım filtresi ve afiş tekilliği", tmdb_yabanci_oneri_filtre_test)
 
 test("Kodsuz finansal çelişki doğrudan analizi", finansal_celiski_dogrudan_analiz_test)
