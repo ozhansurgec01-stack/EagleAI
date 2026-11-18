@@ -1667,7 +1667,7 @@ def merkez_finans_bos_web_verisi_test():
 
 def doviz_miktar_donusum_regresyon_test():
     from eagle_merkez_motoru import EagleMerkezMotoru
-    from eagle_api import doviz_arama_sorgusu
+    from eagle_api import doviz_arama_sorgusu, finans_fiyat_sorgusu_mu
     from unittest.mock import patch
 
     def doviz_cevabi(*args, **kwargs):
@@ -1740,10 +1740,43 @@ def doviz_miktar_donusum_regresyon_test():
     assert guven >= 0.75, f"Frankfurter güveni düşük: {guven}"
     assert sahte_urlopen.call_count == 1, "Frankfurter API beklenen sayıda çağrılmadı."
 
+    # TCMB miktarlı dönüşüm ve eski miktarsız yanıt biçimi.
+    tcmb_verisi = {
+        "tarih": "18.11.2026",
+        "kurlar": {
+            "USD": {"alis": 50.3536, "satis": 50.4444},
+        },
+    }
+    with patch(
+        "eagle_merkez_motoru.tcmb_doviz_kurlarini_getir",
+        return_value=tcmb_verisi,
+    ):
+        cevap, guven = EagleMerkezMotoru.genel_doviz_cevabi(
+            "250 dolar kaç Türk lirası eder?", []
+        )
+    assert "12.611,1 TL" in cevap, f"TCMB miktar hesabı hatalı: {cevap}"
+    assert "50,4444 TL" in cevap and "döviz satış" in cevap, cevap
+    assert guven == 0.95, guven
+
+    with patch(
+        "eagle_merkez_motoru.tcmb_doviz_kurlarini_getir",
+        return_value=tcmb_verisi,
+    ):
+        cevap, _ = EagleMerkezMotoru.genel_doviz_cevabi("Dolar kuru", [])
+    assert "TCMB RESMİ DÖVİZ KURLARI" in cevap, cevap
+    assert "USD alış:" in cevap and "satış:" in cevap, cevap
+
+    # İki ayrı finans niyet algılayıcısı da Türk lirası kalıbını tanımalı.
+    assert finans_fiyat_sorgusu_mu("250 dolar kaç Türk lirası eder?")
+    assert EagleMerkezMotoru.finans_fiyat_sorgusu_mu(
+        "250 dolar kaç Türk lirası eder?"
+    )
+
     api_senaryolari = (
         ("1000 pound kaç TL?", "1 Sterlin kaç TL"),
         ("100 dolar kaç TL?", "1 USD"),
         ("100 euro kaç TL?", "1 EUR"),
+        ("250 dolar kaç Türk lirası eder?", "1 USD"),
     )
     for soru, beklenen in api_senaryolari:
         sonuc = doviz_arama_sorgusu(soru)

@@ -177,7 +177,8 @@ class EagleMerkezMotoru:
         metin = cls.normalize(mesaj)
         fiyat_niyeti = any(x in metin for x in (
             "ne kadar", "nekadar", "fiyat", "kaç tl", "kac tl",
-            "kaç lira", "kac lira", "alış", "alis", "satış", "satis",
+            "kaç lira", "kac lira", "kaç türk lirası", "kac turk lirasi",
+            "alış", "alis", "satış", "satis",
         ))
         varlik = re.search(
             r"(?<!\w)(altın|altin|gram|dolar|usd|euro|eur|sterlin|gbp)(?!\w)",
@@ -1358,41 +1359,6 @@ class EagleMerkezMotoru:
                 item for item in para_birimleri if item[0] == tekil_kod
             )
 
-        # Öncelik: TCMB resmi alış/satış verisi.
-        try:
-            tcmb = tcmb_doviz_kurlarini_getir()
-        except Exception as hata:
-            print("TCMB döviz verisi alınamadı:", hata, flush=True)
-            tcmb = None
-
-        if tcmb:
-            tcmb_satirlari = []
-            for kod, _ in para_birimleri:
-                kur = tcmb["kurlar"].get(kod)
-                if not kur:
-                    continue
-
-                def tl_yaz(deger):
-                    return (
-                        f"{deger:,.4f}"
-                        .replace(",", "X")
-                        .replace(".", ",")
-                        .replace("X", ".")
-                    )
-
-                tcmb_satirlari.append(
-                    f"{kod} alış: {tl_yaz(kur['alis'])} TL"
-                    f" | satış: {tl_yaz(kur['satis'])} TL"
-                )
-
-            gerekli_sayi = 1 if tekil_kod else 2
-            if len(tcmb_satirlari) >= gerekli_sayi:
-                return (
-                    "🟢 **TCMB RESMİ DÖVİZ KURLARI**\n"
-                    + " | ".join(tcmb_satirlari)
-                    + f"\nVeri tarihi: {tcmb['tarih']} (TCMB)"
-                ), 0.95
-
         def kur_cikar(sonuclar, kod, adlar):
             """Güncel kur değerini para birimine göre ve tarih kontrolüyle seçer."""
             from datetime import datetime
@@ -1655,6 +1621,61 @@ class EagleMerkezMotoru:
             if miktar_eslesmesi:
                 miktar = sayisal_deger(miktar_eslesmesi.group(1))
                 miktar_gorunen = turkce_sayi(miktar) if miktar is not None else None
+
+        # Öncelik: TCMB resmi alış/satış verisi.
+        try:
+            tcmb = tcmb_doviz_kurlarini_getir()
+        except Exception as hata:
+            print("TCMB döviz verisi alınamadı:", hata, flush=True)
+            tcmb = None
+
+        if tcmb:
+            # Miktarlı sorguda TCMB döviz satış kuru ile dönüşüm yap.
+            if tekil_kod and miktar is not None and miktar != 1:
+                kur = tcmb["kurlar"].get(tekil_kod)
+                if kur:
+                    kur_degeri = float(kur["satis"])
+                    sonuc_tl = miktar * kur_degeri
+                    kur_gorunen = (
+                        f"{kur_degeri:,.4f}"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", ".")
+                    )
+                    return (
+                        "🟢 **TCMB RESMİ DÖVİZ DÖNÜŞÜMÜ**\n"
+                        f"{miktar_gorunen} {tekil_kod} × "
+                        f"{kur_gorunen} TL (TCMB döviz satış) = "
+                        f"{turkce_sayi(sonuc_tl)} TL"
+                        f"\nVeri tarihi: {tcmb['tarih']} (TCMB)"
+                    ), 0.95
+
+            tcmb_satirlari = []
+            for kod, _ in para_birimleri:
+                kur = tcmb["kurlar"].get(kod)
+                if not kur:
+                    continue
+
+                def tl_yaz(deger):
+                    return (
+                        f"{deger:,.4f}"
+                        .replace(",", "X")
+                        .replace(".", ",")
+                        .replace("X", ".")
+                    )
+
+                tcmb_satirlari.append(
+                    f"{kod} alış: {tl_yaz(kur['alis'])} TL"
+                    f" | satış: {tl_yaz(kur['satis'])} TL"
+                )
+
+            gerekli_sayi = 1 if tekil_kod else 2
+            if len(tcmb_satirlari) >= gerekli_sayi:
+                return (
+                    "🟢 **TCMB RESMİ DÖVİZ KURLARI**\n"
+                    + " | ".join(tcmb_satirlari)
+                    + f"\nVeri tarihi: {tcmb['tarih']} (TCMB)"
+                ), 0.95
 
         bulunan = {}
 

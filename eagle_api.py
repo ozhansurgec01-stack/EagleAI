@@ -724,7 +724,8 @@ def finans_fiyat_sorgusu_mu(mesaj):
     metin = str(mesaj or "").casefold().replace("\u0307", "")
     fiyat_niyeti = any(x in metin for x in (
         "ne kadar", "nekadar", "fiyat", "kaç tl", "kac tl",
-        "kaç lira", "kac lira", "alış", "alis", "satış", "satis",
+        "kaç lira", "kac lira", "kaç türk lirası", "kac turk lirasi",
+        "alış", "alis", "satış", "satis",
     ))
     kur_niyeti = any(x in metin for x in (
         "kur", "kuru", "kaç tl", "kac tl", "kaç lira", "kac lira",
