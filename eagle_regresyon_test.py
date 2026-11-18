@@ -1181,6 +1181,22 @@ def karar_motoru_test():
             f"Genel bilgi başlığı web'e yönlenmedi: {soru} -> {sonuc}"
         )
 
+    # Farklı genel bilgi talebi ifadeleri web araştırmasına yönlenmeli.
+    genel_bilgi_istekleri = (
+        "Atlantis hakkında bilgi verir misin?",
+        "Atlastis ile ilgili bilgiler verirmisin",
+        "Türkiye hakkında bilgi verir misin?",
+        "Kanada ile ilgili bilgi verir misin?",
+    )
+    for soru in genel_bilgi_istekleri:
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("intent") == "guncel_bilgi", (
+            f"Genel bilgi isteği yanlış sınıflandırıldı: {soru} -> {sonuc}"
+        )
+        assert sonuc.get("arac") == "web_arastirma", (
+            f"Genel bilgi isteği web'e yönlenmedi: {soru} -> {sonuc}"
+        )
+
     # Sosyal sohbet ifadeleri genel bilgi araması olarak algılanmamalı.
     for soru in ("Nasılsın?", "Sence bu film güzel mi?", "Bugün çok yoruldum"):
         assert not eagle_api.web_arastirma_gerekli(soru), (
