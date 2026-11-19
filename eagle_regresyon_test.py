@@ -2610,6 +2610,26 @@ def genel_web_konu_uyumu_kok_regresyon_test():
         f"{uyumlu}"
     )
 
+    karsilastirma = EagleMerkezMotoru._genel_web_konu_uyumu(
+        ["atlas", "okyanusu"],
+        "Atlas Okyanusu",
+        "Pasifik Okyanusu elbette Atlas Okyanusu'ndan daha büyüktür.",
+    )
+    assert not karsilastirma["uygun"], (
+        "Başka bir okyanusu anlatan karşılaştırma cümlesi kabul edildi: "
+        f"{karsilastirma}"
+    )
+
+    dogru_karsilastirma = EagleMerkezMotoru._genel_web_konu_uyumu(
+        ["atlas", "okyanusu"],
+        "Atlas Okyanusu",
+        "Atlas Okyanusu, Pasifik Okyanusu'ndan daha küçüktür.",
+    )
+    assert dogru_karsilastirma["uygun"], (
+        "Konu özne olduğu doğru karşılaştırma cümlesi elendi: "
+        f"{dogru_karsilastirma}"
+    )
+
     yan_konu = EagleMerkezMotoru._genel_web_konu_uyumu(
         ["atlas", "okyanusu"],
         "Atlas Okyanusu",
