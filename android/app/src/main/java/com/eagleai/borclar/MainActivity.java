@@ -548,6 +548,7 @@ public class MainActivity extends Activity {
             ).replaceAll("[ \\t]+\\|[ \\t]*$", "").trim();
             final JSONArray medyaOnerileri = apiCevap.mediaItems;
             final JSONArray medyaGorselleri = apiCevap.mediaImages;
+            final boolean yerGalerisi = apiCevap.placeGallery;
             final boolean medyaSorusu = apiCevap.mediaQuery;
             final boolean bitcoinFiyati = apiCevap.bitcoinPrice;
             final String bitcoinUsd = apiCevap.bitcoinUsd;
@@ -578,6 +579,11 @@ public class MainActivity extends Activity {
                         tmdbOneriKartlariEkle(cevapKarti, medyaOnerileri);
                     } else if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
                         tmdbGorselleriEkle(cevapKarti, medyaGorselleri);
+                    } else if (yerGalerisi) {
+                        gorselDurumunuGoster(
+                                cevapKarti,
+                                "Bu yer için doğrulanmış görsel bulunamadı. Alakasız fotoğraf gösterilmiyor."
+                        );
                     } else if (!bitcoinFiyati && finansVerisi == null && !medyaSorusu
                             && gorselAramasiUygunMu(mesaj, cevapFinal)) {
                         commonsGorselleriEkle(cevapKarti, mesaj, cevapFinal);
@@ -886,6 +892,7 @@ public class MainActivity extends Activity {
         String answer = "Eagle-AI cevap vermedi.";
         JSONArray mediaItems;
         JSONArray mediaImages;
+        boolean placeGallery;
         boolean mediaQuery;
         boolean bitcoinPrice;
         String bitcoinUsd = "";
@@ -1043,6 +1050,7 @@ public class MainActivity extends Activity {
 
                 apiCevap.mediaItems = cevapJson.optJSONArray("media_items");
                 apiCevap.mediaQuery = cevapJson.optBoolean("media_query", false);
+                apiCevap.placeGallery = cevapJson.optBoolean("place_gallery", false);
                 apiCevap.bitcoinPrice = cevapJson.optBoolean("bitcoin_price", false);
                 apiCevap.bitcoinUsd = cevapJson.optString("bitcoin_usd", "");
                 apiCevap.bitcoinUpdatedAt = cevapJson.optString("bitcoin_updated_at", "");
@@ -2984,14 +2992,15 @@ JSONObject item = new JSONObject();
 
     private void tmdbGorselleriEkle(LinearLayout kart, JSONArray gorseller) {
         runOnUiThread(() -> {
-            if (isFinishing() || kart == null || kart.getParent() == null) return;
+            if (isFinishing() || kart == null || kart.getParent() == null
+                    || gorseller == null) return;
 
             LinearLayout galeri = new LinearLayout(this);
             galeri.setOrientation(LinearLayout.VERTICAL);
             galeri.setPadding(0, 10, 0, 10);
 
             TextView baslik = new TextView(this);
-            baslik.setText("🎬 Yapım görselleri");
+            baslik.setText("🖼️ Görseller");
             baslik.setTextSize(14);
             baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             baslik.setTextColor(Color.WHITE);
@@ -2999,41 +3008,51 @@ JSONObject item = new JSONObject();
 
             String afisAdresi = "";
             String arkaPlanAdresi = "";
+            boolean wikimediaVar = false;
+            boolean tmdbVar = false;
 
             for (int i = 0; i < gorseller.length(); i++) {
                 JSONObject item = gorseller.optJSONObject(i);
                 if (item == null) continue;
 
-                String adres = item.optString("url", "");
-                if (!adres.startsWith("https://image.tmdb.org/")) continue;
-
+                String adres = item.optString("url", "").trim();
                 String tur = item.optString("type", "image");
+                Uri uri = Uri.parse(adres);
+                String host = uri.getHost() == null
+                        ? "" : uri.getHost().toLowerCase(Locale.ROOT);
 
-                if ("poster".equals(tur)) {
-                    if (!afisAdresi.isEmpty() || adres.equals(arkaPlanAdresi)) continue;
-                    afisAdresi = adres;
-                } else if ("backdrop".equals(tur)) {
-                    if (!arkaPlanAdresi.isEmpty() || adres.equals(afisAdresi)) continue;
-                    arkaPlanAdresi = adres;
+                boolean tmdbAdres = "image.tmdb.org".equals(host);
+                boolean wikimediaAdres = "upload.wikimedia.org".equals(host)
+                        || "commons.wikimedia.org".equals(host);
+
+                if (!"https".equalsIgnoreCase(uri.getScheme())
+                        || (!tmdbAdres && !wikimediaAdres)) continue;
+
+                if (tmdbAdres) {
+                    if ("poster".equals(tur)) {
+                        if (!afisAdresi.isEmpty() || adres.equals(arkaPlanAdresi)) continue;
+                        afisAdresi = adres;
+                    } else if ("backdrop".equals(tur)) {
+                        if (!arkaPlanAdresi.isEmpty() || adres.equals(afisAdresi)) continue;
+                        arkaPlanAdresi = adres;
+                    } else {
+                        continue;
+                    }
+                    tmdbVar = true;
                 } else {
-                    continue;
+                    if (!"place".equals(tur) && !"image".equals(tur)
+                            && !"landmark".equals(tur)) continue;
+                    wikimediaVar = true;
                 }
 
-                String ad = item.optString("name", "");
+                String ad = item.optString("name", item.optString("title", ""));
                 String karakter = item.optString("character", "");
-
                 String etiket;
-                if ("poster".equals(tur)) {
-                    etiket = "Afiş";
-                } else if ("backdrop".equals(tur)) {
-                    etiket = "Arka plan";
-                } else if ("logo".equals(tur)) {
-                    etiket = "Logo";
-                } else if ("cast".equals(tur)) {
-                    etiket = "Oyuncu";
-                } else {
-                    etiket = "Yapım görseli";
-                }
+
+                if ("poster".equals(tur)) etiket = "Afiş";
+                else if ("backdrop".equals(tur)) etiket = "Arka plan";
+                else if ("cast".equals(tur)) etiket = "Oyuncu";
+                else etiket = "📍";
 
                 if (!ad.isEmpty()) {
                     etiket += ": " + ad;
@@ -3045,6 +3064,18 @@ JSONObject item = new JSONObject();
                 etiketView.setTextSize(12);
                 etiketView.setTextColor(Color.LTGRAY);
                 etiketView.setPadding(0, 10, 0, 4);
+
+                String kaynakUrl = item.optString("source", "").trim();
+                Uri kaynakUri = Uri.parse(kaynakUrl);
+                if (wikimediaAdres
+                        && "https".equalsIgnoreCase(kaynakUri.getScheme())
+                        && "commons.wikimedia.org".equalsIgnoreCase(kaynakUri.getHost())) {
+                    etiketView.setOnClickListener(v -> {
+                        try {
+                            startActivity(new Intent(Intent.ACTION_VIEW, kaynakUri));
+                        } catch (Exception ignored) {}
+                    });
+                }
                 galeri.addView(etiketView);
 
                 ImageView resim = new ImageView(this);
@@ -3066,32 +3097,48 @@ JSONObject item = new JSONObject();
                                     resim.setImageBitmap(bitmap);
                                 }
                             });
+                        } else {
+                            android.util.Log.w("EagleGorsel",
+                                    "Görsel indirilemedi: " + adres);
                         }
                     } catch (Exception hata) {
-                        android.util.Log.e("EagleTMDB",
-                                "TMDb görseli yüklenemedi: " + adres, hata);
+                        android.util.Log.e("EagleGorsel",
+                                "Görsel yüklenemedi: " + adres, hata);
                     }
                 });
             }
 
-            TextView kaynak = new TextView(this);
-            kaynak.setText("Görsel ve yapım verileri: TMDb");
-            kaynak.setTextSize(11);
-            kaynak.setTextColor(Color.GRAY);
-            kaynak.setPadding(0, 8, 0, 2);
-            kaynak.setOnClickListener(v -> {
-                try {
-                    startActivity(new Intent(Intent.ACTION_VIEW,
-                            Uri.parse("https://www.themoviedb.org/")));
-                } catch (Exception ignored) {}
-            });
-            galeri.addView(kaynak);
+            if (galeri.getChildCount() <= 1) return;
 
-            TextView atif = new TextView(this);
-            atif.setText("This product uses the TMDB API but is not endorsed or certified by TMDB.");
-            atif.setTextSize(10);
-            atif.setTextColor(Color.GRAY);
-            galeri.addView(atif);
+            if (wikimediaVar) {
+                TextView kaynak = new TextView(this);
+                kaynak.setText("Kaynak ve lisans bilgileri: Wikidata / Wikimedia Commons (görsel etiketine dokun)");
+                kaynak.setTextSize(11);
+                kaynak.setTextColor(Color.GRAY);
+                kaynak.setPadding(0, 8, 0, 2);
+                galeri.addView(kaynak);
+            }
+
+            if (tmdbVar) {
+                TextView kaynak = new TextView(this);
+                kaynak.setText("Görsel ve yapım verileri: TMDb");
+                kaynak.setTextSize(11);
+                kaynak.setTextColor(Color.GRAY);
+                kaynak.setPadding(0, 8, 0, 2);
+                kaynak.setOnClickListener(v -> {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_VIEW,
+                                Uri.parse("https://www.themoviedb.org/")));
+                    } catch (Exception ignored) {}
+                });
+                galeri.addView(kaynak);
+
+                TextView atif = new TextView(this);
+                atif.setText("This product uses the TMDB API but is not endorsed or certified by TMDB.");
+                atif.setTextSize(10);
+                atif.setTextColor(Color.GRAY);
+                galeri.addView(atif);
+            }
 
             int index = Math.max(0, kart.getChildCount() - 1);
             kart.addView(galeri, index);
