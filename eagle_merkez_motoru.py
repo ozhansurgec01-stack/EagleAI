@@ -1851,7 +1851,7 @@ class EagleMerkezMotoru:
             return {"uygun": False, "puan": 0, "baslik_kapsama": 0.0, "cumle_kapsama": 0.0}
 
         baslik_tokenlari = re.findall(r"[a-z0-9çğıöşü]+", cls.normalize(str(baslik or "")))
-        cumle_tokenlari = re.findall(r"[a-z0-9çğıöşü]+", cls.normalize(str(cumle or "")))
+        cumle_tokenlari = re.findall(r"[a-z0-9çğıöşü]+(?:\x27[a-z0-9çğıöşü]+)?", cls.normalize(str(cumle or "")))
 
         def kapsama(tokenlar):
             eslesen = sum(
@@ -1878,6 +1878,32 @@ class EagleMerkezMotoru:
                 konu_ilk_konumlari.append(ilk_konum)
 
         tum_konu_terimleri_var = len(konu_ilk_konumlari) == len(konu)
+        karsilastirma_isaretleri = {
+            "daha", "kadar", "oranla", "kiyasla",
+            "karşılaştırıldığında", "karsilastirildiginda",
+            "buyuktur", "kucuktur", "uzundur", "fazladir", "azdir",
+        }
+        # Konu adının ilk tam geçişini esas al. Ortak tür adı
+        # ("okyanusu") başka bir varlığın karşılaştırmasından gelmemeli.
+        konu_ifade_konumlari = [
+            i for i in range(len(cumle_tokenlari) - len(konu) + 1)
+            if all(
+                cls._genel_web_token_eslesiyor(k, cumle_tokenlari[i + j])
+                for j, k in enumerate(konu)
+            )
+        ]
+        konu_karsilastirma_nesnesi = False
+        if konu_ifade_konumlari:
+            ilk = konu_ifade_konumlari[0]
+            son_token = cumle_tokenlari[ilk + len(konu) - 1]
+            ekli_karsilastirma = son_token.endswith(
+                ("'dan", "'den", "'tan", "'ten", "'ndan", "'nden")
+            )
+            sonraki = cumle_tokenlari[ilk + len(konu):ilk + len(konu) + 5]
+            konu_karsilastirma_nesnesi = (
+                ekli_karsilastirma
+                and any(isaret in sonraki for isaret in karsilastirma_isaretleri)
+            )
         if len(konu) > 1:
             # Çok kelimeli varlık adının bütün parçaları cümlenin girişinde
             # birlikte görünmeli; yalnızca geç bir yan bilgi eşleşmesi yetmez.
@@ -1911,6 +1937,7 @@ class EagleMerkezMotoru:
             and baslik_kapsama >= baslik_esigi
             and cumle_kapsama >= cumle_esigi
             and konu_yakinligi
+            and not konu_karsilastirma_nesnesi
         )
         puan = int(baslik_kapsama * 40 + cumle_kapsama * 50 + (15 if tam_baslik else 0)) if uygun else 0
         return {
