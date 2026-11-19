@@ -2593,7 +2593,110 @@ def genel_baslik_cumle_uyumu_test():
             )
         assert guven >= 0.75, f"{soru}: güven düşük: {guven}"
 
+
+
+
+def genel_web_konu_uyumu_kok_regresyon_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    uyumlu = EagleMerkezMotoru._genel_web_konu_uyumu(
+        ["atlas", "okyanusu"],
+        "Atlas Okyanusu",
+        "Atlas Okyanusu, Amerika kıtalarını Avrupa ve Afrika'dan ayıran "
+        "büyük bir okyanustur.",
+    )
+    assert uyumlu["uygun"], (
+        "Konu cümle başında olduğu halde sonda tekrarlandığı için elendi: "
+        f"{uyumlu}"
+    )
+
+    yan_konu = EagleMerkezMotoru._genel_web_konu_uyumu(
+        ["atlas", "okyanusu"],
+        "Atlas Okyanusu",
+        "Dünyanın en uzun okyanus sıradağı olan Orta Atlas Sırtı "
+        "bu okyanusta bulunur.",
+    )
+    assert not yan_konu["uygun"], (
+        "Atlas Okyanusu yalnızca yan bilgi olarak geçtiği halde kabul edildi: "
+        f"{yan_konu}"
+    )
+
+    misir = EagleMerkezMotoru._genel_web_konu_uyumu(
+        ["mısır", "piramitleri"],
+        "Mısır piramitleri",
+        "Gize Piramitleri, Mısır'ın Kahire yakınlarındaki Gize bölgesindedir.",
+    )
+    assert misir["uygun"], (
+        "Başka bir adla başlayan ama aynı varlığı açıklayan cümle elendi: "
+        f"{misir}"
+    )
+
+    yanlis_baslik = EagleMerkezMotoru._genel_web_konu_uyumu(
+        ["kanada"],
+        "Norveç - Genel Bilgiler",
+        "Kanada, Kuzey Amerika'da bulunan bir ülkedir.",
+    )
+    assert not yanlis_baslik["uygun"], (
+        "Cümle ve kaynak başlığı farklı konuları anlattığı halde kabul edildi"
+    )
+
+    kanada = EagleMerkezMotoru._genel_web_konu_uyumu(
+        ["kanada"], "Kanada - Genel Bilgiler",
+        "Kuzey Amerika'da bulunan Kanada, yüzölçümü bakımından büyük bir ülkedir.",
+    )
+    assert kanada["uygun"], f"Konu cümle içinde doğal sırayla anlatılırken elendi: {kanada}"
+
+    norvec = EagleMerkezMotoru._genel_web_konu_uyumu(
+        ["norveç"], "Norveç",
+        "Norveç, Kuzey Avrupa'da bulunan bir İskandinav ülkesidir.",
+    )
+    assert norvec["uygun"], f"Tek kelimeli konu tanıtımı elendi: {norvec}"
+
+    ikincil_kanada = EagleMerkezMotoru._genel_web_konu_uyumu(
+        ["kanada"], "Kanada - Genel Bilgiler",
+        "ABD ile Meksika arasındaki görüşmelerin ardından Kanada da açıklama yaptı.",
+    )
+    assert not ikincil_kanada["uygun"], (
+        f"Kanada yalnızca ikincil olay bağlamında geçtiği halde kabul edildi: {ikincil_kanada}"
+    )
+
+def genel_web_turkce_yazim_temizligi_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    sayfa = (
+        "Kanada ( İngilizce : Canada ⓘ ; Fransızca : Canada ⓘ ), "
+        "Kuzey Amerika 'da bulunan geniş bir ülkedir. "
+        "Kanada nın yüzölçümü yaklaşık 9.985.000 km den fazladır. "
+        "Kanada nın başkenti Ottawa ; Toronto ve Montreal önemli şehirleridir."
+    )
+    cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+        "Kanada hakkında bilgi verir misin?",
+        [{
+            "title": "Kanada - Genel Bilgiler",
+            "snippet": "",
+            "url": "https://test.example/kanada-yazim",
+        }],
+        genel_sayfa_okuyucu=lambda url: sayfa,
+    )
+
+    assert cevap, "Yazım temizliği testi boş cevap döndürdü"
+    assert 0.75 <= guven < 0.88, f"Beklenmeyen kanıta dayalı güven: {guven}"
+    for hatali in ("ⓘ", "( İngilizce", " : ", " 'da", "km den", "Ottawa ;", "Toronto ,"):
+        assert hatali not in cevap, f"Bozuk yazım kaldı ({hatali}): {cevap}"
+
+    for dogru in (
+        "Kanada (İngilizce: Canada; Fransızca: Canada)",
+        "Kuzey Amerika'da",
+        "9.985.000 km'den",
+        "Ottawa;",
+        "Toronto ve Montreal",
+    ):
+        assert dogru in cevap, f"Temiz biçim bulunamadı ({dogru}): {cevap}"
+
+
 test("Genel başlık-cümle uyumu", genel_baslik_cumle_uyumu_test)
+test("Genel web konu uyumu kök regresyonu", genel_web_konu_uyumu_kok_regresyon_test)
+test("Genel web Türkçe yazım temizliği", genel_web_turkce_yazim_temizligi_test)
 test("TMDb yabancı yapım filtresi ve afiş tekilliği", tmdb_yabanci_oneri_filtre_test)
 
 test("Kodsuz finansal çelişki doğrudan analizi", finansal_celiski_dogrudan_analiz_test)

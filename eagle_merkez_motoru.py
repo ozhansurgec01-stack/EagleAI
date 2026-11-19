@@ -1825,6 +1825,95 @@ class EagleMerkezMotoru:
         }
 
 
+    @staticmethod
+    def _genel_web_token_eslesiyor(konu_tokeni, metin_tokeni):
+        """Türkçe çekim ekleri bulunan konu kelimelerini güvenli eşleştirir."""
+        a = str(konu_tokeni or "")
+        b = str(metin_tokeni or "")
+        if not a or not b:
+            return False
+        if a == b or a.startswith(b) or b.startswith(a):
+            return True
+        ortak = 0
+        for ca, cb in zip(a, b):
+            if ca != cb:
+                break
+            ortak += 1
+        return min(len(a), len(b)) >= 6 and ortak >= max(4, min(len(a), len(b)) - 2)
+
+    @classmethod
+    def _genel_web_konu_uyumu(cls, konu_kelime, baslik, cumle):
+        """Tek ortak konu denetimi: kaynak başlığı ve cümle birlikte uymalı."""
+        konu = list(dict.fromkeys(
+            str(k).strip() for k in (konu_kelime or []) if len(str(k).strip()) >= 2
+        ))
+        if not konu:
+            return {"uygun": False, "puan": 0, "baslik_kapsama": 0.0, "cumle_kapsama": 0.0}
+
+        baslik_tokenlari = re.findall(r"[a-z0-9çğıöşü]+", cls.normalize(str(baslik or "")))
+        cumle_tokenlari = re.findall(r"[a-z0-9çğıöşü]+", cls.normalize(str(cumle or "")))
+
+        def kapsama(tokenlar):
+            eslesen = sum(
+                1 for k in konu
+                if any(cls._genel_web_token_eslesiyor(k, t) for t in tokenlar)
+            )
+            return eslesen / len(konu)
+
+        baslik_kapsama = kapsama(baslik_tokenlari)
+        cumle_kapsama = kapsama(cumle_tokenlari)
+        # Her konu teriminin ilk geçtiği yeri kullan. Aynı varlığın cümlenin
+        # sonunda tekrar edilmesi, başta açıkça konu olan cümleyi yanlışlıkla
+        # elememeli ("Atlas Okyanusu ... büyük bir okyanustur" gibi).
+        # Buna karşılık konu terimleri yalnızca cümlenin ilerleyen kısmında
+        # başka bir varlık anlatılırken geçiyorsa aday kabul edilmemeli
+        # ("Orta Atlas Sırtı ... bu okyanusta" gibi).
+        konu_ilk_konumlari = []
+        for konu_tokeni in konu:
+            ilk_konum = next((
+                i for i, token in enumerate(cumle_tokenlari)
+                if cls._genel_web_token_eslesiyor(konu_tokeni, token)
+            ), None)
+            if ilk_konum is not None:
+                konu_ilk_konumlari.append(ilk_konum)
+
+        tum_konu_terimleri_var = len(konu_ilk_konumlari) == len(konu)
+        if len(konu) > 1:
+            # Çok kelimeli varlık adının bütün parçaları cümlenin girişinde
+            # birlikte görünmeli; yalnızca geç bir yan bilgi eşleşmesi yetmez.
+            konu_yakinligi = (
+                tum_konu_terimleri_var
+                and min(konu_ilk_konumlari) <= 3
+                and max(konu_ilk_konumlari) <= 6
+                and max(konu_ilk_konumlari) - min(konu_ilk_konumlari) <= 6
+            )
+        else:
+            konu_yakinligi = (
+                tum_konu_terimleri_var
+                and konu_ilk_konumlari[0] <= 5
+            )
+        konu_ifadesi = " ".join(konu)
+        baslik_norm = " ".join(baslik_tokenlari)
+        tam_baslik = baslik_norm == konu_ifadesi or baslik_norm.startswith(konu_ifadesi + " ")
+
+        # Çok kelimeli konularda tek bir ortak kelime yeterli değildir.
+        baslik_esigi = 1.0 if len(konu) <= 2 else 0.75
+        cumle_esigi = 1.0 if len(konu) <= 3 else 0.75
+        uygun = (
+            bool(baslik_tokenlari)
+            and baslik_kapsama >= baslik_esigi
+            and cumle_kapsama >= cumle_esigi
+            and konu_yakinligi
+        )
+        puan = int(baslik_kapsama * 40 + cumle_kapsama * 50 + (15 if tam_baslik else 0)) if uygun else 0
+        return {
+            "uygun": uygun,
+            "puan": puan,
+            "baslik_kapsama": baslik_kapsama,
+            "cumle_kapsama": cumle_kapsama,
+            "tam_baslik": tam_baslik,
+        }
+
     @classmethod
     def genel_web_cevabi(
         cls,
@@ -2302,13 +2391,13 @@ class EagleMerkezMotoru:
                         ):
                             continue
 
-                        cumle_eslesme = sum(
-                            1 for k in konu_kelime if k in norm
+                        konu_uyumu = cls._genel_web_konu_uyumu(
+                            konu_kelime, baslik, cumle
                         )
-                        if konu_kelime and cumle_eslesme == 0:
+                        if not konu_uyumu["uygun"]:
                             continue
 
-                        cumle_puani = oncelik + cumle_eslesme * 10
+                        cumle_puani = oncelik + konu_uyumu["puan"]
                         gorulen_cumleler.add(norm)
                         aday_cumleler.append((cumle_puani, cumle))
 
@@ -2343,35 +2432,24 @@ class EagleMerkezMotoru:
                         )
                     ]
 
-                # Atlas Okyanusu genel tanıtımında yan konu cümlelerini ele.
-                sade_soru = cls.normalize(soru).translate(str.maketrans({
-                    "ç": "c", "ğ": "g", "ı": "i",
-                    "ö": "o", "ş": "s", "ü": "u",
-                }))
-                atlas_tanitimi = bool(
-                    re.search(r"\b(atlas okyanusu|atlantik okyanusu)\b", sade_soru)
-                    and re.search(
-                        r"\b(hakkinda bilgi|genel bilgi|bilgi verir|tanit|"
-                        r"kisaca anlat|ozetle)\b",
-                        sade_soru,
-                    )
-                )
-                if atlas_tanitimi:
-                    secilen = [
-                        c for c in secilen
-                        if not re.search(
-                            r"orta atlas sirti|k[oö]le ticareti|"
-                            r"trans[- ]atlantik|faaliyetler donemi|"
-                            r"dunyanin en uzun okyanus siridagi",
-                            cls.normalize(c).translate(str.maketrans({
-                                "ç": "c", "ğ": "g", "ı": "i",
-                                "ö": "o", "ş": "s", "ü": "u",
-                            })),
-                            re.IGNORECASE,
-                        )
-                    ]
-
                 cevap = " ".join(secilen).strip()
+
+                # Genel web cevaplarında Türkçe yazım temizliği.
+                cevap = cevap.replace("ⓘ", "")
+                cevap = re.sub(r"\s+([,.;:!?])", r"\1", cevap)
+                cevap = re.sub(r"([\(\[])\s+", r"\1", cevap)
+                cevap = re.sub(r"\s+([\)\]])", r"\1", cevap)
+                cevap = re.sub(r"\s+(['’])\s*", "'", cevap)
+                cevap = re.sub(
+                    r"(\d[\d.,]*\s*(?:km|cm|mm|m))\s+(den|dan|de|da)\b",
+                    r"\1'\2", cevap, flags=re.IGNORECASE
+                )
+                cevap = re.sub(
+                    r"([A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+)*)\s+(nın|nin|nun|nün|da|de|ta|te|dan|den|tan|ten)\b",
+                    lambda m: m.group(1) + "'" + m.group(2),
+                    cevap,
+                )
+                cevap = re.sub(r"\s+", " ", cevap).strip()
 
                 # Okyanus sıralamasını tutarlı ifade et.
                 cevap = re.sub(
@@ -2384,7 +2462,17 @@ class EagleMerkezMotoru:
                 # Birkaç rastgele cümle yerine, yeterli içerik yoksa
                 # mevcut ana analiz zincirine devam et.
                 if len(secilen) >= 2 and len(cevap) >= 100:
-                    return cevap, 0.78
+                    secilen_puanlar = [puan for puan, _ in aday_cumleler[:len(secilen)]]
+                    ortalama_puan = sum(secilen_puanlar) / len(secilen_puanlar) if secilen_puanlar else 0
+                    konu_kalitesi = min(1.0, ortalama_puan / 140.0)
+                    kaynak_cesitliligi = min(1.0, len({baslik for _, baslik, _ in kaynaklar_hizli}) / 3.0)
+                    guven = min(
+                        0.86,
+                        max(0.75, 0.70 + 0.10 * konu_kalitesi
+                            + 0.03 * kaynak_cesitliligi
+                            + min(0.03, len(secilen) * 0.01)),
+                    )
+                    return cevap, round(guven, 2)
 
             except Exception as hata_hizli:
                 print(
@@ -3960,54 +4048,6 @@ class EagleMerkezMotoru:
                 'kim', 'kimdir', 'kac', 'kactir', 'bulunur', 'bulunmaktadir'
             }
             soru_norm = cls.normalize(str(soru or ''))
-            # Okyanus sorularında başka okyanusların tanıtım cümlelerini
-            # konu eşleşmesi var diye cevaba karıştırma.
-            okyanus_konu = next((ad for ad in (
-                'atlas okyanusu', 'atlantik okyanusu', 'pasifik okyanusu',
-                'hint okyanusu', 'arktik okyanusu', 'antarktika okyanusu',
-                'guney okyanusu', 'güney okyanusu'
-            ) if ad in soru_norm), None)
-            if okyanus_konu:
-                # Başlık Atlas Üniversitesi gibi başka bir konuysa ele.
-                baslik_norm = cls.normalize(str(baslik or ""))
-                konu_disi_ifade = re.compile(
-                    r"\b(üniversite\w*|universite\w*|university\w*|"
-                    r"şarkı\w*|sarki\w*|albüm\w*|album\w*)\b"
-                )
-                if (
-                    konu_disi_ifade.search(baslik_norm)
-                    or konu_disi_ifade.search(metin)
-                ):
-                    return False
-
-                # Genel okyanus tanıtımına karışan tarihî olay cümlelerini
-                # ele; tarih veya ticaret özellikle soruluyorsa koru.
-                tarih_sorusu = bool(re.search(
-                    r"\b(tarih|tarihce|köle|k[oö]le|esir|ticaret|"
-                    r"sömürge|somurge|geçmiş|gecmis)\b",
-                    soru_norm,
-                ))
-                tarih_olayi = bool(re.search(
-                    r"\b(köle|k[oö]le|esir|satıl\w*|satil\w*|"
-                    r"faaliyetler dönemi|faaliyetler donemi|"
-                    r"sömürge\w*|somurge\w*)\b",
-                    metin,
-                ))
-                if tarih_olayi and not tarih_sorusu:
-                    return False
-
-                diger_okyanuslar = (
-                    'atlas okyanusu', 'atlantik okyanusu', 'pasifik okyanusu',
-                    'hint okyanusu', 'arktik okyanusu', 'antarktika okyanusu',
-                    'guney okyanusu', 'güney okyanusu'
-                )
-                for diger in diger_okyanuslar:
-                    ayni_ad_grubu = (
-                        diger in {'atlas okyanusu', 'atlantik okyanusu'}
-                        and okyanus_konu in {'atlas okyanusu', 'atlantik okyanusu'}
-                    )
-                    if diger != okyanus_konu and not ayni_ad_grubu and diger in metin:
-                        return False
             konu = {
                 w for w in re.findall(
                     r'[a-z0-9çğıöşü]+', soru_norm
@@ -4048,29 +4088,9 @@ class EagleMerkezMotoru:
             ):
                 return False
 
-            # Başlığın eşleşmesi tek başına ikincil bir sayfadaki cümleyi
-            # alakalı yapmaz. Ancak ana konu başlığının kendi sayfasında,
-            # cümle içinde yer adı tekrarlanmadan verilen devam bilgilerini koru.
-            baslik_konu_ifadesi = " ".join(re.findall(
-                r"[a-z0-9çğıöşü]+", baslik_metin
-            ))
-            ana_konu_basligi = (
-                bool(soru_kelime)
-                and baslik_konu_ifadesi == " ".join(soru_kelime)
-            )
-            if konu and not any(
-                kok_eslesiyor(k, c)
-                for k in konu for c in cumle_kelimeleri
-            ) and not ana_konu_basligi:
-                return False
-
-            # Konu yalnızca cümlenin sonunda, başka bir olay/kişi anlatılırken
-            # geçiyorsa bunu genel tanıtım cevabına katma.
-            konu_konumlari = [
-                i for i, kelime in enumerate(cumle_kelime_listesi)
-                if any(kok_eslesiyor(k, kelime) for k in konu)
-            ]
-            if konu_konumlari and min(konu_konumlari) >= 10:
+            # Hızlı ve genel analiz yolları aynı konu doğrulamasını kullanır.
+            konu_uyumu = cls._genel_web_konu_uyumu(list(konu), baslik, metin)
+            if not konu_uyumu["uygun"]:
                 return False
 
             return True
@@ -4356,23 +4376,7 @@ class EagleMerkezMotoru:
         ))
 
         if genel_tanitim_ascii and not ayrinti_sorusu:
-            if re.search(
-                r"\b(atlas okyanusu|atlantik okyanusu)\b",
-                soru_ascii_son,
-            ):
-                cevap = (
-                    "Atlas Okyanusu (Atlantik Okyanusu), Avrupa ve Afrika "
-                    "ile Amerika kıtaları arasında uzanır ve yüzölçümü "
-                    "bakımından dünyanın ikinci büyük okyanusudur. "
-                    "Yüzölçümü, yan denizlerin hesaba katılıp katılmamasına "
-                    "göre kaynaklarda farklı verilebilir; bu nedenle "
-                    "rakamları ölçüm tanımıyla birlikte değerlendirmek "
-                    "gerekir. Kuzeyde Arktik Okyanusu'na, güneyde Güney "
-                    "Okyanusu'na bağlanır. İklim, deniz taşımacılığı ve "
-                    "deniz canlılarının yaşam alanları açısından önemlidir."
-                )
-
-            elif re.search(r"\bturkiye\b", soru_ascii_son):
+            if re.search(r"\bturkiye\b", soru_ascii_son):
                 cevap = (
                     "Türkiye, Avrupa ile Asya'nın kesişiminde bulunan bir "
                     "ülkedir. Topraklarının büyük bölümü Anadolu'da, daha "
