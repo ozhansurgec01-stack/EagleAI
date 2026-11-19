@@ -2373,6 +2373,23 @@ class EagleMerkezMotoru:
 
                 cevap = " ".join(secilen).strip()
 
+                # Genel web cevaplarında Türkçe yazım temizliği.
+                cevap = cevap.replace("ⓘ", "")
+                cevap = re.sub(r"\s+([,.;:!?])", r"\1", cevap)
+                cevap = re.sub(r"([\(\[])\s+", r"\1", cevap)
+                cevap = re.sub(r"\s+([\)\]])", r"\1", cevap)
+                cevap = re.sub(r"\s+(['’])\s*", "'", cevap)
+                cevap = re.sub(
+                    r"(\d[\d.,]*\s*(?:km|cm|mm|m))\s+(den|dan|de|da)\b",
+                    r"\1'\2", cevap, flags=re.IGNORECASE
+                )
+                cevap = re.sub(
+                    r"([A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+)*)\s+(nın|nin|nun|nün|da|de|ta|te|dan|den|tan|ten)\b",
+                    lambda m: m.group(1) + "'" + m.group(2),
+                    cevap,
+                )
+                cevap = re.sub(r"\s+", " ", cevap).strip()
+
                 # Okyanus sıralamasını tutarlı ifade et.
                 cevap = re.sub(
                     r"\ben büyük ikinci\b",

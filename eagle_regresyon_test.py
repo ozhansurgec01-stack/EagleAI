@@ -2593,7 +2593,44 @@ def genel_baslik_cumle_uyumu_test():
             )
         assert guven >= 0.75, f"{soru}: güven düşük: {guven}"
 
+
+
+def genel_web_turkce_yazim_temizligi_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    sayfa = (
+        "Kanada ( İngilizce : Canada ⓘ ; Fransızca : Canada ⓘ ), "
+        "Kuzey Amerika 'da bulunan geniş bir ülkedir. "
+        "Kanada nın yüzölçümü yaklaşık 9.985.000 km den fazladır. "
+        "Kanada nın başkenti Ottawa ; Toronto ve Montreal önemli şehirleridir."
+    )
+    cevap, guven = EagleMerkezMotoru.genel_web_cevabi(
+        "Kanada hakkında bilgi verir misin?",
+        [{
+            "title": "Kanada - Genel Bilgiler",
+            "snippet": "",
+            "url": "https://test.example/kanada-yazim",
+        }],
+        genel_sayfa_okuyucu=lambda url: sayfa,
+    )
+
+    assert cevap, "Yazım temizliği testi boş cevap döndürdü"
+    assert guven == 0.78, f"Hızlı cevap yolu çalışmadı: {guven}"
+    for hatali in ("ⓘ", "( İngilizce", " : ", " 'da", "km den", "Ottawa ;", "Toronto ,"):
+        assert hatali not in cevap, f"Bozuk yazım kaldı ({hatali}): {cevap}"
+
+    for dogru in (
+        "Kanada (İngilizce: Canada; Fransızca: Canada)",
+        "Kuzey Amerika'da",
+        "9.985.000 km'den",
+        "Ottawa;",
+        "Toronto ve Montreal",
+    ):
+        assert dogru in cevap, f"Temiz biçim bulunamadı ({dogru}): {cevap}"
+
+
 test("Genel başlık-cümle uyumu", genel_baslik_cumle_uyumu_test)
+test("Genel web Türkçe yazım temizliği", genel_web_turkce_yazim_temizligi_test)
 test("TMDb yabancı yapım filtresi ve afiş tekilliği", tmdb_yabanci_oneri_filtre_test)
 
 test("Kodsuz finansal çelişki doğrudan analizi", finansal_celiski_dogrudan_analiz_test)
