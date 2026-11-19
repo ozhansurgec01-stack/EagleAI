@@ -1886,6 +1886,13 @@ class EagleMerkezMotoru:
                 and min(konu_ilk_konumlari) <= 3
                 and max(konu_ilk_konumlari) <= 6
                 and max(konu_ilk_konumlari) - min(konu_ilk_konumlari) <= 6
+                and not any(
+                    token in {"bir", "herhangi", "the", "a", "an"}
+                    for token in cumle_tokenlari[
+                        min(konu_ilk_konumlari) + 1:
+                        max(konu_ilk_konumlari)
+                    ]
+                )
             )
         else:
             konu_yakinligi = (
@@ -2192,7 +2199,63 @@ class EagleMerkezMotoru:
         # geçmeli; aksi halde yalnızca kavramın geçtiği örnek cümlesi seçilebilir.
         genel_cevap_sorusu = genel_bilgi_sorusu or tanim_sorusu
 
-                # EAGLEAI_GENEL_TANITIM_DOGRUDAN_YOL_V1
+        def genel_web_cumle_kalite_kontrol(cumle):
+            """Genel bilgi cevabına yalnızca tamamlanmış, içerik niteliğinde cümle al."""
+            metin = re.sub(r"\s+", " ", str(cumle or "")).strip()
+            if not metin or not re.search(r"[.!?…][\"'’”»\)\]]*$", metin):
+                return False
+
+            # Kısaltma veya kaynak kesilmesi nedeniyle noktayla biten parçaları ele.
+            if re.search(
+                r"(?:\b(?:St|Dr|Prof|Doç|Doc|Av|No|vb|vs)\.|"
+                r"\bM\.Ö\.|\bM\.S\.)[\"'’”»\)\]]*$",
+                metin,
+                flags=re.IGNORECASE,
+            ):
+                return False
+
+            norm = cls.normalize(metin).translate(str.maketrans({
+                "ç": "c", "ğ": "g", "ı": "i",
+                "ö": "o", "ş": "s", "ü": "u",
+            }))
+
+            # Arama motorunun liste/ansiklopedi açıklaması ve sayfa
+            # gezinme artıkları bilgi cümlesi değildir.
+            if re.search(
+                r"\b(vikimedya liste maddesi|wikimedia list article|"
+                r"liste maddesi|bu liste(?:,| mevcut|de |deki )|"
+                r"list article|table of contents|contents list)\b",
+                norm,
+            ):
+                return False
+
+            # SEO/SSS başlıkları soru hakkında konuşur; sorunun cevabını vermez.
+            if re.search(
+                r"\b(sorusunun (?:yaniti|cevabi)|"
+                r"yaniti ayni zamanda|cevabi ayni zamanda|"
+                r"bu sorunun yaniti|bu sorunun cevabi)\b",
+                norm,
+            ):
+                return False
+
+            # Öznel/metaforik süslemeler doğrulanabilir temel bilgi yerine geçmesin.
+            if re.search(
+                r"\b(gizemini koruyan|doymayan bir dev\w*|sasirtici bir|"
+                r"buyuleyici|goz kamastirici|essiz bir deneyim)\b",
+                norm,
+            ):
+                return False
+
+            # Bağlaç/edatla biten veya açıkça devamı eksik kalan parçaları ele.
+            if re.search(
+                r"\b(?:ve|veya|ile|icin|gibi|ancak|fakat|"
+                r"from|with|and|or|of|to)\.$",
+                norm,
+            ):
+                return False
+            return True
+
+        # EAGLEAI_GENEL_TANITIM_DOGRUDAN_YOL_V1
         # Genel tanıtımda yalnızca tamamlanmış ve konuya uygun
         # cümleler kullan. Kalite yetersizse eski analiz devam etsin.
         if genel_bilgi_sorusu:
@@ -2341,6 +2404,8 @@ class EagleMerkezMotoru:
                     for cumle in cumleler:
                         cumle = cumle.strip(" \t\r\n-–|")
                         if not 20 <= len(cumle) <= 450:
+                            continue
+                        if not genel_web_cumle_kalite_kontrol(cumle):
                             continue
 
                         # Kırpılmış snippet'lerin ortasından başlayan
@@ -2773,12 +2838,23 @@ class EagleMerkezMotoru:
             # Yaygın kısaltmalardaki noktalar cümle sonu değildir.
             kisaltma_isaret = "\uE000"
             kisaltmalar = re.compile(
-                r"\b(?:St|Dr|Prof|Doç|Doc|Av|No| vb|vs|Prof|"
+                r"\b(?:M\.Ö|M\.S|St|Dr|Prof|Doç|Doc|Av|No|vb|vs|"
                 r"Assoc|Inc|Ltd|Mr|Mrs|Ms|Jr|Sr)\.",
                 re.IGNORECASE
             )
+            cumle_baslangiclari = re.compile(
+                r"\s+(?:ayrıca|ayrica|bunun|öte|ote|ancak|"
+                r"günümüzde|gunumuzde|bugün|bugun|yüzyıllar|yuzyillar|"
+                r"yıllar|yillar|tarih boyunca|tarihsel olarak|"
+                r"meanwhile|today|over the|throughout|in recent years)\b",
+                re.IGNORECASE,
+            )
             kaynak = kisaltmalar.sub(
-                lambda m: m.group(0)[:-1] + kisaltma_isaret,
+                lambda m: (
+                    m.group(0)[:-1] + kisaltma_isaret
+                    if not cumle_baslangiclari.match(kaynak[m.end():])
+                    else m.group(0)
+                ),
                 kaynak
             )
             cumleler = re.split(
@@ -2792,6 +2868,8 @@ class EagleMerkezMotoru:
 
             for cumle_no, cumle in enumerate(cumleler):
                 cumle = re.sub(r"\s+", " ", cumle).strip()
+                if genel_cevap_sorusu and not genel_web_cumle_kalite_kontrol(cumle):
+                    continue
 
                 # Wikipedia gezinme metinlerini bilgi adayı olarak kullanma.
                 gezinme_norm = cls.normalize(cumle)

@@ -2694,8 +2694,70 @@ def genel_web_turkce_yazim_temizligi_test():
         assert dogru in cevap, f"Temiz biçim bulunamadı ({dogru}): {cevap}"
 
 
+
+
+def genel_web_cumle_tamligi_ve_metadata_filtre_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    atlas_sayfasi = (
+        "Atlas Okyanusu veya Atlantik Okyanusu, 106.460.000 km2 "
+        "yüzölçümü ile Dünya'nın ikinci büyük okyanusudur. "
+        "Amerika'dan St. Yüzyıllar boyunca Atlas Okyanusu ticaret "
+        "ve seyahat için önemli bir rota oldu. "
+        "Atlas, herhangi bir okyanus hakkında yazılmış alakasız "
+        "bir örnek cümledir. Atlas Okyanusu, doymayan bir devdir."
+    )
+    atlas_cevap, atlas_guven = EagleMerkezMotoru.genel_web_cevabi(
+        "Atlas Okyanusu hakkında bilgi verir misin?",
+        [{
+            "title": "Atlas Okyanusu",
+            "snippet": "",
+            "url": "https://test.example/atlas-cumle-tamligi",
+        }],
+        sayfa_okuyucu=lambda url: atlas_sayfasi,
+    )
+    assert "ikinci büyük okyanusudur" in atlas_cevap.casefold(), atlas_cevap
+    for yasak in (
+        "Amerika'dan St.",
+        "herhangi bir okyanus",
+        "doymayan bir devdir",
+    ):
+        assert yasak.casefold() not in atlas_cevap.casefold(), (
+            f"Atlas cevabında hatalı cümle kaldı ({yasak}): {atlas_cevap}"
+        )
+    assert atlas_guven >= 0.75, atlas_guven
+
+    misir_sayfasi = (
+        "Mısır Piramitleri, Mısır'da yer alan piramit şeklinde antik yapılardır. "
+        "Vikimedya liste maddesi Bu liste Mısır'daki tüm piramitleri içerir. "
+        "Mısır’da 100’ü aşkın piramit bulunmaktadır ancak en önemli ve büyük "
+        "olanları Gize semtinde konumlanan Keops Piramidi, Mikerinos Piramidi "
+        "ve Kefren Piramidi’dir. Bu sorusunun yanıtı M.Ö."
+    )
+    misir_cevap, misir_guven = EagleMerkezMotoru.genel_web_cevabi(
+        "Mısır piramitleri hakkında bilgi verir misin?",
+        [{
+            "title": "Mısır piramitleri",
+            "snippet": "",
+            "url": "https://test.example/misir-metadata",
+        }],
+        sayfa_okuyucu=lambda url: misir_sayfasi,
+    )
+    assert "100’ü aşkın piramit" in misir_cevap, misir_cevap
+    for yasak in (
+        "Vikimedya liste maddesi",
+        "bu liste",
+        "sorusunun yanıtı",
+        "M.Ö.",
+    ):
+        assert yasak.casefold() not in misir_cevap.casefold(), (
+            f"Mısır cevabında metadata/kırpıntı kaldı ({yasak}): {misir_cevap}"
+        )
+    assert misir_guven >= 0.75, misir_guven
+
 test("Genel başlık-cümle uyumu", genel_baslik_cumle_uyumu_test)
 test("Genel web konu uyumu kök regresyonu", genel_web_konu_uyumu_kok_regresyon_test)
+test("Genel web cümle tamlığı ve metadata filtresi", genel_web_cumle_tamligi_ve_metadata_filtre_test)
 test("Genel web Türkçe yazım temizliği", genel_web_turkce_yazim_temizligi_test)
 test("TMDb yabancı yapım filtresi ve afiş tekilliği", tmdb_yabanci_oneri_filtre_test)
 
