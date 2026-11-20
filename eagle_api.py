@@ -97,7 +97,7 @@ def api_borc_ekle():
                 float(tutar)
             )
             return jsonify({'success': True, 'message': 'Borç başarıyla eklendi.'})
-            
+
         return jsonify({'success': False, 'error': 'Geçersiz parametreler.'}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -10390,27 +10390,20 @@ def eagle_baglam_yonlendir(mesaj, karar, sohbet_baglam, borc_modulu, gecmis=None
     return karar
 
 def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
-    """Tanıtım sorusundaki yeri Wikidata'da doğrular ve ilişkili görselleri döndürür.
-
-    Yer tanıtımı değilse None; tanıtım algılanıp yer doğrulanamazsa veya görsel bulunamazsa [] döner.
-    Böylece Android rastgele Commons sonuçlarıyla boşluğu doldurmaz.
-    """
+    """Yer tanıtımı galerisi: Wikidata/Commons ve bağımsız Bing Görseller yedeği."""
+    import html
+    import json
+    import time
     import unicodedata
+    from urllib.parse import unquote
+
     ham = str(soru or "").strip()
     norm = ham.casefold().replace("ı", "i")
-    tanitim = re.search(
-        r"\b(hakkinda|hakkında|bilgi ver|tanit|tanıt|anlat|goster|göster|"
-        r"gezilecek|turistik|nereleri|yerleri)\b", norm
-    )
+    tanitim = re.search(r"\b(hakkinda|hakkında|bilgi ver|tanit|tanıt|anlat|goster|göster|gezilecek|turistik|nereleri|yerleri)\b", norm)
     if not ham or not tanitim:
         return None
 
-    konu = re.sub(
-        r"(?i)\b(hakkında|hakkinda|bilgi|verir|ver|misin|misiniz|"
-        r"tanıtır|tanitir|tanıt|tanit|anlatır|anlatir|anlat|"
-        r"gösterir|gosterir|göster|goster|bana|lütfen|lutfen|"
-        r"gezilecek|turistik|yerleri|nereleri|nedir|ne|kimdir)\b", " ", ham
-    )
+    konu = re.sub(r"(?i)\b(hakkında|hakkinda|bilgi|verir|ver|misin|misiniz|tanıtır|tanitir|tanıt|tanit|anlatır|anlatir|anlat|gösterir|gosterir|göster|goster|bana|lütfen|lutfen|gezilecek|turistik|yerleri|nereleri|nedir|ne|kimdir)\b", " ", ham)
     konu = re.sub(r"[^\w\s'-]", " ", konu, flags=re.UNICODE)
     konu = re.sub(r"\s+", " ", konu).strip(" -'")
     konu = re.sub(r"\s+(?:yi|yı|yu|yü|nin|nın|nun|nün|den|dan|de|da|ye|ya|i|ı|u|ü|e|a)$", "", konu, flags=re.IGNORECASE).strip()
@@ -10419,205 +10412,479 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
 
     def normla(deger):
         deger = unicodedata.normalize("NFKD", str(deger or "").casefold())
-        deger = "".join(c for c in deger if not unicodedata.combining(c))
-        deger = deger.replace("ı", "i")
+        deger = "".join(c for c in deger if not unicodedata.combining(c)).replace("ı", "i")
         return re.sub(r"[^a-z0-9]+", " ", deger).strip()
 
-    headers = {"User-Agent": "EagleAI/1.0 (Wikidata and Wikimedia Commons integration)",
-               "Accept": "application/json"}
-    try:
-        arama = requests.get(
-            "https://www.wikidata.org/w/api.php",
-            params={"action": "wbsearchentities", "search": konu,
-                    "language": "tr", "uselang": "tr", "type": "item",
-                    "limit": 5, "format": "json"},
-            headers=headers, timeout=7
-        )
-        arama.raise_for_status()
-        adaylar = arama.json().get("search", [])
-    except Exception as hata:
-        print(f"⚠️ Yer görseli Wikidata araması başarısız: {hata}", flush=True)
-        return []
-
     konu_norm = normla(konu)
-    eslesen = None
+    limit = max(1, min(int(limit or 8), 10))
+    cache = getattr(_eagle_yer_gorsellerini_getir, "_cache", {})
+    cache_key = (konu_norm, limit)
+    now = time.time()
+    cached = cache.get(cache_key)
+    if cached and now - cached[0] < 900:
+        return [dict(x) for x in cached[1]]
+
+    headers = {
+        "User-Agent": "EagleAI/1.0 (place image gallery)",
+        "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
+        "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
+    }
+    durak = {"the", "of", "and", "in", "on", "for", "de", "da", "ve", "ile", "la", "el"}
+    konu_kelimeleri = [x for x in konu_norm.split() if len(x) > 2 and x not in durak]
+
+    # Wikidata'dan eş ad ve varlık türünü al; erişilemezse bağımsız aramaya devam et.
+    adaylar, eslesen, qid = [], None, ""
+    etiketler, aciklama, wikidata_ok = [konu], "", False
+    try:
+        r = requests.get("https://www.wikidata.org/w/api.php",
+            params={"action": "wbsearchentities", "search": konu, "language": "tr", "uselang": "tr", "type": "item", "limit": 6, "format": "json"},
+            headers=headers, timeout=5)
+        r.raise_for_status()
+        adaylar = r.json().get("search", [])
+        wikidata_ok = True
+    except Exception as hata:
+        print(f"ℹ️ Wikidata araması kullanılamadı; yedek görsel araması sürecek: {hata}", flush=True)
+
+    def aday_adlari(aday):
+        m = aday.get("match") or {}
+        vals = [aday.get("label", ""), m.get("text", "")]
+        aliases = aday.get("aliases", [])
+        if isinstance(aliases, list):
+            vals.extend(aliases)
+        return [str(v).strip() for v in vals if str(v or "").strip()]
+
     for aday in adaylar:
-        etiket_norm = normla(aday.get("label", ""))
-        aciklama_norm = normla(aday.get("description", ""))
-        if etiket_norm == konu_norm or (etiket_norm and etiket_norm in konu_norm.split()):
+        names = aday_adlari(aday)
+        normalized = {normla(x) for x in names}
+        if konu_norm in normalized or any(normla(x) and normla(x) in konu_norm for x in names):
             eslesen = aday
             break
-    if eslesen is None and adaylar:
-        # Yakın başlık eşleşmesini yalnızca tanım ülke/şehir/tarihî yer ise kabul et.
+    if eslesen is None:
         for aday in adaylar:
-            aciklama = normla(aday.get("description", ""))
-            if any(k in aciklama for k in (
-                "country", "sovereign state", "city", "town", "capital",
-                "historic site", "monument", "archaeological site", "island",
-                "ulke", "sehir", "kent", "tarihi yer", "aniti"
-            )) and normla(aday.get("label", "")) in konu_norm:
+            names = aday_adlari(aday)
+            candidate_text = normla(" ".join(names) + " " + aday.get("description", ""))
+            if konu_kelimeleri and sum(k in candidate_text.split() for k in konu_kelimeleri) >= max(1, len(konu_kelimeleri) - 1):
                 eslesen = aday
                 break
-    if eslesen is None:
-        return []
+    if eslesen:
+        qid = str(eslesen.get("id", ""))
+        aciklama = str(eslesen.get("description", ""))
+        etiketler = list(dict.fromkeys([konu] + aday_adlari(eslesen)))
 
-    qid = str(eslesen.get("id", ""))
-    if not re.fullmatch(r"Q\d+", qid):
-        return []
-
-    aciklama = normla(eslesen.get("description", ""))
-    ulke_mi = any(k in aciklama for k in ("country", "sovereign state", "ulke", "devlet"))
-    sehir_mi = any(k in aciklama for k in ("city", "town", "capital", "municipality", "sehir", "kent"))
-    yer_turleri = (
-        "historic site", "historical site", "monument", "archaeological site",
-        "pyramid", "temple", "palace", "castle", "church", "mosque",
-        "museum", "mausoleum", "amphitheatre", "amphitheater", "arena",
-        "theatre", "theater", "bridge", "tower", "arch", "national park",
-        "mountain", "mountain range", "waterfall",
-        "lake", "river", "island", "ocean", "sea", "volcano", "glacier",
-        "natural feature", "landmark", "heritage", "tourist attraction",
-        "tarihi yer", "aniti", "piramit", "saray", "kale", "cami", "kilise",
-        "muzesi", "milli park", "dag", "selale", "gol", "nehir", "ada", "volkan"
-    )
-    if not ulke_mi and not sehir_mi and not any(k in aciklama for k in yer_turleri):
-        return []
-
-    # Tanınan yerin kendisinin P18 görselini de listeye ekle.
-    sorgu = f"""
-    SELECT ?place ?placeLabel ?image ?sitelinks WHERE {{
-      ?place wdt:P18 ?image ; wikibase:sitelinks ?sitelinks .
-      FILTER(?place = wd:{qid})
-      SERVICE wikibase:label {{ bd:serviceParam wikibase:language \"tr,en\". }}
-    }} LIMIT 1
-    """
-    if ulke_mi:
-        sorgu = f"""
-        SELECT ?place ?placeLabel ?image ?sitelinks ?sinif WHERE {{
-          ?place wdt:P17 wd:{qid} ; wdt:P18 ?image ; wikibase:sitelinks ?sitelinks .
-          ?place wdt:P31/wdt:P279* ?sinif .
-          VALUES ?sinif {{ wd:Q515 wd:Q5119 wd:Q1549591 wd:Q570116 wd:Q839954 wd:Q4989906 wd:Q174782 wd:Q23413 wd:Q33506 wd:Q41176 wd:Q9259 wd:Q8502 wd:Q34038 wd:Q23397 wd:Q4022 wd:Q23442 wd:Q46169 wd:Q473972 wd:Q4421 wd:Q35666 wd:Q8072 }}
-          SERVICE wikibase:label {{ bd:serviceParam wikibase:language \"tr,en\". }}
-        }} ORDER BY DESC(?sitelinks) LIMIT 40
-        """
-    elif sehir_mi:
-        sorgu = f"""
-        SELECT ?place ?placeLabel ?image ?sitelinks ?sinif WHERE {{
-          ?place wdt:P131* wd:{qid} ; wdt:P18 ?image ; wikibase:sitelinks ?sitelinks .
-          ?place wdt:P31/wdt:P279* ?sinif .
-          VALUES ?sinif {{ wd:Q515 wd:Q5119 wd:Q1549591 wd:Q570116 wd:Q839954 wd:Q4989906 wd:Q174782 wd:Q23413 wd:Q33506 wd:Q41176 wd:Q9259 wd:Q8502 wd:Q34038 wd:Q23397 wd:Q4022 wd:Q23442 wd:Q46169 wd:Q473972 wd:Q4421 wd:Q35666 wd:Q8072 }}
-          SERVICE wikibase:label {{ bd:serviceParam wikibase:language \"tr,en\". }}
-        }} ORDER BY DESC(?sitelinks) LIMIT 40
-        """
-
-    try:
-        yanit = requests.get(
-            "https://query.wikidata.org/sparql",
-            params={"query": sorgu, "format": "json"},
-            headers={**headers, "Accept": "application/sparql-results+json"},
-            timeout=9
-        )
-        yanit.raise_for_status()
-        satirlar = yanit.json().get("results", {}).get("bindings", [])
-    except Exception as hata:
-        print(f"⚠️ Yer görseli Wikidata sorgusu başarısız: {hata}", flush=True)
-        return []
-
-    # Tarihî yapı/yer sorularında tek P18 görseliyle yetinme;
-    # Wikidata'daki doğrulanmış Commons kategorisinden ek fotoğraflar al.
-    if not ulke_mi and not sehir_mi:
-        try:
-            kategori_sorgusu = f"SELECT ?kategori WHERE {{ wd:{qid} wdt:P373 ?kategori. }} LIMIT 1"
-            kategori_yanit = requests.get(
-                "https://query.wikidata.org/sparql",
-                params={"query": kategori_sorgusu, "format": "json"},
-                headers={**headers, "Accept": "application/sparql-results+json"},
-                timeout=5
-            )
-            kategori_yanit.raise_for_status()
-            kategori_satirlari = kategori_yanit.json().get("results", {}).get("bindings", [])
-            if kategori_satirlari:
-                kategori_adi = str(kategori_satirlari[0].get("kategori", {}).get("value", "")).strip()
-                if kategori_adi and len(kategori_adi) <= 180:
-                    commons_yanit = requests.get(
-                        "https://commons.wikimedia.org/w/api.php",
-                        params={
-                            "action": "query", "generator": "categorymembers",
-                            "gcmtitle": "Category:" + kategori_adi,
-                            "gcmtype": "file", "gcmlimit": 20,
-                            "prop": "imageinfo", "iiprop": "url|mime|extmetadata",
-                            "iiurlwidth": 1000, "format": "json"
-                        },
-                        headers=headers, timeout=6
-                    )
-                    commons_yanit.raise_for_status()
-                    for sayfa in commons_yanit.json().get("query", {}).get("pages", {}).values():
-                        bilgi = (sayfa.get("imageinfo") or [{}])[0]
-                        mime = str(bilgi.get("mime", "")).lower()
-                        gorsel_url = str(bilgi.get("thumburl") or bilgi.get("url") or "").strip()
-                        if not mime.startswith("image/") or not gorsel_url.startswith("https://upload.wikimedia.org/"):
-                            continue
-                        satirlar.append({
-                            "place": {"value": f"http://www.wikidata.org/entity/{qid}"},
-                            "placeLabel": {"value": str(sayfa.get("title", "")).replace("File:", "").replace("_", " ")},
-                            "image": {"value": gorsel_url},
-                            "source": {"value": str(bilgi.get("descriptionurl", ""))},
-                            "sinif": {"value": "http://www.wikidata.org/entity/Q839954"}
-                        })
-        except Exception as hata:
-            print(f"ℹ️ Tarihî yer Commons kategorisi kullanılamadı: {hata}", flush=True)
-
-    sonuc = []
-    gorulen_url = set()
-    gorulen_yer = set()
-    tur_sayilari = {"sehir": 0, "tarih": 0, "doga": 0, "diger": 0}
-    for satir in satirlar:
-        resim = str(satir.get("image", {}).get("value", "")).strip()
-        ad = str(satir.get("placeLabel", {}).get("value", "")).strip()
-        place_uri = str(satir.get("place", {}).get("value", "")).strip()
-        if resim.startswith("http://commons.wikimedia.org/wiki/Special:FilePath/"):
-            resim = "https://" + resim[len("http://"):]
-        if not (resim.startswith("https://commons.wikimedia.org/wiki/Special:FilePath/")
-                or resim.startswith("https://upload.wikimedia.org/")):
-            continue
-        if resim in gorulen_url:
-            continue
-        item_qid = place_uri.rsplit("/", 1)[-1] if place_uri else qid
-        tekil_anahtar = item_qid if (ulke_mi or sehir_mi) else resim
-        if tekil_anahtar in gorulen_yer:
-            continue
-        sinif_uri = str(satir.get("sinif", {}).get("value", ""))
-        sinif_qid = sinif_uri.rsplit("/", 1)[-1]
-        if sinif_qid in {"Q515", "Q5119", "Q1549591"}:
-            kategori = "sehir"
-        elif sinif_qid in {"Q8502", "Q34038", "Q23397", "Q4022", "Q23442", "Q46169", "Q473972", "Q4421", "Q35666", "Q8072"}:
-            kategori = "doga"
-        elif sinif_qid in {"Q570116", "Q839954", "Q4989906", "Q174782", "Q23413", "Q33506", "Q41176", "Q9259"}:
-            kategori = "tarih"
+    # Önce kullanıcının sorduğu ifadenin türünü belirle. Wikidata'nın
+    # yanlış/üst düzey eşleşmesi (ör. "Mısır" ülkesi) konu türünü ezmemeli.
+    konu_sozcukleri = set(konu_norm.split())
+    if any(x in konu_sozcukleri for x in ("okyanus", "okyanusu", "deniz", "denizi", "ocean", "sea")):
+        tur = "water"
+    elif any(x in konu_sozcukleri for x in ("piramit", "piramitleri", "pyramids", "pyramid", "tapinak", "temple", "castle", "kale", "monument", "anit", "heykel")):
+        tur = "landmark"
+    elif any(x in konu_sozcukleri for x in ("dag", "daglari", "mountain", "gol", "golu", "lake", "nehir", "river", "ada", "island", "orman", "forest", "selale", "waterfall", "volkan", "volcano")):
+        tur = "nature"
+    elif any(x in konu_sozcukleri for x in ("sehir", "kent", "city", "town", "baskent", "capital")):
+        tur = "city"
+    else:
+        entity_text = normla(" ".join(etiketler) + " " + aciklama)
+        entity_tokens = set(entity_text.split())
+        bilinen_ulke_adlari = {
+            "kanada", "avusturya", "norvec", "isvec", "finlandiya",
+            "almanya", "fransa", "italya", "ispanya", "portekiz",
+            "yunanistan", "japonya", "cin", "abd", "amerika",
+            "ingiltere", "isvicre", "hollanda", "belcika", "brezilya",
+            "arjantin", "avustralya", "meksika", "hindistan", "rusya",
+            "ukrayna", "iran", "irak", "turkiye", "misir",
+        }
+        if (
+            konu_sozcukleri & bilinen_ulke_adlari
+            or entity_tokens & {"country", "ulke", "devlet", "republic", "kingdom"}
+            or "sovereign state" in entity_text
+        ):
+            tur = "country"
+        elif entity_tokens & {"ocean", "sea", "okyanus", "deniz"} or "body of water" in entity_text:
+            tur = "water"
+        elif entity_tokens & {"pyramid", "pyramids", "monument", "archaeological", "temple", "palace", "castle", "piramit", "anit"} or "historic site" in entity_text or "tarihi eser" in entity_text:
+            tur = "landmark"
+        elif entity_tokens & {"mountain", "lake", "river", "island", "forest", "waterfall", "volcano", "glacier", "dag", "gol", "nehir", "ada", "selale"} or "national park" in entity_text or "natural feature" in entity_text:
+            tur = "nature"
+        elif entity_tokens & {"city", "town", "capital", "municipality", "sehir", "kent"}:
+            tur = "city"
         else:
-            kategori = "diger"
-        if kategori != "diger" and tur_sayilari[kategori] >= 3:
-            continue
-        dosya_adi = resim.rsplit("/", 1)[-1].split("?", 1)[0]
-        from urllib.parse import unquote, quote
-        commons_kaynak = str(satir.get("source", {}).get("value", "")).strip()
-        if not commons_kaynak.startswith("https://commons.wikimedia.org/wiki/File:"):
-            commons_kaynak = "https://commons.wikimedia.org/wiki/File:" + quote(unquote(dosya_adi).replace("_", " "))
-        sonuc.append({
-            "url": resim,
-            "type": "place",
-            "name": ad or eslesen.get("label", konu),
-            "category": kategori,
-            "source": commons_kaynak,
-            "wikidata": f"https://www.wikidata.org/wiki/{item_qid}",
-            "provider": "Wikidata/Wikimedia Commons"
-        })
-        gorulen_url.add(resim)
-        gorulen_yer.add(tekil_anahtar)
-        tur_sayilari[kategori] += 1
-        if len(sonuc) >= max(1, min(int(limit), 10)):
-            break
+            tur = "place"
 
-    print(f"🖼️ Yer galerisi: {konu!r} için {len(sonuc)} doğrulanmış görsel.", flush=True)
+    olumsuz = {"map", "maps", "location", "locator", "cartography", "chart", "diagram", "banknote", "banknotes", "currency", "money", "coin", "coins", "stamp", "stamps", "ticket", "document", "agreement", "treaty", "conference", "meeting", "delegation", "signing", "summit", "diplomatic", "logo", "coat of arms", "flag", "seal", "poster", "harita", "para", "banknot", "sikke", "pul", "bilet", "belge", "anlasma", "konferans", "toplanti", "heyet", "imza", "afis", "arma", "bayrak", "rozet", "roadmap"}
+    sahne = {"landscape", "scenery", "view", "panorama", "aerial", "nature", "ocean", "atlantic", "pacific", "sea", "seascape", "marine", "undersea", "mountain", "lake", "forest", "waterfall", "coast", "beach", "shore", "wave", "waves", "water", "underwater", "reef", "island", "river", "desert", "national park", "cityscape", "skyline", "street", "architecture", "building", "exterior", "temple", "pyramid", "pyramids", "monument", "ruins", "archaeological", "historic", "photograph", "photo", "sunset", "sunrise", "manzara", "dogal", "dag", "gol", "orman", "selale", "sahil", "plaj", "dalga", "kiyi", "col", "sehir", "mimari", "tapinak", "piramit", "anit", "kalinti", "misir"}
+    uyumsuz = {
+        "water": {"road", "highway", "motorway", "railway", "train", "bridge", "traffic", "airport", "car", "vehicle"},
+        "country": {"banknote", "currency", "money", "coin", "stamp", "treaty", "agreement", "conference", "delegation", "parliament", "politician"},
+        "landmark": {"map", "location", "diagram", "blueprint", "plan", "model", "lego", "toy", "souvenir"},
+        "nature": {"map", "diagram", "blueprint", "logo", "flag"},
+        "city": {"map", "diagram", "blueprint", "banknote", "currency", "coin"},
+        "place": {"banknote", "currency", "money", "coin", "stamp", "treaty", "agreement", "map", "diagram", "blueprint"},
+    }
+    def tokens(text):
+        return set(normla(text).split())
+    def kokler(kume):
+        out = set(kume)
+        for w in list(kume):
+            if len(w) > 5 and w.endswith("ian"):
+                out.add(w[:-3] + "a")
+            if len(w) > 5 and w.endswith("ese"):
+                out.add(w[:-3])
+        return out
+
+    # Türkçe konu adlarının İngilizce görsel başlıklarında da eşleşebilmesi
+    # için genel kavram karşılıkları eklenir; varlık adı yine zorunlu tutulur.
+    konu_es_anlamlari = {
+        "okyanus": {"ocean"}, "okyanusu": {"ocean"},
+        "deniz": {"sea"}, "denizi": {"sea"},
+        "piramit": {"pyramid"}, "piramitleri": {"pyramid", "pyramids"},
+        "misir": {"egypt"}, "dag": {"mountain"}, "daglari": {"mountains"},
+        "gol": {"lake"}, "golu": {"lake"}, "nehir": {"river"},
+        "selale": {"waterfall"}, "orman": {"forest"}, "ada": {"island"},
+        "sehir": {"city"}, "kent": {"city"}, "baskent": {"capital"},
+        # Yaygın Türkçe ülke adları ve uluslararası yazımları.
+        "kanada": {"canada"}, "avusturya": {"austria"},
+        "norvec": {"norway"}, "isvec": {"sweden"},
+        "finlandiya": {"finland"}, "almanya": {"germany"},
+        "fransa": {"france"}, "italya": {"italy"},
+        "ispanya": {"spain"}, "portekiz": {"portugal"},
+        "yunanistan": {"greece"}, "japonya": {"japan"},
+        "cin": {"china"}, "guney kore": {"south", "korea"},
+        "abd": {"usa", "united", "states"}, "amerika": {"america", "united", "states"},
+        "ingiltere": {"england", "britain", "kingdom"},
+        "isvicre": {"switzerland"}, "hollanda": {"netherlands"},
+        "belcika": {"belgium"}, "brezilya": {"brazil"},
+        "arjantin": {"argentina"}, "avustralya": {"australia"},
+        "meksika": {"mexico"}, "hindistan": {"india"},
+        "rusya": {"russia"}, "ukrayna": {"ukraine"},
+        "iran": {"iran"}, "irak": {"iraq"}, "turkiye": {"turkey", "türkiye"},
+    }
+    konu_ankorlari = kokler({t for et in etiketler for t in tokens(et) if len(t) > 2 and t not in durak})
+    for kelime in konu_sozcukleri:
+        konu_ankorlari.update(konu_es_anlamlari.get(kelime, set()))
+    if "guney kore" in konu_norm:
+        konu_ankorlari.update({"south", "korea"})
+    # "Atlas Okyanusu"nun İngilizce karşılığı özel ad olarak da eşleştirilir.
+    if {"atlas", "okyanusu"} <= konu_sozcukleri:
+        konu_ankorlari.update({"atlantic", "ocean"})
+    olumlu = tokens(" ".join(sahne))
+    # Çok sözcüklü yasak ifadeleri tek tek kelimelere bölme:
+    # aksi halde "coat of arms" içindeki "of", her İngilizce başlığı eler.
+    olumsuz_tokens = {
+        next(iter(tokens(x))) for x in olumsuz if len(tokens(x)) == 1
+    }
+    water_scene = tokens("wave waves coast beach shore water ocean sea atlantic pacific seascape marine underwater undersea reef")
+    country_scene = tokens("landscape scenery nature mountain lake forest waterfall coast beach national park cityscape skyline river desert")
+    landmark_scene = tokens("pyramid pyramids temple monument ruins architecture building exterior archaeological historic")
+    def puanla(baslik, aciklama_metni="", guvenilir_sorgu=False):
+        baslik_norm = normla(baslik)
+        aciklama_norm = normla(aciklama_metni)
+        baslik_tokens = kokler(tokens(baslik_norm))
+        aciklama_tokens = kokler(tokens(aciklama_norm))
+        ts = baslik_tokens | aciklama_tokens
+        if not baslik_tokens:
+            return -100
+
+        # Belge, harita, medya içeriği ve duvar kâğıdı sonuçları fotoğraf
+        # galerisine alınmaz. Çok sözcüklü ifadeler bütün olarak denetlenir.
+        medya_ve_belge = tokens(
+            "map maps location locator cartography chart diagram banknote banknotes "
+            "currency money coin coins stamp stamps ticket document agreement treaty "
+            "conference meeting delegation signing summit diplomatic logo flag seal "
+            "poster roadmap wallpaper wallpapers television tv episode season series "
+            "show programme program magazine newspaper book cover illustration "
+            "infographic blueprint schematic svg icon article news scientific "
+            "research study report journal blog"
+        )
+        if baslik_tokens & medya_ve_belge:
+            return -100
+        if any(normla(x) in baslik_norm for x in (
+            "coat of arms", "national flag", "paper money", "location map",
+            "blank map", "political map", "nature of things",
+            # Arama motorlarının liste/SEO başlıkları gerçek fotoğrafı
+            # tanımlamadığı için galeriye alınmaz.
+            "free images", "best places", "top 10", "10 favourite",
+            "10 favorite", "unique photos", "background brosur",
+            "concept penting", "at blog"
+        )):
+            return -100
+        # Tarihî gravür, çizim ve resimler fotoğraf galerisi değildir.
+        if baslik_tokens & tokens(
+            "engraving engraved etching lithograph woodcut illustration "
+            "drawing painting sketch diagram schematic antique print"
+        ):
+            return -100
+        # Tarihî yayın/levha başlıkları çoğu zaman fotoğraf değil, eski
+        # kitap illüstrasyonudur. Özellikle 19. yüzyıl öncesi tarihli
+        # başlıkları fotoğraf galerisine alma.
+        if tur == "landmark" and (
+            re.search(r"\b(?:1[5-8]\d{2})\b", baslik_norm)
+            or any(x in baslik_norm for x in (
+                "pococke", "old book", "book plate", "volume ",
+                "historic print", "antique print"
+            ))
+        ):
+            return -100
+        # Ansiklopedik/teknik açıklama başlıkları (ör. "usual form of pyramids")
+        # sahne kelimesi taşısa bile fotoğraf olarak kabul edilmez.
+        if any(normla(x) in baslik_norm for x in (
+            "usual form of", "cross section", "star shafts", "technical drawing"
+        )):
+            return -100
+
+        # Konu ve sahne eşleşmesi başlıkta bulunmalı; açıklamadaki tali
+        # bir kelime yanlış fotoğrafı doğruymuş gibi gösteremez.
+        anchor_title = konu_ankorlari & baslik_tokens
+        scene_title = olumlu & baslik_tokens
+        if not anchor_title or not scene_title:
+            return -100
+
+        # Birleşik/özgül konularda tek bir ortak kelime yeterli değildir.
+        # Her sorgu türü için başlıkta bulunması gereken konu bileşenlerini
+        # ayrı ayrı doğrula; açıklama metni bu şartları karşılayamaz.
+        if tur == "water" and "atlas" in konu_sozcukleri:
+            if "atlantic" not in baslik_tokens:
+                return -100
+
+        if tur == "landmark" and (
+            "misir" in konu_sozcukleri
+            or "egypt" in konu_ankorlari
+        ) and konu_sozcukleri & {"piramit", "piramitleri", "pyramid", "pyramids"}:
+            piramit_var = bool(baslik_tokens & tokens("pyramid pyramids"))
+            misir_konum_var = bool(baslik_tokens & tokens(
+                "egypt egyptian giza gizah gize cheops khufu dahshur dahsour "
+                "saqqara sakkara"
+            ))
+            if not (piramit_var and misir_konum_var):
+                return -100
+
+        if baslik_tokens & tokens(" ".join(uyumsuz.get(tur, set()))):
+            return -100
+
+        if tur == "water":
+            # Atlas Okyanusu için yalnızca okyanus/Atlantik veya deniz
+            # yüzeyini açıkça belirten başlıkları kabul et; uzak kıyı
+            # kasabalarını açıklamadaki coğrafi etiketle içeri alma.
+            if not (baslik_tokens & tokens(
+                "atlantic ocean sea seascape waves wave open water underwater"
+            )):
+                return -100
+        elif tur == "country":
+            if not (baslik_tokens & country_scene):
+                return -100
+        elif tur == "landmark":
+            if not (baslik_tokens & landmark_scene):
+                return -100
+            # Piramit sorgusunda başlıkta piramit ifadesi zorunlu.
+            if konu_sozcukleri & {"piramit", "piramitleri", "pyramid", "pyramids"}:
+                if not (baslik_tokens & tokens("pyramid pyramids")):
+                    return -100
+        elif tur == "city":
+            if not (baslik_tokens & tokens(
+                "city skyline cityscape street architecture building panorama"
+            )):
+                return -100
+
+        # Açıklama, ancak başlık zaten konuyu ve fotoğraf türünü taşıyorsa
+        # puanı destekleyebilir; tek başına eşleşme oluşturamaz.
+        anchor = anchor_title
+        scene = scene_title | (olumlu & aciklama_tokens)
+        return 10 + min(len(anchor), 5) * 8 + min(len(scene), 5) * 3
+
+    bulunan, gorulen = [], set()
+    def ekle(url, title, source="", provider="", description="", guvenilir_sorgu=False):
+        url, title = str(url or "").strip(), str(title or "").strip()
+        if not url.startswith("https://") or url in gorulen:
+            return
+        # Vektör çizimleri, simgeler ve desteklenmeyen dosya türleri fotoğraf
+        # galerisinde gösterilmemeli.
+        url_path = urlparse(url).path.casefold()
+        title_path = title.casefold()
+        if url_path.endswith((".svg", ".pdf", ".gif")) or title_path.endswith((".svg", ".pdf", ".gif")):
+            return
+
+        # Görsel CDN'si ile görselin asıl kaynak sayfasını birbirinden ayır.
+        # Sosyal medya gönderileri fotoğrafın kendisi olsa bile güvenilir
+        # galeri kaynağı sayılmaz; Bing küçük resim URL'si bu kontrolden etkilenmez.
+        source_url = str(source or "").strip()
+        if source_url.startswith(("https://", "http://")):
+            parsed_source = urlparse(source_url)
+            source_host = (parsed_source.hostname or "").casefold().removeprefix("www.")
+            source_path = [normla(unquote(part)) for part in parsed_source.path.split("/") if part]
+            sosyal_aglar = {
+                "facebook.com", "instagram.com", "pinterest.com", "tiktok.com",
+                "twitter.com", "x.com", "reddit.com", "threads.net", "tumblr.com",
+                "snapchat.com", "vk.com", "blogger.com", "blogspot.com",
+                "wordpress.com", "medium.com", "substack.com"
+            }
+            if (
+                any(source_host == domain or source_host.endswith("." + domain)
+                    for domain in sosyal_aglar)
+                or source_host.split(".", 1)[0] in {"news", "blog", "blogs", "press", "magazine"}
+            ):
+                return
+
+            # İçerik/yayın sayfaları; fotoğraf arşivi URL'leri (ör. /photos/)
+            # özellikle korunur. Yalnızca açık makale/haber/blog yolları elenir.
+            yayin_yolu = {
+                "article", "articles", "news", "blog", "press release",
+                "press", "editorial", "story", "stories", "report"
+            }
+            if any(part in yayin_yolu for part in source_path):
+                return
+
+        score = puanla(title, description, guvenilir_sorgu=guvenilir_sorgu)
+        if score < 10:
+            return
+        gorulen.add(url)
+        bulunan.append({"url": url, "type": "place", "name": title or konu,
+            "category": ("sehir" if tur == "city" else "tarih" if tur == "landmark" else "doga" if tur in {"water", "nature"} else "diger"),
+            "source": source or url,
+            "wikidata": f"https://www.wikidata.org/wiki/{qid}" if qid else "",
+            "provider": provider or "EagleAI görsel araması", "_score": score})
+
+    commons_429, commons_kategori, p18 = False, "", []
+    if qid and wikidata_ok:
+        try:
+            r = requests.get("https://www.wikidata.org/w/api.php",
+                params={"action": "wbgetentities", "ids": qid, "props": "labels|claims", "languages": "tr|en", "format": "json"},
+                headers=headers, timeout=5)
+            r.raise_for_status()
+            claims = r.json().get("entities", {}).get(qid, {}).get("claims", {})
+            if claims.get("P373"):
+                commons_kategori = str(claims["P373"][0].get("mainsnak", {}).get("datavalue", {}).get("value", "")).strip()
+            for claim in claims.get("P18", [])[:20]:
+                name = str(claim.get("mainsnak", {}).get("datavalue", {}).get("value", "")).strip()
+                if name and len(name) < 250:
+                    p18.append(name)
+        except Exception as hata:
+            print(f"ℹ️ Wikidata görsel kayıtları alınamadı: {hata}", flush=True)
+
+    if p18:
+        try:
+            r = requests.get("https://commons.wikimedia.org/w/api.php",
+                params={"action": "query", "titles": "|".join("File:" + x for x in p18), "prop": "imageinfo", "iiprop": "url|mime|extmetadata", "iiurlwidth": 1000, "format": "json"},
+                headers=headers, timeout=6)
+            if r.status_code == 429:
+                commons_429 = True
+            r.raise_for_status()
+            for page in r.json().get("query", {}).get("pages", {}).values():
+                info = (page.get("imageinfo") or [{}])[0]
+                if not str(info.get("mime", "")).startswith("image/"):
+                    continue
+                title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
+                desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
+                ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikidata P18 / Wikimedia Commons", desc)
+        except Exception as hata:
+            if "429" in str(hata):
+                commons_429 = True
+            print(f"ℹ️ Commons P18 doğrulaması atlandı: {hata}", flush=True)
+
+    # SPARQL görsel URL'lerini Commons API'sinden bağımsız döndürür.
+    if qid and len(bulunan) < limit:
+        try:
+            sparql = ("SELECT ?place ?placeLabel ?image WHERE { "
+                      f"?place wdt:P18 ?image . FILTER(?place = wd:{qid}) "
+                      'SERVICE wikibase:label { bd:serviceParam wikibase:language "tr,en". } '
+                      "} LIMIT 8")
+            r = requests.get("https://query.wikidata.org/sparql",
+                params={"query": sparql, "format": "json"},
+                headers={**headers, "Accept": "application/sparql-results+json"}, timeout=7)
+            r.raise_for_status()
+            for row in r.json().get("results", {}).get("bindings", []):
+                img = row.get("image", {}).get("value", "").replace("http://", "https://", 1)
+                title = unquote(img.rsplit("/", 1)[-1]).replace("_", " ")
+                ekle(img, title, "https://www.wikidata.org/wiki/" + qid, "Wikidata SPARQL")
+        except Exception as hata:
+            print(f"ℹ️ Wikidata görsel sorgusu atlandı: {hata}", flush=True)
+
+    if commons_kategori and not commons_429 and len(bulunan) < limit:
+        try:
+            r = requests.get("https://commons.wikimedia.org/w/api.php",
+                params={"action": "query", "generator": "categorymembers", "gcmtitle": "Category:" + commons_kategori,
+                        "gcmtype": "file", "gcmlimit": 18, "prop": "imageinfo", "iiprop": "url|mime|extmetadata", "iiurlwidth": 1000, "format": "json"},
+                headers=headers, timeout=6)
+            if r.status_code == 429:
+                commons_429 = True
+            r.raise_for_status()
+            for page in r.json().get("query", {}).get("pages", {}).values():
+                info = (page.get("imageinfo") or [{}])[0]
+                if str(info.get("mime", "")).startswith("image/"):
+                    title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
+                    desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
+                    ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikimedia Commons category", desc)
+        except Exception as hata:
+            if "429" in str(hata):
+                commons_429 = True
+            print(f"ℹ️ Commons kategori araması atlandı: {hata}", flush=True)
+
+    # Commons 429 verdiğinde de çalışan bağımsız görsel sağlayıcı.
+    if len(bulunan) < limit:
+        if tur == "water":
+            sorgular = [f"{konu} ocean sea waves coast photography",
+                        f"{konu} aerial ocean water seascape photo",
+                        f"{konu} marine landscape shoreline"]
+        elif tur == "country":
+            sorgular = [f"{konu} landscape nature photography",
+                        f"{konu} mountains lakes national parks photo",
+                        f"{konu} scenic places travel photography"]
+        elif tur == "landmark":
+            sorgular = [f"{konu} pyramids monument historic site photography",
+                        f"{konu} landmark architecture exterior photo",
+                        f"{konu} ancient monument ruins photography"]
+        elif tur == "city":
+            sorgular = [f"{konu} city skyline streets photography",
+                        f"{konu} city architecture photo",
+                        f"{konu} urban panorama travel photography"]
+        elif tur == "nature":
+            sorgular = [f"{konu} nature landscape photography",
+                        f"{konu} aerial view scenery photo",
+                        f"{konu} natural scenery mountains water"]
+        else:
+            sorgular = [f"{konu} landscape photography",
+                        f"{konu} landmark nature photo",
+                        f"{konu} scenic travel photography"]
+        for sorgu_gorsel in sorgular:
+            try:
+                r = requests.get("https://www.bing.com/images/search",
+                    params={"q": sorgu_gorsel, "form": "HDRSC3", "first": 1, "count": 30},
+                    headers={**headers, "Accept": "text/html,application/xhtml+xml"}, timeout=8)
+                r.raise_for_status()
+                for raw in re.findall(r'\bm="([^"]+)"', r.text or "", flags=re.IGNORECASE):
+                    try:
+                        meta = json.loads(html.unescape(raw))
+                    except Exception:
+                        continue
+                    title = str(meta.get("t", "")).strip()
+                    desc = str(meta.get("desc", "")).strip()
+                    thumb = str(meta.get("turl", "")).strip()
+                    source = str(meta.get("purl", "")).strip()
+                    # Android yalnızca Bing'in güvenilir küçük resim alan adını kabul eder.
+                    if thumb.startswith("https://") and ".mm.bing.net" in thumb.split("/", 3)[2]:
+                        ekle(thumb, title, source, "Bing Görseller", desc, guvenilir_sorgu=True)
+                    if len(bulunan) >= limit * 2:
+                        break
+                if len(bulunan) >= limit:
+                    break
+            except Exception as hata:
+                print(f"ℹ️ Bing görsel yedeği başarısız: {hata}", flush=True)
+
+    bulunan.sort(key=lambda x: x.get("_score", 0), reverse=True)
+    sonuc = []
+    gorulen_basliklar = set()
+    for item in bulunan:
+        item.pop("_score", None)
+        baslik_key = normla(item.get("name", ""))
+        # Aynı dosya farklı URL ile, aynı başlık ise farklı sağlayıcıdan
+        # gelmiş olsa da ikinci kez gösterilmesin.
+        if item["url"] in {x["url"] for x in sonuc} or baslik_key in gorulen_basliklar:
+            continue
+        gorulen_basliklar.add(baslik_key)
+        sonuc.append(item)
+        if len(sonuc) >= limit:
+            break
+    cache[cache_key] = (now, [dict(x) for x in sonuc])
+    _eagle_yer_gorsellerini_getir._cache = cache
+    print(f"🖼️ Yer galerisi: {konu!r} için {len(sonuc)} görsel adayı bulundu.", flush=True)
     return sonuc
 
 @app.post("/api/sohbet")
