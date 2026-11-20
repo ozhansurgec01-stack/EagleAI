@@ -2543,6 +2543,84 @@ def tmdb_sohbet_api_uc_tan_uca_test():
     assert tmdb_mock.call_args.args[0] == "Yabancı film öner"
 
 
+
+def yer_galerisi_p18_dogrulama_test():
+    from unittest.mock import patch
+    import requests
+    import eagle_api
+
+    class SahteYanit:
+        def __init__(self, veri, text=""):
+            self.veri = veri
+            self.status_code = 200
+            self.text = text
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self.veri
+
+    def sahte_get(url, params=None, **kwargs):
+        params = params or {}
+        if "wbsearchentities" == params.get("action"):
+            return SahteYanit({"search": [{
+                "id": "Q16",
+                "label": "Canada",
+                "description": "country in North America",
+                "match": {"text": "Kanada"}
+            }]})
+        if "wbgetentities" == params.get("action"):
+            return SahteYanit({"entities": {"Q16": {"claims": {
+                "P18": [
+                    {"mainsnak": {"datavalue": {"value": "Canada_landscape_test.jpg"}}},
+                    {"mainsnak": {"datavalue": {"value": "Canada_test.pdf"}}}
+                ],
+                "P373": [
+                    {"mainsnak": {"datavalue": {"value": "Canada"}}}
+                ]
+            }}}})
+        if "commons.wikimedia.org" in url:
+            if params.get("generator") == "categorymembers":
+                return SahteYanit({"query": {"pages": {
+                    "3": {"title": "File:Amelie_Prevost_02.jpg", "imageinfo": [{
+                        "mime": "image/jpeg",
+                        "thumburl": "https://upload.wikimedia.org/test/Amelie_Prevost_02.jpg",
+                        "descriptionurl": "https://commons.wikimedia.org/wiki/File:Amelie_Prevost_02.jpg"
+                    }]}
+                }}})
+            return SahteYanit({"query": {"pages": {
+                "1": {"title": "File:Canada_landscape_test.jpg", "imageinfo": [{
+                    "mime": "image/jpeg",
+                    "thumburl": "https://upload.wikimedia.org/test/Canada_landscape_test.jpg",
+                    "descriptionurl": "https://commons.wikimedia.org/wiki/File:Canada_landscape_test.jpg"
+                }]},
+                "2": {"title": "File:Canada_test.pdf", "imageinfo": [{
+                    "mime": "application/pdf",
+                    "url": "https://upload.wikimedia.org/test/Canada_test.pdf"
+                }]}
+            }}})
+        if "query.wikidata.org/sparql" in url:
+            raise requests.Timeout("test timeout")
+        if "www.bing.com/images/search" in url:
+            return SahteYanit({}, text="")
+        raise AssertionError(f"Beklenmeyen istek: {url} {params}")
+
+    with patch.object(eagle_api.requests, "get", side_effect=sahte_get):
+        sonuc = eagle_api._eagle_yer_gorsellerini_getir(
+            "Kanada hakkında bilgi verir misin?"
+        )
+
+    assert len(sonuc) == 1, sonuc
+    assert sonuc[0]["url"] == "https://upload.wikimedia.org/test/Canada_landscape_test.jpg"
+    assert sonuc[0]["source"].startswith(
+        "https://commons.wikimedia.org/wiki/File:"
+    )
+    assert ".pdf" not in sonuc[0]["url"]
+
+
+test("Yer galerisi P18 doğrulaması ve SPARQL hata koruması", yer_galerisi_p18_dogrulama_test)
+
 test("TMDb sohbet API uçtan uca yönlendirmesi", tmdb_sohbet_api_uc_tan_uca_test)
 test("Medya öneri niyeti ve yönlendirmesi", medya_oneri_algilama_test)
 
