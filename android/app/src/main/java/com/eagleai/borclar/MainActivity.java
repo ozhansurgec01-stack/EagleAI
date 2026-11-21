@@ -36,6 +36,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ImageView;
 import android.widget.ScrollView;
@@ -237,8 +238,62 @@ public class MainActivity extends Activity {
 
         kaydirma.addView(mesajAlani);
 
-        ana.addView(
+        FrameLayout sohbetCer = new FrameLayout(this);
+        sohbetCer.addView(
                 kaydirma,
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                )
+        );
+
+        Button altaGit = new Button(this);
+        altaGit.setText("↓");
+        altaGit.setTextSize(24);
+        altaGit.setTextColor(Color.WHITE);
+        altaGit.setAllCaps(false);
+        altaGit.setGravity(Gravity.CENTER);
+        altaGit.setPadding(0, 0, 0, 0);
+        altaGit.setBackground(yuvarlakArkaPlan(
+                Color.rgb(42, 58, 72),
+                Color.rgb(42, 58, 72),
+                28
+        ));
+        altaGit.setElevation(10f);
+        altaGit.setVisibility(View.GONE);
+
+        int altaGitBoyut = (int) (56 * getResources().getDisplayMetrics().density);
+        int altaGitBosluk = (int) (16 * getResources().getDisplayMetrics().density);
+        FrameLayout.LayoutParams altaGitParams = new FrameLayout.LayoutParams(
+                altaGitBoyut,
+                altaGitBoyut,
+                Gravity.BOTTOM | Gravity.END
+        );
+        altaGitParams.setMargins(0, 0, altaGitBosluk, altaGitBosluk);
+        sohbetCer.addView(altaGit, altaGitParams);
+
+        kaydirma.setOnScrollChangeListener(
+                (View v, int scrollX, int scrollY, int oldScrollX, int oldScrollY) -> {
+                    View icerik = kaydirma.getChildAt(0);
+                    if (icerik == null ||
+                            icerik.getHeight() <= kaydirma.getHeight() + 20) {
+                        altaGit.setVisibility(View.GONE);
+                        return;
+                    }
+
+                    boolean enAltta = scrollY + kaydirma.getHeight()
+                            >= icerik.getHeight() - 40;
+                    altaGit.setVisibility(enAltta ? View.GONE : View.VISIBLE);
+                }
+        );
+
+        altaGit.setOnClickListener(v -> kaydirma.post(() -> {
+            kaydirma.fullScroll(View.FOCUS_DOWN);
+            altaGit.setVisibility(View.GONE);
+        }));
+
+        ana.addView(
+                sohbetCer,
                 new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         0,
@@ -574,6 +629,31 @@ public class MainActivity extends Activity {
                     );
                 }
 
+                // Yanıtı ÖNCE kalıcı kayda yaz. Görsel iş parçacıkları bu kayda
+                // mesaj_id ile bağlanır; sıralama artık yarış durumu yaratmaz.
+                final String mesajId = java.util.UUID.randomUUID().toString();
+                final boolean medyaGorselleriGosterilecek =
+                        gonderilecekResim == null
+                                && (medyaOnerileri == null
+                                    || medyaOnerileri.length() == 0)
+                                && medyaGorselleri != null
+                                && medyaGorselleri.length() > 0;
+                final JSONArray kaydedilecekGorseller =
+                        medyaGorselleriGosterilecek ? medyaGorselleri : null;
+
+                gecmiseKaydet(
+                        "🦅\n\n" + cevapGosterim,
+                        medyaOnerileri,
+                        mesajId,
+                        kaydedilecekGorseller
+                );
+                final String sohbetId = sohbeteMesajEkle(
+                        "🦅\n\n" + cevapGosterim,
+                        medyaOnerileri,
+                        mesajId,
+                        kaydedilecekGorseller
+                );
+
                 if (gonderilecekResim == null) {
                     if (medyaOnerileri != null && medyaOnerileri.length() > 0) {
                         tmdbOneriKartlariEkle(cevapKarti, medyaOnerileri);
@@ -584,11 +664,10 @@ public class MainActivity extends Activity {
                                 "Bu konu için doğrulanmış görsel bulunamadı; alakasız fotoğraf gösterilmiyor.");
                     } else if (!bitcoinFiyati && finansVerisi == null && !medyaSorusu
                             && gorselAramasiUygunMu(mesaj, cevapFinal)) {
-                        commonsGorselleriEkle(cevapKarti, mesaj, cevapFinal);
+                        commonsGorselleriEkle(
+                                cevapKarti, mesaj, cevapFinal, sohbetId, mesajId);
                     }
                 }
-                gecmiseKaydet("🦅\n\n" + cevapGosterim, medyaOnerileri);
-                  sohbeteMesajEkle("🦅\n\n" + cevapGosterim, medyaOnerileri);
                 metniSesliOku(cevapGosterim);
 
                 kaydirma.post(() ->
@@ -1169,6 +1248,10 @@ public class MainActivity extends Activity {
     private static final String SOHBET_KEY = "sohbetler";
     private static String aktifSohbetId = null;
 
+    // Tüm SharedPreferences okuma-değiştirme-yazma işlemleri bu kilitle yapılır.
+    // Arayüz iş parçacığı ile görsel iş parçacığı birbirinin kaydını ezemez.
+    private static final Object KAYIT_KILIDI = new Object();
+
     private static final String GECMIS_PREF = "eagle_gecmis";
     private static final String GECMIS_KEY = "mesajlar";
 
@@ -1177,7 +1260,23 @@ public class MainActivity extends Activity {
             String metin,
             JSONArray medyaOnerileri
     ) {
-        if (medyaOnerileri == null || medyaOnerileri.length() == 0) {
+        mesajKaydiniEkle(mesajlar, metin, medyaOnerileri, null, null);
+    }
+
+    // mesajId verilirse kayıt her zaman JSONObject olur ve "mesaj_id" taşır;
+    // Wikimedia galerisi daha sonra bu kimlik üzerinden bağlanır.
+    private void mesajKaydiniEkle(
+            JSONArray mesajlar,
+            String metin,
+            JSONArray medyaOnerileri,
+            String mesajId,
+            JSONArray medyaGorselleri
+    ) {
+        boolean medyaVar = medyaOnerileri != null && medyaOnerileri.length() > 0;
+        boolean gorselVar = medyaGorselleri != null && medyaGorselleri.length() > 0;
+        boolean idVar = mesajId != null && !mesajId.isEmpty();
+
+        if (!medyaVar && !gorselVar && !idVar) {
             mesajlar.put(metin);
             return;
         }
@@ -1185,10 +1284,272 @@ public class MainActivity extends Activity {
         try {
             JSONObject kayit = new JSONObject();
             kayit.put("metin", metin);
-            kayit.put("media_items", new JSONArray(medyaOnerileri.toString()));
+            if (idVar) {
+                kayit.put("mesaj_id", mesajId);
+            }
+            if (medyaVar) {
+                kayit.put("media_items", new JSONArray(medyaOnerileri.toString()));
+            }
+            if (gorselVar) {
+                kayit.put("media_images", new JSONArray(medyaGorselleri.toString()));
+            }
             mesajlar.put(kayit);
         } catch (Exception e) {
+            android.util.Log.e("EagleGorsel", "Mesaj kaydı oluşturulamadı.", e);
             mesajlar.put(metin);
+        }
+    }
+
+
+    // Wikimedia görsellerini, kimliği (mesaj_id) verilen EagleAI yanıtına bağla.
+    // "Son 🦅 mesajı" tahmini yoktur; kimlik eşleşmezse hiçbir kayda dokunulmaz.
+    private boolean galeriAlaniniMesajKaydinaEkle(
+            JSONArray mesajlar,
+            String mesajId,
+            JSONArray galeriItems
+    ) {
+        if (mesajlar == null || mesajId == null || mesajId.isEmpty()
+                || galeriItems == null || galeriItems.length() == 0) {
+            return false;
+        }
+
+        try {
+            for (int i = mesajlar.length() - 1; i >= 0; i--) {
+                JSONObject kayit = mesajlar.optJSONObject(i);
+                if (kayit == null) continue;
+
+                if (!mesajId.equals(kayit.optString("mesaj_id", ""))) {
+                    continue;
+                }
+
+                kayit.put(
+                        "gallery_items",
+                        new JSONArray(galeriItems.toString())
+                );
+                mesajlar.put(i, kayit);
+                return true;
+            }
+        } catch (Exception e) {
+            android.util.Log.e(
+                    "EagleGorsel",
+                    "Galeri mesaj kaydına eklenemedi.",
+                    e
+            );
+        }
+
+        return false;
+    }
+
+    // Arka plan iş parçacığından çağrılır; commit() ile yazıldığı için
+    // kayıt dönüşte diske işlenmiş olur.
+    private boolean mesajaGaleriKaydet(
+            String sohbetId,
+            String mesajId,
+            JSONArray galeriItems
+    ) {
+        if (mesajId == null || mesajId.isEmpty()
+                || galeriItems == null || galeriItems.length() == 0) {
+            android.util.Log.w(
+                    "EagleGorsel",
+                    "Galeri kaydedilemedi: mesaj kimliği veya galeri boş."
+            );
+            return false;
+        }
+
+        boolean sohbetKaydedildi = false;
+        boolean gecmisKaydedildi = false;
+
+        synchronized (KAYIT_KILIDI) {
+            // Genel sohbet geçmişi.
+            try {
+                SharedPreferences gecmisSp =
+                        getSharedPreferences(GECMIS_PREF, MODE_PRIVATE);
+
+                JSONArray gecmisDizi = new JSONArray(
+                        gecmisSp.getString(GECMIS_KEY, "[]")
+                );
+
+                if (galeriAlaniniMesajKaydinaEkle(
+                        gecmisDizi, mesajId, galeriItems)) {
+                    gecmisSp.edit()
+                            .putString(GECMIS_KEY, gecmisDizi.toString())
+                            .commit();
+                    gecmisKaydedildi = true;
+                }
+            } catch (Exception e) {
+                android.util.Log.e(
+                        "EagleGorsel",
+                        "Genel geçmiş galeri kaydı güncellenemedi.",
+                        e
+                );
+            }
+
+            // Mesajın ait olduğu sohbet (aktif sohbet değil, gönderilirken
+            // yakalanan sohbet kimliği).
+            try {
+                if (sohbetId != null && !sohbetId.isEmpty()) {
+                    SharedPreferences sohbetSp =
+                            getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
+
+                    JSONArray sohbetler = new JSONArray(
+                            sohbetSp.getString(SOHBET_KEY, "[]")
+                    );
+
+                    for (int i = 0; i < sohbetler.length(); i++) {
+                        JSONObject sohbet = sohbetler.optJSONObject(i);
+                        if (sohbet == null) continue;
+
+                        if (!sohbetId.equals(sohbet.optString("id", ""))) {
+                            continue;
+                        }
+
+                        JSONArray mesajlar = sohbet.optJSONArray("mesajlar");
+
+                        if (galeriAlaniniMesajKaydinaEkle(
+                                mesajlar, mesajId, galeriItems)) {
+                            sohbet.put("mesajlar", mesajlar);
+                            sohbetSp.edit()
+                                    .putString(
+                                            SOHBET_KEY,
+                                            sohbetler.toString()
+                                    )
+                                    .commit();
+                            sohbetKaydedildi = true;
+                        }
+
+                        break;
+                    }
+                }
+            } catch (Exception e) {
+                android.util.Log.e(
+                        "EagleGorsel",
+                        "Sohbet galeri kaydı güncellenemedi.",
+                        e
+                );
+            }
+        }
+
+        android.util.Log.i(
+                "EagleGorsel",
+                "Galeri kaydı: sohbet=" + sohbetKaydedildi
+                        + ", geçmiş=" + gecmisKaydedildi
+                        + ", mesaj_id=" + mesajId
+        );
+
+        return sohbetKaydedildi || gecmisKaydedildi;
+    }
+
+    // Kayıtlı Wikimedia görsellerini sohbet geçmişinde yeniden göster.
+    private void kayitliWikimediaGalerisiniGoster(
+            LinearLayout kart,
+            JSONArray items
+    ) {
+        if (kart == null || items == null || items.length() == 0) {
+            return;
+        }
+
+        LinearLayout galeri = new LinearLayout(this);
+        galeri.setOrientation(LinearLayout.VERTICAL);
+        galeri.setPadding(0, 10, 0, 10);
+
+        for (int i = 0; i < items.length(); i++) {
+            JSONObject item = items.optJSONObject(i);
+            if (item == null) continue;
+
+            String baslik = item.optString(
+                    "title", "Wikimedia Commons"
+            ).replaceFirst("(?i)^File:", "").replace('_', ' ');
+
+            String thumb = item.optString("thumb", "");
+            String original = item.optString("original", "");
+            String kaynak = item.optString("source", original);
+
+            if (thumb.isEmpty()) thumb = original;
+            if (original.isEmpty()) original = thumb;
+            if (kaynak.isEmpty()) kaynak = original;
+            if (thumb.isEmpty()) continue;
+
+            TextView baslikView = new TextView(this);
+            baslikView.setText("🖼 " + baslik);
+            baslikView.setTextSize(12);
+            baslikView.setTextColor(Color.GRAY);
+            galeri.addView(baslikView);
+
+            ImageView resim = new ImageView(this);
+            resim.setAdjustViewBounds(true);
+            resim.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            resim.setContentDescription(baslik);
+            resim.setMaxHeight(420);
+            resim.setLayoutParams(new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            ));
+
+            final String kaynakAdresi = kaynak;
+
+            resim.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse(kaynakAdresi)
+                    ));
+                } catch (Exception ignored) {}
+            });
+
+            galeri.addView(resim);
+
+            TextView kaynakView = new TextView(this);
+            kaynakView.setText("Kaynak: Wikimedia Commons");
+            kaynakView.setTextSize(11);
+            kaynakView.setTextColor(Color.GRAY);
+            kaynakView.setOnClickListener(v -> {
+                try {
+                    startActivity(new Intent(
+                            Intent.ACTION_VIEW,
+                            Uri.parse(kaynakAdresi)
+                    ));
+                } catch (Exception ignored) {}
+            });
+
+            galeri.addView(kaynakView);
+
+            final String kucukAdres = thumb;
+            final String orijinalAdres = original;
+
+            gorselExecutor.execute(() -> {
+                try {
+                    Bitmap bitmap = wikimediaGorselIndir(
+                            kucukAdres, orijinalAdres
+                    );
+
+                    if (bitmap != null && !isFinishing()) {
+                        runOnUiThread(() -> {
+                            if (resim.getParent() != null) {
+                                resim.setImageBitmap(bitmap);
+                            }
+                        });
+                    } else {
+                        runOnUiThread(() -> {
+                            if (resim.getParent() != null) {
+                                resim.setImageResource(
+                                        android.R.drawable.ic_menu_report_image
+                                );
+                            }
+                        });
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e(
+                            "EagleGorsel",
+                            "Kayıtlı görsel yüklenemedi.",
+                            e
+                    );
+                }
+            });
+        }
+
+        if (galeri.getChildCount() > 0) {
+            int index = Math.max(0, kart.getChildCount() - 1);
+            kart.addView(galeri, index);
         }
     }
 
@@ -1196,11 +1557,15 @@ public class MainActivity extends Activity {
         Object kayit = mesajlar.opt(index);
         String metin;
         JSONArray medyaOnerileri = null;
+        JSONArray medyaGorselleri = null;
+        JSONArray galeriItems = null;
 
         if (kayit instanceof JSONObject) {
             JSONObject mesaj = (JSONObject) kayit;
             metin = mesaj.optString("metin", "");
             medyaOnerileri = mesaj.optJSONArray("media_items");
+            medyaGorselleri = mesaj.optJSONArray("media_images");
+            galeriItems = mesaj.optJSONArray("gallery_items");
         } else {
             metin = mesajlar.optString(index, "");
         }
@@ -1210,6 +1575,12 @@ public class MainActivity extends Activity {
 
         if (medyaOnerileri != null && medyaOnerileri.length() > 0) {
             tmdbOneriKartlariEkle(kart, medyaOnerileri);
+        } else if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
+            tmdbGorselleriEkle(kart, medyaGorselleri);
+        }
+
+        if (galeriItems != null && galeriItems.length() > 0) {
+            kayitliWikimediaGalerisiniGoster(kart, galeriItems);
         }
     }
 
@@ -1218,14 +1589,27 @@ public class MainActivity extends Activity {
     }
 
     private void gecmiseKaydet(String metin, JSONArray medyaOnerileri) {
-        try {
-            SharedPreferences sp = getSharedPreferences(GECMIS_PREF, MODE_PRIVATE);
-            String mevcut = sp.getString(GECMIS_KEY, "[]");
-            JSONArray dizi = new JSONArray(mevcut);
-            mesajKaydiniEkle(dizi, metin, medyaOnerileri);
-            sp.edit().putString(GECMIS_KEY, dizi.toString()).apply();
-        } catch (Exception e) {
-            // Kaydedilemezse sessizce geç.
+        gecmiseKaydet(metin, medyaOnerileri, null, null);
+    }
+
+    private void gecmiseKaydet(
+            String metin,
+            JSONArray medyaOnerileri,
+            String mesajId,
+            JSONArray medyaGorselleri
+    ) {
+        synchronized (KAYIT_KILIDI) {
+            try {
+                SharedPreferences sp = getSharedPreferences(GECMIS_PREF, MODE_PRIVATE);
+                String mevcut = sp.getString(GECMIS_KEY, "[]");
+                JSONArray dizi = new JSONArray(mevcut);
+                mesajKaydiniEkle(
+                        dizi, metin, medyaOnerileri, mesajId, medyaGorselleri
+                );
+                sp.edit().putString(GECMIS_KEY, dizi.toString()).apply();
+            } catch (Exception e) {
+                android.util.Log.e("EagleGorsel", "Geçmişe kaydedilemedi.", e);
+            }
         }
     }
 
@@ -1244,8 +1628,10 @@ public class MainActivity extends Activity {
     }
 
     private void gecmisiTemizle() {
-        SharedPreferences sp = getSharedPreferences(GECMIS_PREF, MODE_PRIVATE);
-        sp.edit().putString(GECMIS_KEY, "[]").apply();
+        synchronized (KAYIT_KILIDI) {
+            SharedPreferences sp = getSharedPreferences(GECMIS_PREF, MODE_PRIVATE);
+            sp.edit().putString(GECMIS_KEY, "[]").apply();
+        }
         mesajAlani.removeAllViews();
         mesajAlani.addView(mesajOlustur(
                 "🦅 Özhan, hoş geldin!\n" +
@@ -1388,6 +1774,12 @@ private void sohbetYukle(String id) {
       }
 
       private void sohbetSil(String id) {
+          synchronized (KAYIT_KILIDI) {
+              sohbetSilKilitsiz(id);
+          }
+      }
+
+      private void sohbetSilKilitsiz(String id) {
           try {
               SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
               String mevcut = sp.getString(SOHBET_KEY, "[]");
@@ -1426,87 +1818,108 @@ private void sohbetYukle(String id) {
       }
 
     private void sohbeteMesajEkle(String metin) {
-        sohbeteMesajEkle(metin, null);
+        sohbeteMesajEkle(metin, null, null, null);
     }
 
     private void sohbeteMesajEkle(String metin, JSONArray medyaOnerileri) {
-        try {
-            SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
-            String mevcut = sp.getString(SOHBET_KEY, "[]");
-            JSONArray sohbetler = new JSONArray(mevcut);
+        sohbeteMesajEkle(metin, medyaOnerileri, null, null);
+    }
 
-            if (aktifSohbetId == null) {
-                String id = String.valueOf(System.currentTimeMillis());
+    // Mesajın yazıldığı sohbetin kimliğini döndürür (hata olursa null).
+    private String sohbeteMesajEkle(
+            String metin,
+            JSONArray medyaOnerileri,
+            String mesajId,
+            JSONArray medyaGorselleri
+    ) {
+        synchronized (KAYIT_KILIDI) {
+            try {
+                SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
+                String mevcut = sp.getString(SOHBET_KEY, "[]");
+                JSONArray sohbetler = new JSONArray(mevcut);
 
-                String baslik = metin;
-                if (baslik.startsWith("Sen: ")) {
-                    baslik = baslik.substring(5).trim();
-                }
-                if (baslik.length() > 45) {
-                    baslik = baslik.substring(0, 45) + "...";
-                }
+                if (aktifSohbetId == null) {
+                    String id = String.valueOf(System.currentTimeMillis());
 
-                JSONObject sohbet = new JSONObject();
-                sohbet.put("id", id);
-                sohbet.put("baslik", baslik);
-                sohbet.put(
-                        "tarih",
-                        new SimpleDateFormat(
-                                "dd.MM.yyyy HH:mm",
-                                java.util.Locale.getDefault()
-                        ).format(new Date())
-                );
-
-                JSONArray mesajlar = new JSONArray();
-                mesajKaydiniEkle(mesajlar, metin, medyaOnerileri);
-                sohbet.put("mesajlar", mesajlar);
-
-                JSONArray yeniSohbetler = new JSONArray();
-                yeniSohbetler.put(sohbet);
-
-                for (int i = 0; i < sohbetler.length(); i++) {
-                    yeniSohbetler.put(sohbetler.getJSONObject(i));
-                }
-
-                sp.edit()
-                        .putString(SOHBET_KEY, yeniSohbetler.toString())
-                        .apply();
-
-                aktifSohbetId = id;
-            } else {
-                for (int i = 0; i < sohbetler.length(); i++) {
-                    JSONObject sohbet = sohbetler.getJSONObject(i);
-
-                    if (aktifSohbetId.equals(sohbet.optString("id", ""))) {
-                        JSONArray mesajlar = sohbet.optJSONArray("mesajlar");
-
-                        if (mesajlar == null) {
-                            mesajlar = new JSONArray();
-                            sohbet.put("mesajlar", mesajlar);
-                        }
-
-                        mesajKaydiniEkle(mesajlar, metin, medyaOnerileri);
-                        sohbet.put(
-                                "tarih",
-                                new SimpleDateFormat(
-                                        "dd.MM.yyyy HH:mm",
-                                        java.util.Locale.getDefault()
-                                ).format(new Date())
-                        );
-                        break;
+                    String baslik = metin;
+                    if (baslik.startsWith("Sen: ")) {
+                        baslik = baslik.substring(5).trim();
                     }
+                    if (baslik.length() > 45) {
+                        baslik = baslik.substring(0, 45) + "...";
+                    }
+
+                    JSONObject sohbet = new JSONObject();
+                    sohbet.put("id", id);
+                    sohbet.put("baslik", baslik);
+                    sohbet.put(
+                            "tarih",
+                            new SimpleDateFormat(
+                                    "dd.MM.yyyy HH:mm",
+                                    java.util.Locale.getDefault()
+                            ).format(new Date())
+                    );
+
+                    JSONArray mesajlar = new JSONArray();
+                    mesajKaydiniEkle(
+                            mesajlar, metin, medyaOnerileri, mesajId, medyaGorselleri
+                    );
+                    sohbet.put("mesajlar", mesajlar);
+
+                    JSONArray yeniSohbetler = new JSONArray();
+                    yeniSohbetler.put(sohbet);
+
+                    for (int i = 0; i < sohbetler.length(); i++) {
+                        yeniSohbetler.put(sohbetler.getJSONObject(i));
+                    }
+
+                    sp.edit()
+                            .putString(SOHBET_KEY, yeniSohbetler.toString())
+                            .apply();
+
+                    aktifSohbetId = id;
+                } else {
+                    for (int i = 0; i < sohbetler.length(); i++) {
+                        JSONObject sohbet = sohbetler.getJSONObject(i);
+
+                        if (aktifSohbetId.equals(sohbet.optString("id", ""))) {
+                            JSONArray mesajlar = sohbet.optJSONArray("mesajlar");
+
+                            if (mesajlar == null) {
+                                mesajlar = new JSONArray();
+                                sohbet.put("mesajlar", mesajlar);
+                            }
+
+                            mesajKaydiniEkle(
+                                    mesajlar, metin, medyaOnerileri,
+                                    mesajId, medyaGorselleri
+                            );
+                            sohbet.put(
+                                    "tarih",
+                                    new SimpleDateFormat(
+                                            "dd.MM.yyyy HH:mm",
+                                            java.util.Locale.getDefault()
+                                    ).format(new Date())
+                            );
+                            break;
+                        }
+                    }
+
+                    sp.edit()
+                            .putString(SOHBET_KEY, sohbetler.toString())
+                            .apply();
                 }
 
-                sp.edit()
-                        .putString(SOHBET_KEY, sohbetler.toString())
-                        .apply();
+                return aktifSohbetId;
+            } catch (Exception e) {
+                android.util.Log.e("EagleGorsel", "Sohbet kaydedilemedi.", e);
+                Toast.makeText(
+                        this,
+                        "Sohbet kaydedilemedi.",
+                        Toast.LENGTH_SHORT
+                ).show();
+                return null;
             }
-        } catch (Exception e) {
-            Toast.makeText(
-                    this,
-                    "Sohbet kaydedilemedi.",
-                    Toast.LENGTH_SHORT
-            ).show();
         }
     }
 
@@ -2327,7 +2740,9 @@ private void sohbetYukle(String id) {
         return true;
     }
 
-    private void commonsGorselleriEkle(LinearLayout kart, String soru, String cevap) {
+    private void commonsGorselleriEkle(
+            LinearLayout kart, String soru, String cevap,
+            String sohbetId, String mesajId) {
         android.util.Log.i("EagleGorsel", "1 - Görsel araması çağrıldı: " + soru);
         gorselExecutor.execute(() -> {
             HttpURLConnection baglanti = null;
@@ -2346,7 +2761,8 @@ private void sohbetYukle(String id) {
                                 && "upload.wikimedia.org".equalsIgnoreCase(uri.getHost())) {
                             android.util.Log.i("EagleGorsel",
                                     "Orijinal backend görseli doğrudan kullanılacak.");
-                            dogrudanWikimediaGorseliEkle(kart, adres);
+                            dogrudanWikimediaGorseliEkle(
+                                    kart, adres, sohbetId, mesajId);
                             return;
                         }
                     }
@@ -2722,6 +3138,24 @@ JSONObject item = new JSONObject();
                     gorselDurumunuGoster(kart, "Arama yapıldı ancak görüntülenebilir görsel bulunamadı.");
                     return;
                 }
+
+                // Galeri öğelerini mesaj geçmişine kalıcı olarak kaydet.
+                try {
+                    JSONArray galeriKayitlari = new JSONArray();
+                    for (JSONObject item : secilenler) {
+                        galeriKayitlari.put(
+                                new JSONObject(item.toString())
+                        );
+                    }
+                    mesajaGaleriKaydet(sohbetId, mesajId, galeriKayitlari);
+                } catch (Exception kayitHatasi) {
+                    android.util.Log.e(
+                            "EagleGorsel",
+                            "Galeri öğeleri kaydedilemedi.",
+                            kayitHatasi
+                    );
+                }
+
                 if (isFinishing()) return;
 
                 runOnUiThread(() -> {
@@ -3150,7 +3584,30 @@ JSONObject item = new JSONObject();
     }
 
     private void dogrudanWikimediaGorseliEkle(
-            LinearLayout kart, String adres) {
+            LinearLayout kart, String adres,
+            String sohbetId, String mesajId) {
+
+        // Doğrudan gelen görseli de mesaj galerisine ekle.
+        try {
+            JSONObject item = new JSONObject();
+            item.put("title", "Orijinal kaynak görseli");
+            item.put("thumb", adres);
+            item.put("original", adres);
+            item.put("source", adres);
+            item.put("category", "Wikimedia");
+
+            JSONArray items = new JSONArray();
+            items.put(item);
+
+            mesajaGaleriKaydet(sohbetId, mesajId, items);
+        } catch (Exception kayitHatasi) {
+            android.util.Log.e(
+                    "EagleGorsel",
+                    "Doğrudan görsel kaydedilemedi.",
+                    kayitHatasi
+            );
+        }
+
         runOnUiThread(() -> {
             if (isFinishing() || kart == null || kart.getParent() == null) return;
 
@@ -4288,7 +4745,8 @@ JSONObject item = new JSONObject();
         }
 
         executor.shutdownNow();
-        gorselExecutor.shutdownNow();
+        // shutdown(): sıradaki galeri kaydı yarıda kesilmez, bitirilir.
+        gorselExecutor.shutdown();
 
         super.onDestroy();
     }
