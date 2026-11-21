@@ -10434,6 +10434,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
 
     # Wikidata'dan eş ad ve varlık türünü al; erişilemezse bağımsız aramaya devam et.
     adaylar, eslesen, qid = [], None, ""
+    ingilizce_ad = ""
     etiketler, aciklama, wikidata_ok = [konu], "", False
     try:
         r = requests.get("https://www.wikidata.org/w/api.php",
@@ -10511,7 +10512,8 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             tur = "place"
 
     olumsuz = {"map", "maps", "location", "locator", "cartography", "chart", "diagram", "banknote", "banknotes", "currency", "money", "coin", "coins", "stamp", "stamps", "ticket", "document", "agreement", "treaty", "conference", "meeting", "delegation", "signing", "summit", "diplomatic", "logo", "coat of arms", "flag", "seal", "poster", "harita", "para", "banknot", "sikke", "pul", "bilet", "belge", "anlasma", "konferans", "toplanti", "heyet", "imza", "afis", "arma", "bayrak", "rozet", "roadmap"}
-    sahne = {"landscape", "scenery", "view", "panorama", "aerial", "nature", "ocean", "atlantic", "pacific", "sea", "seascape", "marine", "undersea", "mountain", "lake", "forest", "waterfall", "coast", "beach", "shore", "wave", "waves", "water", "underwater", "reef", "island", "river", "desert", "national park", "cityscape", "skyline", "street", "architecture", "building", "exterior", "temple", "pyramid", "pyramids", "monument", "ruins", "archaeological", "historic", "photograph", "photo", "sunset", "sunrise", "manzara", "dogal", "dag", "gol", "orman", "selale", "sahil", "plaj", "dalga", "kiyi", "col", "sehir", "mimari", "tapinak", "piramit", "anit", "kalinti", "misir"}
+    sahne = {"landscape", "scenery", "view", "panorama", "aerial", "nature", "ocean", "atlantic", "pacific", "sea", "seascape", "marine", "undersea", "mountain", "lake", "forest", "waterfall", "coast", "beach", "shore", "wave", "waves", "water", "underwater", "reef", "island", "river", "desert", "national park", "cityscape", "skyline", "street", "architecture", "building", "exterior", "temple", "pyramid", "pyramids", "monument", "ruins", "archaeological", "historic", "photograph", "photo", "sunset", "sunrise", "manzara", "dogal", "dag", "gol", "orman", "selale", "sahil", "plaj", "dalga", "kiyi", "col", "sehir", "mimari", "tapinak", "piramit", "anit", "kalinti", "misir",
+            "castle", "cathedral", "palace", "city", "harbour", "harbor", "village", "bridge"}
     uyumsuz = {
         "water": {"road", "highway", "motorway", "railway", "train", "bridge", "traffic", "airport", "car", "vehicle"},
         "country": {"banknote", "currency", "money", "coin", "stamp", "treaty", "agreement", "conference", "delegation", "parliament", "politician"},
@@ -10573,7 +10575,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         next(iter(tokens(x))) for x in olumsuz if len(tokens(x)) == 1
     }
     water_scene = tokens("wave waves coast beach shore water ocean sea atlantic pacific seascape marine underwater undersea reef")
-    country_scene = tokens("landscape scenery nature mountain lake forest waterfall coast beach national park cityscape skyline river desert")
+    country_scene = tokens("landscape scenery nature mountain lake forest waterfall coast beach national park cityscape skyline river desert castle cathedral palace city street architecture building harbour harbor village bridge panorama")
     landmark_scene = tokens("pyramid pyramids temple monument ruins architecture building exterior archaeological historic")
     def puanla(baslik, aciklama_metni="", guvenilir_sorgu=False):
         baslik_norm = normla(baslik)
@@ -10604,7 +10606,11 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             # tanımlamadığı için galeriye alınmaz.
             "free images", "best places", "top 10", "10 favourite",
             "10 favorite", "unique photos", "background brosur",
-            "concept penting", "at blog"
+            "concept penting", "at blog",
+            # Stok fotograf siteleri konuya ozgu belge degildir.
+            "pixabay", "ucretsiz fotograf", "stok fotograf", "stock photo",
+            "royalty free", "shutterstock", "istock", "depositphotos",
+            "freepik", "alamy", "dreamstime", "123rf"
         )):
             return -100
         # Tarihî gravür, çizim ve resimler fotoğraf galerisi değildir.
@@ -10716,9 +10722,28 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                 "snapchat.com", "vk.com", "blogger.com", "blogspot.com",
                 "wordpress.com", "medium.com", "substack.com"
             }
+
+            # EAGLE_GORSEL_YAMA3_GUVENLI
+            # Duvar kagidi odakli kaynaklari galeri disinda tut.
+            duvar_kagidi_kaynaklari = {
+                "wallpaperbetter.com",
+                "wallhere.com",
+                "wallpaperaccess.com",
+                "wallpapercave.com",
+                "wallpaperflare.com",
+                "alphacoders.com",
+                "hdwallpapers.net",
+                "desktopnexus.com",
+                "wallpaperfusion.com",
+                "wallpaperup.com",
+                "wallpapers.com",
+                "wallpaperhub.com"
+            }
+
+            galeri_disi_kaynaklar = sosyal_aglar | duvar_kagidi_kaynaklari
             if (
                 any(source_host == domain or source_host.endswith("." + domain)
-                    for domain in sosyal_aglar)
+                    for domain in galeri_disi_kaynaklar)
                 or source_host.split(".", 1)[0] in {"news", "blog", "blogs", "press", "magazine"}
             ):
                 return
@@ -10735,6 +10760,9 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         score = puanla(title, description, guvenilir_sorgu=guvenilir_sorgu)
         if score < 10:
             return
+        # Wikidata/Commons sonuclari arama motoru gorsellerinden once gelir.
+        if str(provider or "").startswith(("Wikidata", "Wikimedia")):
+            score += 40
         gorulen.add(url)
         bulunan.append({"url": url, "type": "place", "name": title or konu,
             "category": ("sehir" if tur == "city" else "tarih" if tur == "landmark" else "doga" if tur in {"water", "nature"} else "diger"),
@@ -10749,9 +10777,23 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                 params={"action": "wbgetentities", "ids": qid, "props": "labels|claims", "languages": "tr|en", "format": "json"},
                 headers=headers, timeout=5)
             r.raise_for_status()
-            claims = r.json().get("entities", {}).get(qid, {}).get("claims", {})
+            varlik = r.json().get("entities", {}).get(qid, {})
+            claims = varlik.get("claims", {})
+            # Commons ve Bing basliklari cogunlukla Ingilizcedir: Wikidata'nin
+            # Ingilizce/Turkce etiketleri konu capasi olarak eklenir
+            # (ornek: Iskocya -> Scotland).
+            for dil, etiket in (varlik.get("labels") or {}).items():
+                deger = str((etiket or {}).get("value", "")).strip()
+                if dil == "en" and deger:
+                    ingilizce_ad = deger
+                for t in tokens(deger):
+                    if len(t) > 2 and t not in durak:
+                        konu_ankorlari.update(kokler({t}))
             if claims.get("P373"):
                 commons_kategori = str(claims["P373"][0].get("mainsnak", {}).get("datavalue", {}).get("value", "")).strip()
+                for t in tokens(commons_kategori):
+                    if len(t) > 2 and t not in durak:
+                        konu_ankorlari.update(kokler({t}))
             for claim in claims.get("P18", [])[:20]:
                 name = str(claim.get("mainsnak", {}).get("datavalue", {}).get("value", "")).strip()
                 if name and len(name) < 250:
@@ -10817,32 +10859,67 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                 commons_429 = True
             print(f"ℹ️ Commons kategori araması atlandı: {hata}", flush=True)
 
+    # Commons tam metin araması (İngilizce ad): kategori/P18 yetersizse devreye girer.
+    if ingilizce_ad and not commons_429 and len(bulunan) < limit:
+        arama_terimleri = {
+            "country": ("landscape", "city"),
+            "city": ("skyline", "street"),
+            "landmark": ("exterior", "view"),
+            "nature": ("landscape", "view"),
+            "water": ("sea", "coast"),
+        }.get(tur, ("landscape", "view"))
+        for terim in arama_terimleri:
+            if commons_429 or len(bulunan) >= limit:
+                break
+            try:
+                r = requests.get("https://commons.wikimedia.org/w/api.php",
+                    params={"action": "query", "generator": "search", "gsrsearch": f"{ingilizce_ad} {terim}",
+                            "gsrnamespace": 6, "gsrlimit": 20, "prop": "imageinfo",
+                            "iiprop": "url|mime|extmetadata", "iiurlwidth": 1000, "format": "json"},
+                    headers=headers, timeout=6)
+                if r.status_code == 429:
+                    commons_429 = True
+                r.raise_for_status()
+                for page in r.json().get("query", {}).get("pages", {}).values():
+                    info = (page.get("imageinfo") or [{}])[0]
+                    if str(info.get("mime", "")).startswith("image/"):
+                        title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
+                        desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
+                        ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikimedia Commons search", desc)
+            except Exception as hata:
+                if "429" in str(hata):
+                    commons_429 = True
+                print(f"ℹ️ Commons metin araması atlandı: {hata}", flush=True)
+
     # Commons 429 verdiğinde de çalışan bağımsız görsel sağlayıcı.
-    if len(bulunan) < limit:
+    # Wikimedia yeterli (>=3) sonuç verdiyse alakasız olma riski taşıyan
+    # arama motoru görsellerine hiç başvurulmaz.
+    if len(bulunan) < min(limit, 3):
+        sorgu_adi = ingilizce_ad or konu
         if tur == "water":
-            sorgular = [f"{konu} ocean sea waves coast photography",
-                        f"{konu} aerial ocean water seascape photo",
-                        f"{konu} marine landscape shoreline"]
+            sorgular = [f"{sorgu_adi} ocean sea waves coast photography",
+                        f"{sorgu_adi} aerial ocean water seascape photo",
+                        f"{sorgu_adi} marine landscape shoreline"]
         elif tur == "country":
-            sorgular = [f"{konu} landscape nature photography",
-                        f"{konu} mountains lakes national parks photo",
-                        f"{konu} scenic places travel photography"]
+            sorgular = [f"{sorgu_adi} landscape nature photography",
+                        f"{sorgu_adi} mountains lakes national parks photo",
+                        f"{sorgu_adi} scenic places travel photography"]
         elif tur == "landmark":
-            sorgular = [f"{konu} pyramids monument historic site photography",
-                        f"{konu} landmark architecture exterior photo",
-                        f"{konu} ancient monument ruins photography"]
+            sorgular = [f"{sorgu_adi} pyramids monument historic site photography",
+                        f"{sorgu_adi} landmark architecture exterior photo",
+                        f"{sorgu_adi} ancient monument ruins photography"]
         elif tur == "city":
-            sorgular = [f"{konu} city skyline streets photography",
-                        f"{konu} city architecture photo",
-                        f"{konu} urban panorama travel photography"]
+            sorgular = [f"{sorgu_adi} city skyline streets photography",
+                        f"{sorgu_adi} city architecture photo",
+                        f"{sorgu_adi} urban panorama travel photography"]
         elif tur == "nature":
-            sorgular = [f"{konu} nature landscape photography",
-                        f"{konu} aerial view scenery photo",
-                        f"{konu} natural scenery mountains water"]
+            sorgular = [f"{sorgu_adi} nature landscape photography",
+                        f"{sorgu_adi} aerial view scenery photo",
+                        f"{sorgu_adi} natural scenery mountains water"]
         else:
-            sorgular = [f"{konu} landscape photography",
-                        f"{konu} landmark nature photo",
-                        f"{konu} scenic travel photography"]
+            sorgular = [f"{sorgu_adi} landscape photography",
+                        f"{sorgu_adi} landmark nature photo",
+                        f"{sorgu_adi} scenic travel photography"]
         for sorgu_gorsel in sorgular:
             try:
                 r = requests.get("https://www.bing.com/images/search",
