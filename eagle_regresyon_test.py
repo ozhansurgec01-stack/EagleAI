@@ -1233,6 +1233,49 @@ def karar_motoru_test():
         )
 
 
+    # Günlük dizi izleme beyanları tanıtım veya web araması sayılmamalı.
+    dizi_izleme_beyanlari = (
+        "Dizi izleyeceğim",
+        "Dizi izliyorum",
+        "Bu akşam dizi izleyeceğim",
+        "Dizi izlemek istiyorum",
+    )
+    for soru in dizi_izleme_beyanlari:
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("intent") == "sohbet", (
+            f"Dizi izleme beyanı sohbet olarak kalmadı: {soru} -> {sonuc}"
+        )
+        assert sonuc.get("arac") == "eagle_sohbet", (
+            f"Dizi izleme beyanı yanlış araca yönlendi: {soru} -> {sonuc}"
+        )
+        assert eagle_api._eagle_dizi_sorgu_turu(soru) is None
+        assert not eagle_api.web_arastirma_gerekli(soru)
+
+    # Teşekkür ifadeleri genel web araştırması başlatmamalı.
+    for soru in ("Teşekkürler", "Çok teşekkür ederim", "Sağ ol"):
+        sonuc = eagle_api.eagle_karar_motoru(soru, [])
+        assert sonuc.get("arac") == "eagle_sohbet", (
+            f"Teşekkür ifadesi sohbet olarak kalmadı: {soru} -> {sonuc}"
+        )
+        assert not eagle_api.web_arastirma_gerekli(soru), (
+            f"Teşekkür ifadesi web araması tetikledi: {soru}"
+        )
+
+    # Açık dizi bilgi talebi araştırmaya yönlenmeye devam etmeli.
+    queendom = "Queendom dizisi hakkında bilgi verir misin?"
+    queendom_karari = eagle_api.eagle_karar_motoru(queendom, [])
+    assert queendom_karari.get("intent") == "guncel_bilgi", (
+        f"Açık dizi bilgi isteği yanlış sınıflandırıldı: {queendom_karari}"
+    )
+    assert queendom_karari.get("arac") == "web_arastirma", (
+        f"Dizi bilgi isteğinde web araştırması seçilmedi: {queendom_karari}"
+    )
+    assert eagle_api._eagle_dizi_sorgu_turu(queendom) == "tanitim"
+
+    assert eagle_api._eagle_medya_oneri_istegi("Dizi önerir misin?"), (
+        "Dizi önerisi isteği medya önerisi olarak algılanmadı."
+    )
+
     # Film sorguları: başlık doğrulaması ve yanlış pozitif kontrolleri.
     film_olumlu = [
         "Inception filmi hakkında bilgi ver",
