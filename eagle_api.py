@@ -3152,6 +3152,23 @@ def _eagle_dizi_sorgu_turu(metin):
         return None
     norm = re.sub(r"\s+", " ", norm).strip()
 
+    # "Dizi izleyeceğim / dizi izliyorum / dizi izlemek istiyorum"
+    # bir bilgi veya tanıtım talebi değil, günlük konuşma beyanıdır.
+    # Bu ifadeleri aşağıdaki genel dizi-tanıtım varsayımına düşürme.
+    izleme_beyani = re.search(
+        r"\b(?:dizi|diziyi|diziler|dizileri)\b.*\b"
+        r"(?:izleyecegim|izleyecegiz|izliyorum|izlemek istiyorum|"
+        r"izlemeye gidiyorum|seyredecegim|seyrediyorum)\b",
+        norm,
+    )
+    acik_dizi_istegi = re.search(
+        r"\b(?:oner|oneri|tavsiye|bilgi|hakkinda|konusu|oyuncu|"
+        r"bolum|sezon|hangi|ne zaman|nasil)\b",
+        norm,
+    )
+    if izleme_beyani and not acik_dizi_istegi:
+        return None
+
     # Dizi adı + bölüm numarası + yayın zamanı sorusu.
     # Kullanıcının ayrıca "dizi" demesi gerekmez.
     bolum_eslesmesi = re.search(
@@ -4299,6 +4316,36 @@ akil_motor = eagle_akil_motorunu_kur(
 
 def web_arastirma_gerekli(mesaj):
     """Mesaj güncel internet bilgisi gerektiriyor mu?"""
+    # Günlük konuşma beyanları tek başına web araştırması başlatmaz.
+    import unicodedata
+    norm = str(mesaj or "").casefold()
+    norm = unicodedata.normalize("NFKD", norm)
+    norm = "".join(c for c in norm if not unicodedata.combining(c))
+    norm = re.sub(r"[^a-z0-9]+", " ", norm).strip()
+
+    sosyal = {
+        "tesekkur", "tesekkurler", "cok tesekkurler",
+        "tesekkur ederim", "cok tesekkur ederim",
+        "sagol", "sag ol", "cok sagol", "cok sag ol",
+        "eyvallah", "thanks", "thank you",
+    }
+    if norm in sosyal:
+        return False
+
+    izleme_beyani = re.search(
+        r"\b(?:dizi|diziyi|diziler|dizileri)\b.*\b"
+        r"(?:izleyecegim|izleyecegiz|izliyorum|izlemek istiyorum|"
+        r"izlemeye gidiyorum|seyredecegim|seyrediyorum)\b",
+        norm,
+    )
+    acik_istek = re.search(
+        r"\b(?:oner|oneri|tavsiye|bilgi|hakkinda|konusu|oyuncu|"
+        r"bolum|sezon|hangi|ne zaman|nasil)\b",
+        norm,
+    )
+    if izleme_beyani and not acik_istek:
+        return False
+
     kelimeler = [
         "şimdi", "şu an",
         "son dakika",
@@ -10389,6 +10436,21 @@ def eagle_baglam_yonlendir(mesaj, karar, sohbet_baglam, borc_modulu, gecmis=None
 
     return karar
 
+def _commons_eser_mi(info):
+    # Commons kategorilerinde fotograf olmayan eser turlerini eler.
+    meta = (info or {}).get("extmetadata", {}) or {}
+    kategoriler = str((meta.get("Categories") or {}).get("value", "")).casefold()
+    if not kategoriler:
+        return False
+    isaretler = (
+        "painting", "paintings", "drawing", "drawings", "engraving", "etching",
+        "lithograph", "woodcut", "illustration", "watercolor", "watercolour",
+        "sketch", "maps of", "map of", "flags of", "flag of",
+        "coats of arms", "coat of arms", "postage stamp", "banknote",
+        "poster", "manuscript",
+    )
+    return any(x in kategoriler for x in isaretler)
+
 def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     """Yer tanıtımı galerisi: Wikidata/Commons ve bağımsız Bing Görseller yedeği."""
     import html
@@ -10815,6 +10877,8 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                     continue
                 title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
                 desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
+                if _commons_eser_mi(info):
+                    continue
                 ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikidata P18 / Wikimedia Commons", desc)
         except Exception as hata:
             if "429" in str(hata):
@@ -10853,6 +10917,8 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                 if str(info.get("mime", "")).startswith("image/"):
                     title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
                     desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
+                    if _commons_eser_mi(info):
+                        continue
                     ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikimedia Commons category", desc)
         except Exception as hata:
             if "429" in str(hata):
@@ -10885,6 +10951,8 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                     if str(info.get("mime", "")).startswith("image/"):
                         title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
                         desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
+                        if _commons_eser_mi(info):
+                            continue
                         ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikimedia Commons search", desc)
             except Exception as hata:
                 if "429" in str(hata):
@@ -10963,6 +11031,61 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     _eagle_yer_gorsellerini_getir._cache = cache
     print(f"🖼️ Yer galerisi: {konu!r} için {len(sonuc)} görsel adayı bulundu.", flush=True)
     return sonuc
+
+import threading
+
+_GALERI_HAVUZU = None
+_GALERI_HAVUZU_KILIT = threading.Lock()
+_GALERI_SEMAFORU = threading.BoundedSemaphore(2)
+_GALERI_SURE_SN = 18
+
+
+def _eagle_yer_gorsellerini_guvenli_getir(soru, cevap=""):
+    # Galeri hatasini sohbetten ayirir; kapasiteyi sinirli tutar.
+    import concurrent.futures
+    import traceback
+
+    if not _GALERI_SEMAFORU.acquire(blocking=False):
+        print("Yer galerisi yogun; sohbet gorselsiz devam ediyor.", flush=True)
+        return []
+
+    try:
+        global _GALERI_HAVUZU
+        with _GALERI_HAVUZU_KILIT:
+            if _GALERI_HAVUZU is None:
+                _GALERI_HAVUZU = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=2, thread_name_prefix="eagle-galeri"
+                )
+
+        def _galeri_isini_yap():
+            try:
+                return _eagle_yer_gorsellerini_getir(soru, cevap)
+            finally:
+                # Timeout olsa da is gercekten bitince kapasite serbest kalir.
+                _GALERI_SEMAFORU.release()
+
+        gelecek = _GALERI_HAVUZU.submit(_galeri_isini_yap)
+    except Exception:
+        _GALERI_SEMAFORU.release()
+        print("Yer galerisi baslatma hatasi:\n" + traceback.format_exc(), flush=True)
+        return []
+
+    try:
+        return gelecek.result(timeout=_GALERI_SURE_SN)
+    except concurrent.futures.TimeoutError:
+        # cancel() calisan thread'i durdurmaz; semaphore worker bitene kadar
+        # tutuldugu icin timeout sonrasi isler sinirsiz kuyruga girmez.
+        # Arka plan görevi tamamlanınca semaforu kendisi serbest bırakır.
+        print(
+            f"Yer galerisi {_GALERI_SURE_SN} sn icinde bitmedi; sohbet gorselsiz suruyor.",
+            flush=True,
+        )
+        return []
+    except Exception:
+        print("Yer galerisi hatasi:\n" + traceback.format_exc(), flush=True)
+        return []
+
+
 
 @app.post("/api/sohbet")
 def sohbet():
@@ -11120,6 +11243,27 @@ def sohbet():
             "ok": False,
             "error": "Mesaj boş olamaz."
         }), 400
+
+    # Teşekkür kısa ve tamamlanmış bir sosyal mesajdır.
+    # Sohbet motorunun bunu yeni konu açma veya yönlendirme fırsatı
+    # olarak yorumlamasını engelle; yalnızca doğal karşılık ver.
+    tesekkur_norm = _eagle_tmdb_norm(mesaj)
+    if tesekkur_norm in {
+        "tesekkur", "tesekkurler", "cok tesekkurler",
+        "tesekkur ederim", "cok tesekkur ederim",
+        "sagol", "sag ol", "cok sagol", "cok sag ol",
+        "eyvallah", "thanks", "thank you",
+    }:
+        cevap = "Rica ederim! 😊"
+        sohbet_hafizaya_ekle(mesaj, cevap, konu="genel_sohbet")
+        return jsonify({
+            "ok": True,
+            "answer": cevap,
+            "eagle_direct": True,
+            "web_search": False,
+            "merkez_motor": False,
+            "memory_count": len(hafiza_yukle()),
+        })
 
     hatirla_desenleri = ["hatırla:", "hatirla:", "unutma:"]
     sil_desenleri = ["hafızadan sil:", "hafizadan sil:", "hafızadan çıkar:", "hafizadan cikar:"]
@@ -14239,7 +14383,7 @@ def sohbet():
 
                     finans_verisi = finans_verisini_ayristir(merkez_cevap)
                     yer_gorselleri = (
-                        _eagle_yer_gorsellerini_getir(mesaj, merkez_cevap)
+                        _eagle_yer_gorsellerini_guvenli_getir(mesaj, merkez_cevap)
                         if not finans_verisi else None
                     )
                     yanit_verisi = {
