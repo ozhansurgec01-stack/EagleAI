@@ -2312,6 +2312,7 @@ class EagleMerkezMotoru:
                 ]
 
                 kaynaklar_hizli = []
+                okunan_sayfa_sayisi = 0
                 for v in list(veriler or [])[:15]:
                     if not isinstance(v, dict):
                         continue
@@ -2391,8 +2392,10 @@ class EagleMerkezMotoru:
                     if (
                         (tam_baslik or baslik_eslesme > 0)
                         and (genel_sayfa_okuyucu or sayfa_okuyucu)
+                        and okunan_sayfa_sayisi < 2
                     ):
                         if url:
+                            okunan_sayfa_sayisi += 1
                             try:
                                 sayfa_metni = str((genel_sayfa_okuyucu or sayfa_okuyucu)(url) or "").strip()
                                 if sayfa_metni:

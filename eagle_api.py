@@ -7253,7 +7253,7 @@ def web_arastir(sorgu, limit=6):
         return []
 
 
-def web_sayfa_oku(url, limit=7000, metaveri_dahil=True):
+def web_sayfa_oku(url, limit=7000, metaveri_dahil=True, timeout=12):
     """Web sayfasını indirir ve temiz metne dönüştürür."""
     try:
         url = web_kaynak_url(url)
@@ -7273,7 +7273,7 @@ def web_sayfa_oku(url, limit=7000, metaveri_dahil=True):
         cevap = requests.get(
             url,
             headers=headers,
-            timeout=12
+            timeout=timeout
         )
 
         if cevap.status_code != 200:
@@ -14204,7 +14204,7 @@ def sohbet():
                 karar=karar,
                 web_verisi=web_verisi,
                 sayfa_okuyucu=web_sayfa_oku,
-                genel_sayfa_okuyucu=lambda url: web_sayfa_oku(url, metaveri_dahil=False),
+                genel_sayfa_okuyucu=lambda url: web_sayfa_oku(url, metaveri_dahil=False, timeout=(3, 5)),
                 web_arayici=web_arastir,
             )
 
