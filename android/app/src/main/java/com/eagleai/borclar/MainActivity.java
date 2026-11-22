@@ -2301,13 +2301,49 @@ private void sohbetYukle(String id) {
 
         if (takimlar.isEmpty()) return false;
 
+        final float yogunluk = getResources().getDisplayMetrics().density;
+        final int dp = (int) (yogunluk + 0.5f);
+        final int antrasit = Color.rgb(245, 248, 252);
+
         TextView baslik = new TextView(this);
-        baslik.setText("🏟️  SÜPER LİG PUAN DURUMU");
+        baslik.setText("🏆  SÜPER LİG PUAN DURUMU");
         baslik.setTextSize(18);
         baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        baslik.setTextColor(Color.rgb(25, 65, 115));
-        baslik.setPadding(2, 2, 2, 14);
+        baslik.setTextColor(Color.rgb(35, 48, 65));
+        baslik.setPadding(0, 4 * dp, 0, 12 * dp);
         kutu.addView(baslik);
+
+        android.widget.HorizontalScrollView kaydir =
+                new android.widget.HorizontalScrollView(this);
+        kaydir.setHorizontalScrollBarEnabled(false);
+        kaydir.setFillViewport(true);
+
+        LinearLayout tablo = new LinearLayout(this);
+        tablo.setOrientation(LinearLayout.VERTICAL);
+        tablo.setBackgroundColor(antrasit);
+        tablo.setPadding(5 * dp, 5 * dp, 5 * dp, 5 * dp);
+
+        String[] basliklar = {"SIRA", "TAKIM", "OM", "G", "B", "M", "P"};
+        int[] genislikler = {34, 150, 38, 34, 34, 34, 42};
+
+        LinearLayout baslikSatiri = new LinearLayout(this);
+        baslikSatiri.setOrientation(LinearLayout.HORIZONTAL);
+        baslikSatiri.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        baslikSatiri.setBackgroundColor(Color.rgb(224, 232, 241));
+
+        for (int i = 0; i < basliklar.length; i++) {
+            TextView hucre = new TextView(this);
+            hucre.setText(basliklar[i]);
+            hucre.setTextSize(10);
+            hucre.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            hucre.setTextColor(Color.rgb(48, 64, 82));
+            hucre.setGravity(android.view.Gravity.CENTER);
+            hucre.setPadding(2 * dp, 11 * dp, 2 * dp, 11 * dp);
+            baslikSatiri.addView(hucre, new LinearLayout.LayoutParams(
+                    genislikler[i] * dp,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+        }
+        tablo.addView(baslikSatiri);
 
         for (String[] takim : takimlar) {
             int sira;
@@ -2317,114 +2353,120 @@ private void sohbetYukle(String id) {
                 continue;
             }
 
-            LinearLayout kart = new LinearLayout(this);
-            kart.setOrientation(LinearLayout.VERTICAL);
-            kart.setPadding(11, 10, 11, 10);
+            LinearLayout satir = new LinearLayout(this);
+            satir.setOrientation(LinearLayout.HORIZONTAL);
+            satir.setGravity(android.view.Gravity.CENTER_VERTICAL);
 
-            android.graphics.drawable.GradientDrawable kartArkaPlan =
-                    new android.graphics.drawable.GradientDrawable();
-            kartArkaPlan.setColor(Color.rgb(248, 251, 255));
-            kartArkaPlan.setCornerRadius(15);
-            kartArkaPlan.setStroke(1, Color.rgb(222, 233, 245));
-            kart.setBackground(kartArkaPlan);
-
-            LinearLayout ustSatir = new LinearLayout(this);
-            ustSatir.setOrientation(LinearLayout.HORIZONTAL);
-            ustSatir.setGravity(android.view.Gravity.CENTER_VERTICAL);
-
-            int siraRengi;
+            int satirRengi = Color.rgb(248, 250, 252);
             if (sira == 1) {
-                siraRengi = Color.rgb(238, 176, 55);
+                satirRengi = Color.rgb(255, 241, 204);
             } else if (sira == 2) {
-                siraRengi = Color.rgb(48, 158, 177);
+                satirRengi = Color.rgb(226, 240, 248);
             } else if (sira == 3) {
-                siraRengi = Color.rgb(239, 125, 91);
-            } else {
-                siraRengi = Color.rgb(54, 105, 174);
+                satirRengi = Color.rgb(247, 232, 223);
+            } else if (sira >= Math.max(16, takimlar.size() - 2)) {
+                satirRengi = Color.rgb(255, 229, 229);
             }
+            satir.setBackgroundColor(satirRengi);
 
-            TextView siraRozeti = new TextView(this);
-            siraRozeti.setText(takim[0]);
-            siraRozeti.setTextColor(Color.WHITE);
-            siraRozeti.setTextSize(13);
-            siraRozeti.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            siraRozeti.setGravity(android.view.Gravity.CENTER);
-            siraRozeti.setMinWidth(34);
-            siraRozeti.setPadding(8, 7, 8, 7);
+            TextView siraHucre = new TextView(this);
+            siraHucre.setText(String.valueOf(sira));
+            siraHucre.setTextSize(12);
+            siraHucre.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            siraHucre.setTextColor(Color.rgb(35, 48, 65));
+            siraHucre.setGravity(android.view.Gravity.CENTER);
+            satir.addView(siraHucre, new LinearLayout.LayoutParams(
+                    genislikler[0] * dp, 42 * dp));
 
-            android.graphics.drawable.GradientDrawable rozetArkaPlan =
-                    new android.graphics.drawable.GradientDrawable();
-            rozetArkaPlan.setColor(siraRengi);
-            rozetArkaPlan.setCornerRadius(11);
-            siraRozeti.setBackground(rozetArkaPlan);
-            ustSatir.addView(siraRozeti);
+            LinearLayout takimHucre = new LinearLayout(this);
+            takimHucre.setOrientation(LinearLayout.HORIZONTAL);
+            takimHucre.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            takimHucre.setPadding(3 * dp, 0, 3 * dp, 0);
+
+            String ad = takim[1] == null ? "" : takim[1].trim();
+            String kucukAd = ad.toLowerCase(java.util.Locale.ROOT)
+                        .replaceAll("\\p{M}+", "")
+                    .replace("ı", "i").replace("ş", "s")
+                    .replace("ğ", "g").replace("ü", "u")
+                    .replace("ö", "o").replace("ç", "c");
+
+            String logoAdi = null;
+            if (kucukAd.contains("galatasaray")) logoAdi = "logo_galatasaray";
+            else if (kucukAd.contains("trabzon")) logoAdi = "logo_trabzonspor";
+            else if (kucukAd.contains("besiktas")) logoAdi = "logo_besiktas";
+            else if (kucukAd.contains("amed")) logoAdi = "logo_amed";
+            else if (kucukAd.contains("kasimpasa")) logoAdi = "logo_kasimpasa";
+            else if (kucukAd.contains("fenerbahce")) logoAdi = "logo_fenerbahce";
+            else if (kucukAd.contains("kocaeli")) logoAdi = "logo_kocaelispor";
+            else if (kucukAd.contains("goztepe")) logoAdi = "logo_goztepe";
+            else if (kucukAd.contains("basaksehir")) logoAdi = "logo_basaksehir";
+            else if (kucukAd.contains("rize")) logoAdi = "logo_rizespor";
+            else if (kucukAd.contains("corum")) logoAdi = "logo_corum";
+            else if (kucukAd.contains("genclerbirligi")) logoAdi = "logo_genclerbirligi";
+            else if (kucukAd.contains("erzurum")) logoAdi = "logo_erzurumspor";
+            else if (kucukAd.contains("alanya")) logoAdi = "logo_alanyaspor";
+            else if (kucukAd.contains("konya")) logoAdi = "logo_konyaspor";
+            else if (kucukAd.contains("gaziantep")) logoAdi = "logo_gaziantep_fk";
+            else if (kucukAd.contains("samsun")) logoAdi = "logo_samsunspor";
+            else if (kucukAd.contains("eyup")) logoAdi = "logo_eyupspor";
+
+            android.widget.ImageView logo = new android.widget.ImageView(this);
+            if (logoAdi != null) {
+                int logoId = getResources().getIdentifier(
+                        logoAdi, "drawable", getPackageName());
+                if (logoId != 0) {
+                    logo.setImageResource(logoId);
+                }
+            }
+            logo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+            takimHucre.addView(logo, new LinearLayout.LayoutParams(
+                    25 * dp, 25 * dp));
 
             TextView takimAdi = new TextView(this);
-            takimAdi.setText(takim[1]);
-            takimAdi.setTextSize(14);
+            takimAdi.setText(ad);
+            takimAdi.setTextSize(11);
             takimAdi.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            takimAdi.setTextColor(Color.rgb(39, 53, 73));
-            takimAdi.setPadding(10, 0, 6, 0);
-            ustSatir.addView(takimAdi, new LinearLayout.LayoutParams(
+            takimAdi.setTextColor(Color.rgb(35, 48, 65));
+            takimAdi.setSingleLine(true);
+            takimAdi.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            takimAdi.setPadding(5 * dp, 0, 2 * dp, 0);
+            takimHucre.addView(takimAdi, new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-            TextView puanRozeti = new TextView(this);
-            puanRozeti.setText(takim[2] + " P");
-            puanRozeti.setTextSize(14);
-            puanRozeti.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            puanRozeti.setTextColor(Color.rgb(25, 105, 145));
-            puanRozeti.setGravity(android.view.Gravity.CENTER);
-            puanRozeti.setPadding(10, 8, 10, 8);
+            satir.addView(takimHucre, new LinearLayout.LayoutParams(
+                    genislikler[1] * dp, 42 * dp));
 
-            android.graphics.drawable.GradientDrawable puanArkaPlan =
-                    new android.graphics.drawable.GradientDrawable();
-            puanArkaPlan.setColor(Color.rgb(224, 245, 250));
-            puanArkaPlan.setCornerRadius(12);
-            puanRozeti.setBackground(puanArkaPlan);
-            ustSatir.addView(puanRozeti);
+            String[] degerler = {
+                    takim[3], takim[4], takim[5], takim[6], takim[2]
+            };
 
-            kart.addView(ustSatir);
-
-            if (!takim[3].isEmpty()) {
-                TextView macBilgisi = new TextView(this);
-                macBilgisi.setText(
-                        takim[3] + " Maç    " +
-                        takim[4] + " G   " +
-                        takim[5] + " B   " +
-                        takim[6] + " M"
-                );
-                macBilgisi.setTextSize(11);
-                macBilgisi.setTextColor(Color.rgb(92, 108, 128));
-                macBilgisi.setPadding(44, 9, 2, 2);
-                kart.addView(macBilgisi);
-
-                String averaj = takim[9];
-                if (!averaj.isEmpty()) {
-                    try {
-                        int av = Integer.parseInt(averaj);
-                        averaj = av > 0 ? "+" + av : String.valueOf(av);
-                    } catch (Exception ignored) {
-                    }
-                }
-
-                TextView golBilgisi = new TextView(this);
-                golBilgisi.setText(
-                        "Atılan " + takim[7] +
-                        "   Yenilen " + takim[8] +
-                        "   AV " + averaj
-                );
-                golBilgisi.setTextSize(11);
-                golBilgisi.setTextColor(Color.rgb(92, 108, 128));
-                golBilgisi.setPadding(44, 2, 2, 1);
-                kart.addView(golBilgisi);
+            for (int i = 0; i < degerler.length; i++) {
+                TextView hucre = new TextView(this);
+                hucre.setText(degerler[i] == null || degerler[i].isEmpty()
+                        ? "-" : degerler[i]);
+                hucre.setTextSize(i == 4 ? 12 : 11);
+                hucre.setTypeface(Typeface.DEFAULT,
+                        i == 4 ? Typeface.BOLD : Typeface.NORMAL);
+                hucre.setTextColor(i == 4
+                        ? Color.rgb(156, 100, 18)
+                        : Color.rgb(55, 67, 82));
+                hucre.setGravity(android.view.Gravity.CENTER);
+                satir.addView(hucre, new LinearLayout.LayoutParams(
+                        genislikler[i + 2] * dp, 42 * dp));
             }
 
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            lp.bottomMargin = 7;
-            kutu.addView(kart, lp);
+            tablo.addView(satir);
+
+            android.view.View ayirici = new android.view.View(this);
+            ayirici.setBackgroundColor(Color.rgb(220, 227, 235));
+            tablo.addView(ayirici, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 1));
         }
+
+        kaydir.addView(tablo);
+        kutu.addView(kaydir, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT));
 
         return true;
     }
@@ -4366,6 +4408,40 @@ JSONObject item = new JSONObject();
 
     private void metniSesliOku(String metin) {
         if (konusmaMotoru == null || !sesAcik) {
+            return;
+        }
+
+        // Süper Lig tablosunda yalnızca takım adları ve puanları seslendirilir.
+        if (metin != null && metin.contains("EAGLE SPOR")
+                && metin.contains("SÜPER LİG PUAN DURUMU")) {
+            StringBuilder takimPuanlari = new StringBuilder();
+
+            for (String satir : metin.split("\\n")) {
+                String temizSatir = satir.trim();
+                if (!temizSatir.startsWith("TAKIM|")) continue;
+
+                String[] alanlar = temizSatir.split("\\|", -1);
+                if (alanlar.length >= 11
+                        && !alanlar[2].trim().isEmpty()
+                        && alanlar[10].trim().matches("\\d+")) {
+                    if (takimPuanlari.length() > 0) {
+                        takimPuanlari.append(". ");
+                    }
+                    takimPuanlari.append(alanlar[2].trim())
+                            .append(" ")
+                            .append(alanlar[10].trim())
+                            .append(" puan");
+                }
+            }
+
+            if (takimPuanlari.length() > 0) {
+                konusmaMotoru.speak(
+                        takimPuanlari.toString(),
+                        TextToSpeech.QUEUE_FLUSH,
+                        null,
+                        "eagle_cevap"
+                );
+            }
             return;
         }
 
