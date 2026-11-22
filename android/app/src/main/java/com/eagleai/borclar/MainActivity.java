@@ -2758,7 +2758,8 @@ private void sohbetYukle(String id) {
                         android.net.Uri uri = android.net.Uri.parse(adres);
 
                         if ("https".equalsIgnoreCase(uri.getScheme())
-                                && "upload.wikimedia.org".equalsIgnoreCase(uri.getHost())) {
+                                && ("upload.wikimedia.org".equalsIgnoreCase(uri.getHost())
+                                || "thumb.wikimedia.org".equalsIgnoreCase(uri.getHost()))) {
                             android.util.Log.i("EagleGorsel",
                                     "Orijinal backend görseli doğrudan kullanılacak.");
                             dogrudanWikimediaGorseliEkle(
@@ -2949,7 +2950,8 @@ try {
                         android.net.Uri gorselUri = android.net.Uri.parse(gorselUrl);
 
                         if ("https".equalsIgnoreCase(gorselUri.getScheme())
-                                && "upload.wikimedia.org".equalsIgnoreCase(gorselUri.getHost())) {
+                                && ("upload.wikimedia.org".equalsIgnoreCase(gorselUri.getHost())
+                                || "thumb.wikimedia.org".equalsIgnoreCase(gorselUri.getHost()))) {
                             JSONObject dogrudanItem = new JSONObject();
                             dogrudanItem.put("title", konu + " — doğrudan kaynak görseli");
                             dogrudanItem.put("thumb", gorselUrl);
@@ -3434,7 +3436,7 @@ JSONObject item = new JSONObject();
             baslik.setText("🖼️ Görseller");
             baslik.setTextSize(14);
             baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-            baslik.setTextColor(Color.WHITE);
+            baslik.setTextColor(Color.GRAY);
             galeri.addView(baslik);
 
             String afisAdresi = "";
@@ -3453,6 +3455,7 @@ JSONObject item = new JSONObject();
                 String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
                 boolean tmdbAdres = "image.tmdb.org".equals(host);
                 boolean wikimediaAdres = "upload.wikimedia.org".equals(host)
+                        || "thumb.wikimedia.org".equals(host)
                         || "commons.wikimedia.org".equals(host);
                 boolean bingAdres = host.endsWith(".mm.bing.net");
                 if (!"https".equalsIgnoreCase(uri.getScheme())
@@ -3521,9 +3524,13 @@ JSONObject item = new JSONObject();
                             });
                         } else {
                             android.util.Log.w("EagleGorsel", "Görsel indirilemedi: " + adres);
+                            if (!isFinishing()) runOnUiThread(() ->
+                                    etiketView.setText(etiketView.getText() + "  ⚠️ yüklenemedi"));
                         }
                     } catch (Exception hata) {
                         android.util.Log.e("EagleGorsel", "Görsel yüklenemedi: " + adres, hata);
+                        if (!isFinishing()) runOnUiThread(() ->
+                                etiketView.setText(etiketView.getText() + "  ⚠️ yüklenemedi"));
                     }
                 });
             }
