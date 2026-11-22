@@ -10451,6 +10451,16 @@ def _commons_eser_mi(info):
     )
     return any(x in kategoriler for x in isaretler)
 
+def _wikimedia_user_agent():
+    """Wikimedia API politikası iletişim bilgisi ister; genel bir User-Agent
+    daha sert sınırlanır. Ortam değişkeni: EAGLE_WIKIMEDIA_CONTACT."""
+    import os
+    iletisim = os.getenv("EAGLE_WIKIMEDIA_CONTACT", "").strip()
+    if iletisim:
+        return f"EagleAI/1.0 (place image gallery; {iletisim})"
+    return "EagleAI/1.0 (place image gallery)"
+
+
 def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     """Yer tanıtımı galerisi: Wikidata/Commons ve bağımsız Bing Görseller yedeği."""
     import html
@@ -10487,7 +10497,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         return [dict(x) for x in cached[1]]
 
     headers = {
-        "User-Agent": "EagleAI/1.0 (place image gallery)",
+        "User-Agent": _wikimedia_user_agent(),
         "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
         "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
     }
@@ -10499,9 +10509,17 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     ingilizce_ad = ""
     etiketler, aciklama, wikidata_ok = [konu], "", False
     try:
-        r = requests.get("https://www.wikidata.org/w/api.php",
-            params={"action": "wbsearchentities", "search": konu, "language": "tr", "uselang": "tr", "type": "item", "limit": 6, "format": "json"},
-            headers=headers, timeout=5)
+        for _deneme in range(2):
+            r = requests.get("https://www.wikidata.org/w/api.php",
+                params={"action": "wbsearchentities", "search": konu, "language": "tr", "uselang": "tr", "type": "item", "limit": 6, "format": "json"},
+                headers=headers, timeout=5)
+            if r.status_code != 429 or _deneme == 1:
+                break
+            # Hız sınırı: Retry-After süresi (en fazla 2 sn) kadar bekleyip bir kez daha dene.
+            try:
+                time.sleep(min(2.0, float(r.headers.get("Retry-After", 1))))
+            except (TypeError, ValueError):
+                time.sleep(1.0)
         r.raise_for_status()
         adaylar = r.json().get("search", [])
         wikidata_ok = True
@@ -11027,8 +11045,11 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         sonuc.append(item)
         if len(sonuc) >= limit:
             break
-    cache[cache_key] = (now, [dict(x) for x in sonuc])
-    _eagle_yer_gorsellerini_getir._cache = cache
+    # Wikidata/Commons hız sınırına takıldıysa (429) eksik sonucu önbelleğe alma;
+    # aksi halde bozuk (yalnızca Bing) sonuç 15 dakika boyunca geri döner.
+    if wikidata_ok and not commons_429:
+        cache[cache_key] = (now, [dict(x) for x in sonuc])
+        _eagle_yer_gorsellerini_getir._cache = cache
     print(f"🖼️ Yer galerisi: {konu!r} için {len(sonuc)} görsel adayı bulundu.", flush=True)
     return sonuc
 
