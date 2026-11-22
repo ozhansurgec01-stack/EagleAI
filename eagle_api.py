@@ -4915,91 +4915,122 @@ def super_lig_puan_durumu_getir():
     """TFF resmi kaynağından güncel Süper Lig puan durumunu getirir."""
     try:
         url = "https://www.tff.org/Default.aspx?pageID=198"
-
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Linux; Android 15) "
-                "AppleWebKit/537.36 "
-                "Chrome/140 Mobile Safari/537.36"
+                "AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36"
             ),
             "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
         }
 
-        cevap = requests.get(
-            url,
-            headers=headers,
-            timeout=15
-        )
-
+        cevap = requests.get(url, headers=headers, timeout=15)
         if cevap.status_code != 200:
-            print(
-                f"⚠️ TFF puan durumu HTTP {cevap.status_code}",
-                flush=True
-            )
+            print(f"⚠️ TFF puan durumu HTTP {cevap.status_code}", flush=True)
             return []
 
         soup = BeautifulSoup(cevap.text, "html.parser")
         tablo = soup.select_one("table.s-table")
-
         if not tablo:
             print("⚠️ TFF puan tablosu bulunamadı", flush=True)
             return []
 
         sonuc = []
+        gorunen_adlar = {
+            "GALATASARAY": "Galatasaray",
+            "FENERBAHCE": "Fenerbahçe",
+            "BESIKTAS": "Beşiktaş",
+            "TRABZONSPOR": "Trabzonspor",
+            "AMED SPORTIF FAALIYETLER": "Amedspor",
+            "AMEDSPOR": "Amedspor",
+            "AMED": "Amedspor",
+            "CAYKUR RIZESPOR": "Çaykur Rizespor",
+            "GAZIANTEP FUTBOL KULUBU": "Gaziantep FK",
+            "KASIMPASA": "Kasımpaşa",
+            "KONYASPOR": "Konyaspor",
+            "SAMSUNSPOR": "Samsunspor",
+            "ANTALYASPOR": "Antalyaspor",
+            "ALANYASPOR": "Alanyaspor",
+            "EYUPSPOR": "Eyüpspor",
+            "GOZTEPE": "Göztepe",
+            "KAYSERISPOR": "Kayserispor",
+            "GENCLERBIRLIGI": "Gençlerbirliği",
+            "FATIH KARAGUMRUK": "Fatih Karagümrük",
+            "ISTANBUL BASAKSEHIR": "Başakşehir",
+            "BASAKSEHIR": "Başakşehir"
+        }
+
+        def gorunen_takim_adi(ad):
+            temiz = re.sub(
+                r"\s+(?:A\.Ş\.?|A\.S\.?|SPORTİF FAALİYETLERİ?|"
+                r"SPORTIF FAALIYETLERI?)\s*$",
+                "",
+                ad,
+                flags=re.IGNORECASE
+            ).strip()
+            anahtar = temiz.upper()
+            anahtar = (anahtar.replace("İ", "I")
+                              .replace("Ş", "S")
+                              .replace("Ğ", "G")
+                              .replace("Ü", "U")
+                              .replace("Ö", "O")
+                              .replace("Ç", "C"))
+            return gorunen_adlar.get(anahtar, temiz.title())
 
         for satir in tablo.select("tr"):
             hucreler = satir.find_all("td")
-
             if len(hucreler) < 9:
                 continue
 
             takim_linki = hucreler[0].find("a")
-            if not takim_linki:
-                continue
-
-            takim_metin = takim_linki.get_text(" ", strip=True)
-
-            eslesme = re.match(
-                r"^\s*(\d+)\s*\.\s*(.+?)\s*$",
-                takim_metin
+            takim_metin = (
+                takim_linki.get_text(" ", strip=True)
+                if takim_linki else hucreler[0].get_text(" ", strip=True)
             )
 
+            eslesme = re.match(r"^\s*(\d+)\s*\.\s*(.+?)\s*$", takim_metin)
             if not eslesme:
                 continue
 
-            sira = int(eslesme.group(1))
-            takim = eslesme.group(2).strip()
-
-            puan_metin = hucreler[-1].get_text(" ", strip=True)
-
-            if not puan_metin.isdigit():
+            try:
+                sira = int(eslesme.group(1))
+                takim_orijinal = eslesme.group(2).strip()
+                degerler = [
+                    int(re.search(r"-?\d+", hucre.get_text(" ", strip=True)).group())
+                    for hucre in hucreler[1:9]
+                ]
+            except (ValueError, AttributeError, TypeError):
                 continue
 
-            puan = int(puan_metin)
+            oynanan, galibiyet, beraberlik, maglubiyet, atilan, yenilen, averaj, puan = degerler
+            takim = gorunen_takim_adi(takim_orijinal)
 
             sonuc.append({
                 "sira": sira,
                 "takim": takim,
+                "takim_orijinal": takim_orijinal,
+                "oynanan": oynanan,
+                "galibiyet": galibiyet,
+                "beraberlik": beraberlik,
+                "maglubiyet": maglubiyet,
+                "atilan": atilan,
+                "yenilen": yenilen,
+                "averaj": averaj,
                 "puan": puan,
                 "title": f"{sira}. {takim} - {puan} puan",
                 "url": url,
-                "snippet": f"{sira}. {takim} | {puan} puan"
+                "snippet": (
+                    f"{sira}. {takim} | {oynanan} maç | "
+                    f"{galibiyet}G {beraberlik}B {maglubiyet}M | "
+                    f"{atilan}A {yenilen}Y | {averaj:+d} AV | {puan} puan"
+                )
             })
 
         sonuc.sort(key=lambda x: x["sira"])
-
-        print(
-            f"✅ TFF Süper Lig puan durumu: {len(sonuc)} takım",
-            flush=True
-        )
-
+        print(f"✅ TFF Süper Lig puan durumu: {len(sonuc)} takım", flush=True)
         return sonuc
 
     except Exception as hata:
-        print(
-            f"⚠️ TFF Süper Lig puan durumu hatası: {hata}",
-            flush=True
-        )
+        print(f"⚠️ TFF Süper Lig puan durumu hatası: {hata}", flush=True)
         return []
 
 
@@ -13021,7 +13052,7 @@ def sohbet():
             ])
 
 
-            if super_lig_mi and puan_durumu_istegi and not web_verisi:
+            if super_lig_mi and puan_durumu_istegi:
                 web_verisi = super_lig_puan_durumu_getir()
             elif super_lig_mi or (
                 not web_verisi
@@ -14347,7 +14378,19 @@ def sohbet():
             puan = str(takim.get("puan", "")).strip()
 
             if sira and ad and puan:
-                satirlar.append(f"{sira}. {ad} — {puan} puan")
+                alanlar = [
+                    sira,
+                    ad,
+                    str(takim.get("oynanan", "")),
+                    str(takim.get("galibiyet", "")),
+                    str(takim.get("beraberlik", "")),
+                    str(takim.get("maglubiyet", "")),
+                    str(takim.get("atilan", "")),
+                    str(takim.get("yenilen", "")),
+                    str(takim.get("averaj", "")),
+                    puan
+                ]
+                satirlar.append("TAKIM|" + "|".join(alanlar))
 
         if len(satirlar) > 4:
             return jsonify({
