@@ -2265,22 +2265,37 @@ private void sohbetYukle(String id) {
 
 
     private boolean superLigPuanKartlariEkle(LinearLayout kutu, String metin) {
-        if (!metin.contains("EAGLE SPOR")
+        if (metin == null || !metin.contains("EAGLE SPOR")
                 || !metin.contains("SÜPER LİG PUAN DURUMU")) {
             return false;
         }
 
         java.util.ArrayList<String[]> takimlar = new java.util.ArrayList<>();
-        java.util.regex.Pattern desen = java.util.regex.Pattern.compile(
-                "^(\\d+)\\.\\s+(.+?)\\s+—\\s+(\\d+)\\s+puan$"
-        );
 
         for (String satir : metin.split("\\n")) {
-            java.util.regex.Matcher m = desen.matcher(satir.trim());
-            if (m.matches()) {
-                takimlar.add(new String[]{
-                        m.group(1), m.group(2).trim(), m.group(3)
-                });
+            String temiz = satir.trim();
+
+            if (temiz.startsWith("TAKIM|")) {
+                String[] alanlar = temiz.split("\\|", -1);
+                if (alanlar.length >= 11) {
+                    takimlar.add(new String[]{
+                            alanlar[1], alanlar[2], alanlar[10],
+                            alanlar[3], alanlar[4], alanlar[5],
+                            alanlar[6], alanlar[7], alanlar[8], alanlar[9]
+                    });
+                }
+            } else {
+                java.util.regex.Matcher m =
+                        java.util.regex.Pattern.compile(
+                                "^(\\d+)\\.\\s+(.+?)\\s+—\\s+(\\d+)\\s+puan$"
+                        ).matcher(temiz);
+
+                if (m.matches()) {
+                    takimlar.add(new String[]{
+                            m.group(1), m.group(2), m.group(3),
+                            "", "", "", "", "", "", ""
+                    });
+                }
             }
         }
 
@@ -2295,19 +2310,27 @@ private void sohbetYukle(String id) {
         kutu.addView(baslik);
 
         for (String[] takim : takimlar) {
-            int sira = Integer.parseInt(takim[0]);
+            int sira;
+            try {
+                sira = Integer.parseInt(takim[0]);
+            } catch (Exception e) {
+                continue;
+            }
 
-            LinearLayout satir = new LinearLayout(this);
-            satir.setOrientation(LinearLayout.HORIZONTAL);
-            satir.setGravity(android.view.Gravity.CENTER_VERTICAL);
-            satir.setPadding(10, 9, 10, 9);
+            LinearLayout kart = new LinearLayout(this);
+            kart.setOrientation(LinearLayout.VERTICAL);
+            kart.setPadding(11, 10, 11, 10);
 
-            android.graphics.drawable.GradientDrawable satirArkaPlan =
+            android.graphics.drawable.GradientDrawable kartArkaPlan =
                     new android.graphics.drawable.GradientDrawable();
-            satirArkaPlan.setColor(Color.rgb(248, 251, 255));
-            satirArkaPlan.setCornerRadius(15);
-            satirArkaPlan.setStroke(1, Color.rgb(222, 233, 245));
-            satir.setBackground(satirArkaPlan);
+            kartArkaPlan.setColor(Color.rgb(248, 251, 255));
+            kartArkaPlan.setCornerRadius(15);
+            kartArkaPlan.setStroke(1, Color.rgb(222, 233, 245));
+            kart.setBackground(kartArkaPlan);
+
+            LinearLayout ustSatir = new LinearLayout(this);
+            ustSatir.setOrientation(LinearLayout.HORIZONTAL);
+            ustSatir.setGravity(android.view.Gravity.CENTER_VERTICAL);
 
             int siraRengi;
             if (sira == 1) {
@@ -2334,16 +2357,15 @@ private void sohbetYukle(String id) {
             rozetArkaPlan.setColor(siraRengi);
             rozetArkaPlan.setCornerRadius(11);
             siraRozeti.setBackground(rozetArkaPlan);
-
-            satir.addView(siraRozeti);
+            ustSatir.addView(siraRozeti);
 
             TextView takimAdi = new TextView(this);
             takimAdi.setText(takim[1]);
-            takimAdi.setTextSize(13);
+            takimAdi.setTextSize(14);
             takimAdi.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             takimAdi.setTextColor(Color.rgb(39, 53, 73));
             takimAdi.setPadding(10, 0, 6, 0);
-            satir.addView(takimAdi, new LinearLayout.LayoutParams(
+            ustSatir.addView(takimAdi, new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
             TextView puanRozeti = new TextView(this);
@@ -2359,13 +2381,49 @@ private void sohbetYukle(String id) {
             puanArkaPlan.setColor(Color.rgb(224, 245, 250));
             puanArkaPlan.setCornerRadius(12);
             puanRozeti.setBackground(puanArkaPlan);
-            satir.addView(puanRozeti);
+            ustSatir.addView(puanRozeti);
+
+            kart.addView(ustSatir);
+
+            if (!takim[3].isEmpty()) {
+                TextView macBilgisi = new TextView(this);
+                macBilgisi.setText(
+                        takim[3] + " Maç    " +
+                        takim[4] + " G   " +
+                        takim[5] + " B   " +
+                        takim[6] + " M"
+                );
+                macBilgisi.setTextSize(11);
+                macBilgisi.setTextColor(Color.rgb(92, 108, 128));
+                macBilgisi.setPadding(44, 9, 2, 2);
+                kart.addView(macBilgisi);
+
+                String averaj = takim[9];
+                if (!averaj.isEmpty()) {
+                    try {
+                        int av = Integer.parseInt(averaj);
+                        averaj = av > 0 ? "+" + av : String.valueOf(av);
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                TextView golBilgisi = new TextView(this);
+                golBilgisi.setText(
+                        "Atılan " + takim[7] +
+                        "   Yenilen " + takim[8] +
+                        "   AV " + averaj
+                );
+                golBilgisi.setTextSize(11);
+                golBilgisi.setTextColor(Color.rgb(92, 108, 128));
+                golBilgisi.setPadding(44, 2, 2, 1);
+                kart.addView(golBilgisi);
+            }
 
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
             lp.bottomMargin = 7;
-            kutu.addView(satir, lp);
+            kutu.addView(kart, lp);
         }
 
         return true;
@@ -2717,6 +2775,9 @@ private void sohbetYukle(String id) {
 
     private boolean gorselAramasiUygunMu(String soru, String cevap) {
         if (soru == null || cevap == null) return false;
+
+        // Spor sonuçlarına genel görsel araması ekleme.
+        if (sporCevabiMi(soru) || sporCevabiMi(cevap)) return false;
 
         String q = soru.toLowerCase(Locale.ROOT).trim();
         String a = cevap.toLowerCase(Locale.ROOT).trim();
