@@ -12018,6 +12018,41 @@ def sohbet():
                 )
             ]
 
+            # Kesin sözdizimi hatasında kodu ASLA çalıştırma.
+            kesin_syntax = [
+                x for x in bulgular
+                if str(x.get("seviye", "")).upper().find("KESİN") >= 0
+                and x.get("tur") in {
+                    "SyntaxError",
+                    "MissingColon",
+                    "ReservedKeywordName",
+                    "UnclosedParen",
+                }
+            ]
+
+            if kesin_syntax:
+                satirlar = ["🔴 EAGLE KOD ANALİZİ — SÖZDİZİMİ HATASI", ""]
+                for bulgu in kesin_syntax:
+                    satirlar.append(
+                        f"Satır {bulgu.get('satir', '?')}: "
+                        f"{bulgu.get('mesaj', 'Sözdizimi hatası.')}"
+                    )
+                satirlar.extend([
+                    "",
+                    "Kod çalıştırılmadı. Önce sözdizimi hatasını düzeltmelisin."
+                ])
+                return jsonify({
+                    "ok": True,
+                    "answer": "\n".join(satirlar),
+                    "eagle_direct": True,
+                    "code_analysis": True,
+                    "code_execution": False,
+                    "autofix": False,
+                    "findings": bulgular,
+                    "logic_analysis": mantik,
+                    "memory_count": len(hafiza_yukle())
+                })
+
             guvenlik_sonucu = EagleKodGuvenlikMotoru().kontrol_et(kaynak_kod)
             if not guvenlik_sonucu.get("guvenli"):
                 return jsonify({
