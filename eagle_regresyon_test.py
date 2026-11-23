@@ -2896,6 +2896,154 @@ def genel_web_cumle_tamligi_ve_metadata_filtre_test():
         )
     assert misir_guven >= 0.75, misir_guven
 
+def ana_koordinator_basarisiz_bagimlilik_regresyon_test():
+    from eagle_ana_koordinator import EagleAnaKoordinator
+
+    cagrilar = []
+
+    def program(mesaj, karar, gecmis):
+        cagrilar.append("program_uretme")
+        return {"ok": False, "hata": "Test üretim hatası"}
+
+    def analiz(mesaj, karar, gecmis):
+        cagrilar.append("kod_analiz")
+        return {"ok": True, "cevap": "Analiz yapıldı."}
+
+    def guvenlik(mesaj, karar, gecmis):
+        cagrilar.append("kod_guvenlik")
+        return {"ok": True, "cevap": "Güvenlik kontrolü yapıldı."}
+
+    koordinator = EagleAnaKoordinator(uzman_motorlari={
+        "program_uretme": program,
+        "kod_analiz": analiz,
+        "kod_guvenlik": guvenlik,
+    })
+
+    sonuc = koordinator.calistir(
+        "Python ile bir program yaz, hatalarını analiz et ve güvenlik kontrolü yap."
+    )
+
+    assert sonuc["ok"] is False, sonuc
+    assert cagrilar == ["program_uretme"], cagrilar
+    assert sonuc["tamamlanan_gorev"] == 0, sonuc
+
+def ana_koordinator_genel_sohbet_api_test():
+    import eagle_api
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    beklenen_cevap = "TEST: Cevap ana koordinatör üzerinden üretildi."
+    karar = {
+        "intent": "sohbet",
+        "arac": "eagle_sohbet",
+        "guven": "yüksek",
+    }
+
+    with (
+        patch.object(eagle_api, "sohbet_baglam_yukle", return_value={}),
+        patch.object(eagle_api, "eagle_karar_motoru", return_value=karar),
+        patch.object(eagle_api, "web_arastir", return_value=[]),
+        patch.object(
+            eagle_api.ana_koordinator,
+            "calistir",
+            return_value={
+                "ok": True,
+                "cevap": beklenen_cevap,
+            },
+        ) as koordinator_mock,
+        patch.object(
+            eagle_api,
+            "genel_sohbet",
+            side_effect=AssertionError(
+                "Başarılı koordinatör sonucunda eski sohbet motoru çağrıldı."
+            ),
+        ) as sohbet_mock,
+    ):
+        yanit = eagle_api.app.test_client().post(
+            "/api/sohbet",
+            json={"message": "Nasılsın?", "history": []},
+        )
+
+    veri = yanit.get_json() or {}
+
+    assert yanit.status_code == 200, veri
+    assert veri.get("ok") is True, veri
+    assert beklenen_cevap in veri.get("answer", ""), veri
+    assert koordinator_mock.call_count == 1, koordinator_mock.call_count
+    assert sohbet_mock.call_count == 0, sohbet_mock.call_count
+
+def ana_koordinator_kod_aktarim_regresyon_test():
+    from eagle_ana_koordinator import EagleAnaKoordinator
+
+    cagrilar = []
+
+    def program(mesaj, karar, gecmis):
+        cagrilar.append(("program_uretme", mesaj))
+        return {
+            "ok": True,
+            "kod": "def topla(a, b):\\n    return a + b",
+            "cevap": "Program üretildi.",
+        }
+
+    def analiz(mesaj, karar, gecmis):
+        cagrilar.append(("kod_analiz", mesaj))
+        assert "def topla(a, b):" in mesaj
+        return {"ok": True, "cevap": "Kod analizi tamamlandı."}
+
+    def guvenlik(mesaj, karar, gecmis):
+        cagrilar.append(("kod_guvenlik", mesaj))
+        assert "def topla(a, b):" in mesaj
+        return {"ok": True, "cevap": "Güvenlik kontrolü tamamlandı."}
+
+    koordinator = EagleAnaKoordinator(uzman_motorlari={
+        "program_uretme": program,
+        "kod_analiz": analiz,
+        "kod_guvenlik": guvenlik,
+    })
+
+    sonuc = koordinator.calistir(
+        "Python ile bir program yaz, hatalarını analiz et ve güvenlik kontrolü yap."
+    )
+
+    assert sonuc["ok"] is True, sonuc
+    assert sonuc["gorev_sayisi"] == 3, sonuc
+    assert sonuc["tamamlanan_gorev"] == 3, sonuc
+    assert [x[0] for x in cagrilar] == [
+        "program_uretme", "kod_analiz", "kod_guvenlik"
+    ]
+    assert all("def topla(a, b):" in x[1] for x in cagrilar[1:])
+
+def ana_koordinator_kodsuz_cikti_regresyon_test():
+    from eagle_ana_koordinator import EagleAnaKoordinator
+
+    cagrilar = []
+
+    def program(mesaj, karar, gecmis):
+        cagrilar.append("program_uretme")
+        return {"ok": True, "cevap": "Program üretildi."}
+
+    def analiz(mesaj, karar, gecmis):
+        cagrilar.append("kod_analiz")
+        return {"ok": True, "cevap": "Analiz yapıldı."}
+
+    def guvenlik(mesaj, karar, gecmis):
+        cagrilar.append("kod_guvenlik")
+        return {"ok": True, "cevap": "Güvenlik kontrolü yapıldı."}
+
+    koordinator = EagleAnaKoordinator(uzman_motorlari={
+        "program_uretme": program,
+        "kod_analiz": analiz,
+        "kod_guvenlik": guvenlik,
+    })
+
+    sonuc = koordinator.calistir(
+        "Python ile bir program yaz, hatalarını analiz et ve güvenlik kontrolü yap."
+    )
+
+    assert sonuc["ok"] is False, sonuc
+    assert cagrilar == ["program_uretme"], cagrilar
+    assert sonuc["tamamlanan_gorev"] == 1, sonuc
+
 test("Genel başlık-cümle uyumu", genel_baslik_cumle_uyumu_test)
 test("Genel web konu uyumu kök regresyonu", genel_web_konu_uyumu_kok_regresyon_test)
 test("Genel web cümle tamlığı ve metadata filtresi", genel_web_cumle_tamligi_ve_metadata_filtre_test)
@@ -2954,6 +3102,10 @@ test("Afet koordinasyon modülü", afet_koordinasyon_regresyon_test)
 test("Afet koordinasyon merkez motoru entegrasyonu", afet_merkez_motoru_cagri_test)
 
 print()
+test("Ana koordinatör genel sohbet gerçek Flask API", ana_koordinator_genel_sohbet_api_test)
+test("Ana koordinatör uzmanlar arası kod aktarımı", ana_koordinator_kod_aktarim_regresyon_test)
+test("Ana koordinatör başarısız bağımlılık zinciri", ana_koordinator_basarisiz_bagimlilik_regresyon_test)
+test("Ana koordinatör kodsuz çıktı engelleme", ana_koordinator_kodsuz_cikti_regresyon_test)
 print("===== SONUÇ =====")
 print(f"TOPLAM: {BASARILI + HATALI}")
 print(f"BAŞARILI: {BASARILI}")

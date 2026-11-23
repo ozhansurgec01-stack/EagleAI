@@ -1,5 +1,6 @@
 from eagle_merkez_motoru import eagle_merkez_motorunu_kur
 from eagle_akil_motoru import eagle_akil_motorunu_kur
+from eagle_ana_koordinator import eagle_ana_koordinatorunu_kur
 from eagle_karar_komutlari import slash_komutunu_coz
 from eagle_karar_sohbet import erken_sohbet_karari
 from eagle_autofix import EagleAutoFixEngine
@@ -4312,6 +4313,68 @@ akil_motor = eagle_akil_motorunu_kur(
     karar_motoru=eagle_karar_motoru,
     hafiza_yukle=hafiza_yukle
 )
+
+
+# EAGLE ANA KOORDİNATÖRÜ
+def _eagle_koordinator_kodunu_al(metin):
+    metin = str(metin or "").strip()
+    eslesen = re.search(r"```(?:python|py)?\s*(.*?)```", metin, re.S | re.I)
+    if eslesen:
+        return eslesen.group(1).strip()
+    if "\n" in metin and re.search(
+        r"(?m)^\s*(?:def |class |import |from |if |for |while |print\(|return\b)",
+        metin
+    ):
+        return metin
+    return ""
+
+
+def _eagle_uzman_genel_sohbet(mesaj, karar, gecmis):
+    cevap = genel_sohbet(
+        mesaj,
+        gecmis=gecmis,
+        hafiza=hafiza_yukle(),
+        karar=karar,
+    )
+    return {"ok": bool(str(cevap or "").strip()), "cevap": str(cevap or "")}
+
+
+def _eagle_uzman_program_uretme(mesaj, karar, gecmis):
+    return EagleProgramUretmeMotoru().uret(mesaj)
+
+
+def _eagle_uzman_kod_analiz(mesaj, karar, gecmis):
+    kod = _eagle_koordinator_kodunu_al(mesaj)
+    if not kod:
+        return {"ok": False, "hata": "Analiz edilecek kod bulunamadı."}
+    motor = autofix_engine.analiz_motoru
+    bulgular = motor.analiz_et(kod)
+    mantik = motor.mantik_analizi(kod, bulgular)
+    satirlar = ["EAGLE KOD ANALİZİ"]
+    satirlar.extend("- " + str(x) for x in (bulgular or []))
+    satirlar.extend("- " + str(x) for x in (mantik or []))
+    if len(satirlar) == 1:
+        satirlar.append("- İlk analizde belirgin bir bulgu tespit edilmedi.")
+    return {"ok": True, "cevap": "\n".join(satirlar)}
+
+
+def _eagle_uzman_kod_guvenlik(mesaj, karar, gecmis):
+    kod = _eagle_koordinator_kodunu_al(mesaj)
+    if not kod:
+        return {"ok": False, "hata": "Güvenlik kontrolü için kod bulunamadı."}
+    return EagleKodGuvenlikMotoru().kontrol_et(kod)
+
+
+ana_koordinator = eagle_ana_koordinatorunu_kur(
+    akil_motoru=akil_motor,
+    uzman_motorlari={
+        "genel_sohbet": _eagle_uzman_genel_sohbet,
+        "program_uretme": _eagle_uzman_program_uretme,
+        "kod_analiz": _eagle_uzman_kod_analiz,
+        "kod_guvenlik": _eagle_uzman_kod_guvenlik,
+    },
+)
+
 
 
 def web_arastirma_gerekli(mesaj):
@@ -14061,12 +14124,55 @@ def sohbet():
             or sosyal_sohbet
         )
     ):
-        cevap = genel_sohbet(
-            mesaj,
-            gecmis=gecmis,
-            hafiza=kalici_hafiza,
-            karar=karar,
-        )
+        # Genel sohbeti önce ana koordinatör ve seçilen uzman üzerinden yürüt.
+        try:
+            koordinator_sonuc = ana_koordinator.calistir(
+                mesaj=mesaj,
+                gecmis=gecmis,
+                karar=karar,
+            )
+            if isinstance(koordinator_sonuc, dict):
+                koordinator_ok = bool(koordinator_sonuc.get("ok", False))
+                koordinator_cevap = str(
+                    koordinator_sonuc.get(
+                        "cevap",
+                        koordinator_sonuc.get("answer", "")
+                    ) or ""
+                ).strip()
+            else:
+                koordinator_ok = bool(getattr(koordinator_sonuc, "ok", False))
+                koordinator_cevap = str(
+                    getattr(koordinator_sonuc, "cevap", "") or ""
+                ).strip()
+
+            if koordinator_ok and koordinator_cevap:
+                cevap = koordinator_cevap
+                print(
+                    "🧠 EAGLE KOORDİNATÖR: Genel sohbet uzmanı başarıyla çalıştı.",
+                    flush=True,
+                )
+            else:
+                print(
+                    "⚠️ EAGLE KOORDİNATÖR: Uzman sonucu alınamadı; mevcut sohbet motoruna geçiliyor.",
+                    flush=True,
+                )
+                cevap = genel_sohbet(
+                    mesaj,
+                    gecmis=gecmis,
+                    hafiza=kalici_hafiza,
+                    karar=karar,
+                )
+        except Exception as koordinator_hatasi:
+            print(
+                f"⚠️ EAGLE KOORDİNATÖR HATASI: {koordinator_hatasi}",
+                flush=True,
+            )
+            cevap = genel_sohbet(
+                mesaj,
+                gecmis=gecmis,
+                hafiza=kalici_hafiza,
+                karar=karar,
+            )
 
         # Başarılı genel sohbeti kalıcı sohbet hafızasına kaydet.
         # 🏟️ İki takım + skor/canlı sonuç sorgularını doğrudan SofaScore'dan çöz.
@@ -14442,13 +14548,22 @@ def sohbet():
     # Merkezi motor gerçek cevabı çıkarmayı dener.
     if karar.get("intent") != "spor":
         try:
-            merkez_sonuc = merkez_motor.calistir(
+            # EAGLE ANA KOORDİNATÖRÜ: uzman motor yönetimi
+            def _eagle_uzman_calistir(gorev_mesaji, gorev_karari, gorev_gecmisi):
+                return merkez_motor.calistir(
+                    mesaj=gorev_mesaji,
+                    karar=gorev_karari,
+                    web_verisi=web_verisi,
+                    sayfa_okuyucu=web_sayfa_oku,
+                    genel_sayfa_okuyucu=lambda url: web_sayfa_oku(url, metaveri_dahil=False, timeout=(3, 5)),
+                    web_arayici=web_arastir,
+                )
+
+            merkez_sonuc = ana_koordinator.calistir(
                 mesaj=mesaj,
+                gecmis=gecmis,
                 karar=karar,
-                web_verisi=web_verisi,
-                sayfa_okuyucu=web_sayfa_oku,
-                genel_sayfa_okuyucu=lambda url: web_sayfa_oku(url, metaveri_dahil=False, timeout=(3, 5)),
-                web_arayici=web_arastir,
+                uzman_calistir=_eagle_uzman_calistir,
             )
 
             if hasattr(merkez_sonuc, "as_dict"):
