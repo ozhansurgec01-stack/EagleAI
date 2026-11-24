@@ -1883,38 +1883,67 @@ class EagleMerkezMotoru:
     @classmethod
     def _genel_bilgi_kisi_cumlesi_mi(cls, mesaj, cumle):
         """
-        Çok kelimeli kişi adlarında, adı yalnızca sonradan anan başka
-        bir kişi hakkındaki cümleleri biyografi cevabı olarak seçme.
+        Kişi tanıtımında soru eklerini ve selamlamaları konu adından ayır.
+        Tam kişi adı cümlenin girişinde veya ilk birkaç kelimesinde bulunmalı.
         """
+        konu = str(mesaj or "").strip()
+
+        # Başlangıç selamlamalarını konu adından çıkar.
+        konu = re.sub(
+            r"^(?:selam(?:lar)?|merhaba|hey|iyi\s+gunler|iyi\s+günler)"
+            r"[\s,!.:;\-]*",
+            "",
+            konu,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        # Kişi tanıtımı ve genel bilgi isteği eklerini temizle.
         konu = re.sub(
             r"\s+(?:hakkında|hakkinda)\s+bilgi"
             r"(?:\s+ver(?:ir)?(?:\s+misin|\s+mısın|"
             r"\s+misiniz|\s+mısınız)?)?\s*[?.!]*$",
             "",
-            str(mesaj or "").strip(),
+            konu,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        konu = re.sub(
+            r"\s+bilgi\s+ver(?:ir)?"
+            r"(?:\s+misin|\s+mısın|\s+misiniz|\s+mısınız)"
+            r"\s*[?.!]*$",
+            "",
+            konu,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        konu = re.sub(
+            r"\s+(?:kimdir|nasıl\s+biri|nasil\s+biri|"
+            r"ne\s+tür\s+biridir|ne\s+tur\s+biridir)"
+            r"\s*[?.!]*$",
+            "",
+            konu,
             flags=re.IGNORECASE,
         ).strip(" ?.! ")
 
-        # Yalnızca açıkça büyük harfle yazılmış çok kelimeli özel adlara
-        # uygula. "iklim değişikliği", "Türkiye Cumhuriyeti" ve
-        # "Atlas Okyanusu" gibi genel/coğrafi konuları daraltma.
+        # Yalnızca çok kelimeli özel adları daralt.
         ozel_adlar = re.findall(
             r"[A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+",
             konu,
         )
+
         if len(ozel_adlar) < 2:
             return True
 
-        konu_tokenlari = [
-            cls.normalize(x) for x in ozel_adlar
-        ]
+        konu_tokenlari = [cls.normalize(x) for x in ozel_adlar]
+
         genel_ozel_ad_ekleri = {
             "cumhuriyeti", "kralligi", "imparatorlugu", "okyanusu",
-            "denizi", "nehri", "dagı", "dagi", "golü", "golu",
+            "denizi", "nehri", "dagi", "golü", "golu",
             "korfezi", "bogazi", "adasi", "adalari", "yarimadasi",
             "sehir", "sehri", "ili", "bolgesi", "universitesi",
             "takimi", "dizisi", "filmi", "kitabi",
         }
+
         if konu_tokenlari[-1] in genel_ozel_ad_ekleri:
             return True
 
@@ -1922,19 +1951,26 @@ class EagleMerkezMotoru:
             r"[a-z0-9çğıöşü]+",
             cls.normalize(str(cumle or "")),
         )
+
         if len(cumle_tokenlari) < len(konu_tokenlari):
             return False
 
-        # Kişinin tam adı cümlenin girişinde, bitişik biçimde bulunmalı.
+        # Tam ad, cümlenin başında veya ilk 7 kelimesinde bulunmalı.
         for baslangic in range(min(7, len(cumle_tokenlari))):
             bitis = baslangic + len(konu_tokenlari)
+
             if bitis > len(cumle_tokenlari):
                 break
+
             if all(
                 cls._genel_web_token_eslesiyor(ad, token)
-                for ad, token in zip(konu_tokenlari, cumle_tokenlari[baslangic:bitis])
+                for ad, token in zip(
+                    konu_tokenlari,
+                    cumle_tokenlari[baslangic:bitis],
+                )
             ):
                 return True
+
         return False
 
     @classmethod
@@ -2307,6 +2343,15 @@ class EagleMerkezMotoru:
 
         soru = cls.normalize(mesaj)
 
+        # Selamlama, asıl konu adının parçası değildir.
+        soru = re.sub(
+            r"^(?:selam(?:lar)?|merhaba|hey|iyi\s+gunler|iyi\s+günler)"
+            r"[\s,!.:;-]*",
+            "",
+            soru,
+            flags=re.IGNORECASE,
+        ).strip()
+
         etkisiz = {
             "bir", "bu", "şu", "ve", "ile", "için",
             "nasıl", "neden", "ne", "nedir", "mi", "mı",
@@ -2316,7 +2361,7 @@ class EagleMerkezMotoru:
             "hangisi", "hangisidir", "hangileri", "hangileridir",
             "verir", "misin", "mısın", "musun", "müsün",
             "misiniz", "mısınız", "musunuz", "müsünüz",
-            "lütfen", "lutfen", "nerede", "neresidir", "neredir",
+            "lütfen", "lutfen", "biri", "nerede", "neresidir", "neredir",
             "nerededir", "hangi", "hangisi", "hangisidir",
             "hangileri", "hangileridir", "kim", "kimdir",
             "kaç", "kaçtır", "kac", "kactir", "bulunur",
@@ -2353,6 +2398,37 @@ class EagleMerkezMotoru:
                 soru,
                 re.IGNORECASE,
             )
+        )
+
+        # Kişi tanıtımı ve yalın konu adı da genel bilgi kapsamındadır.
+        tanitim_kim_sorusu = bool(re.search(
+            r"\bkimdir\b|\bnasil\s+biri\b|\bnasıl\s+biri\b",
+            soru,
+            re.IGNORECASE,
+        ))
+
+        ham_konu = str(mesaj or "").strip()
+        ham_konu = re.sub(
+            r"^(?:selam(?:lar)?|merhaba|hey|iyi\s+gunler|iyi\s+günler)"
+            r"[\s,!.:;-]*",
+            "",
+            ham_konu,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        yalin_konu_istegi = bool(re.fullmatch(
+            r"[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü0-9'’.-]*"
+            r"(?:\s+[A-ZÇĞİÖŞÜ][A-Za-zÇĞİÖŞÜçğıöşü0-9'’.-]*){0,3}",
+            ham_konu,
+        ))
+
+        if soru in {"merhaba", "selam", "selamlar", "hey", "nasilsiniz", "nasılsınız"}:
+            yalin_konu_istegi = False
+
+        genel_bilgi_sorusu = (
+            genel_bilgi_sorusu
+            or tanitim_kim_sorusu
+            or yalin_konu_istegi
         )
 
         # Tanım soruları da genel bilgi cevaplarının kalite filtrelerinden
@@ -2453,6 +2529,16 @@ class EagleMerkezMotoru:
                     soru,
                     flags=re.IGNORECASE,
                 ).strip(" ?.! ")
+
+                # Kimdir/nasıl biri gibi soru eklerini konu adından çıkar.
+                konu = re.sub(
+                    r"\s+\b(?:kimdir|nasıl\s+biri|nasil\s+biri|"
+                    r"ne\s+tür\s+biridir|ne\s+tur\s+biridir)\b"
+                    r"\s*[?.!]*$",
+                    "",
+                    konu,
+                    flags=re.IGNORECASE,
+                ).strip()
 
                 # "Uzak Şehir dizisi" gibi ifadelerden tür ekini çıkar.
                 # Böylece kaynak başlığı "Uzak Şehir" ile eşleşebilir.
