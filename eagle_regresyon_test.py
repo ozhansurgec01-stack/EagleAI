@@ -63,6 +63,22 @@ def bilgi_bankasi_alakasiz_eslesme_test():
         f"Alakasız yapay zekâ kaydı döndürüldü: {sonuc}"
     )
 
+    fizik_sorusu = (
+        "Işık hızına yakın hızda hareket eden bir uzay gemisinde 5 yıl "
+        "geçiren astronotlar, Dünya'ya döndüklerinde neden Dünya'da çok "
+        "daha fazla zaman geçmiş olabileceğini görürler? Bunu özel "
+        "görelilik teorisiyle açıkla. Ayrıca geminin hızı ışık hızının "
+        "%99'u ise 5 yıllık gemi süresine karşılık Dünya'da yaklaşık "
+        "kaç yıl geçer? Hesabını da göster."
+    )
+    fizik_sonucu = bilgi_bankasi_ara(fizik_sorusu)
+    python_kayitlari = ("zip()", "lambda", "break continue pass")
+    assert not any(
+        kayit in madde.lower()
+        for madde in fizik_sonucu
+        for kayit in python_kayitlari
+    ), f"Fizik sorusuna alakasız Python kayıtları döndürüldü: {fizik_sonucu}"
+
     dogrudan_soru = bilgi_bankasi_ara("Yapay zekâ nedir?")
     assert any("Yapay zekâ nedir?" in madde for madde in dogrudan_soru), (
         "Doğrudan yapay zekâ bilgi bankası cevabı kayboldu."
@@ -441,6 +457,32 @@ def genel_bilgi_konu_alakasi_ve_guven_test():
         assert 0.75 <= guven < 0.88, (
             f"{soru}: güven puanı sabit/esassız görünüyor: {guven}"
         )
+
+
+def genel_web_birlesik_istek_kapsami_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    soru = (
+        "Işık hızına yakın hızda hareket eden bir uzay gemisinde 5 yıl geçiren "
+        "astronotlar Dünya'ya döndüklerinde neden daha fazla zaman geçmiş olabilir? "
+        "Özel görelilik teorisiyle açıkla. Ayrıca geminin hızı ışık hızının %99'u ise "
+        "5 yıllık gemi süresine karşılık Dünya'da kaç yıl geçer? Hesabını da göster."
+    )
+    tam = (
+        "Özel görelilikte hareket eden saat, Dünya'daki gözlemciye göre daha yavaş işler; "
+        "bunun nedeni ışık hızına yakın hızlarda zamanın farklı akmasıdır. "
+        "Zaman genleşmesi nedeniyle Dünya'da daha fazla süre geçer. "
+        "γ = 1/√(1 - 0.99²) ≈ 7.09; 5 × 7.09 ≈ 35.45 yıl."
+    )
+    sadece_hesap = "γ = 1/√(1 - 0.99²) ≈ 7.09; 5 × 7.09 ≈ 35.45 yıl."
+    sadece_aciklama = (
+        "Astronotların hareketi nedeniyle zaman Dünya'ya göre daha yavaş akar; "
+        "bunun nedeni özel görelilikteki zaman genleşmesidir."
+    )
+
+    assert EagleMerkezMotoru.genel_web_istek_kapsami_yeterli(soru, tam)
+    assert not EagleMerkezMotoru.genel_web_istek_kapsami_yeterli(soru, sadece_hesap)
+    assert not EagleMerkezMotoru.genel_web_istek_kapsami_yeterli(soru, sadece_aciklama)
 
 
 def genel_tanitimda_nesnel_bilgi_onceligi_test():
@@ -2029,6 +2071,162 @@ def api_fonksiyon_test():
 
 
 
+
+
+
+
+def ana_koordinator_kod_aktarim_regresyon_test():
+    from eagle_ana_koordinator import EagleAnaKoordinator
+
+    cagrilar = []
+
+    def program(mesaj, karar, gecmis):
+        cagrilar.append(("program_uretme", mesaj))
+        return {
+            "ok": True,
+            "kod": "def topla(a, b):\\n    return a + b",
+            "cevap": "Program üretildi.",
+        }
+
+    def analiz(mesaj, karar, gecmis):
+        cagrilar.append(("kod_analiz", mesaj))
+        assert "def topla(a, b):" in mesaj
+        return {"ok": True, "cevap": "Kod analizi tamamlandı."}
+
+    def guvenlik(mesaj, karar, gecmis):
+        cagrilar.append(("kod_guvenlik", mesaj))
+        assert "def topla(a, b):" in mesaj
+        return {"ok": True, "cevap": "Güvenlik kontrolü tamamlandı."}
+
+    koordinator = EagleAnaKoordinator(uzman_motorlari={
+        "program_uretme": program,
+        "kod_analiz": analiz,
+        "kod_guvenlik": guvenlik,
+    })
+
+    sonuc = koordinator.calistir(
+        "Python ile bir program yaz, hatalarını analiz et ve güvenlik kontrolü yap."
+    )
+
+    assert sonuc["ok"] is True, sonuc
+    assert sonuc["gorev_sayisi"] == 3, sonuc
+    assert sonuc["tamamlanan_gorev"] == 3, sonuc
+    assert [x[0] for x in cagrilar] == [
+        "program_uretme", "kod_analiz", "kod_guvenlik"
+    ]
+    assert all("def topla(a, b):" in x[1] for x in cagrilar[1:])
+
+
+def ana_koordinator_basarisiz_bagimlilik_regresyon_test():
+    from eagle_ana_koordinator import EagleAnaKoordinator
+
+    cagrilar = []
+
+    def program(mesaj, karar, gecmis):
+        cagrilar.append("program_uretme")
+        return {"ok": False, "hata": "Test üretim hatası"}
+
+    def analiz(mesaj, karar, gecmis):
+        cagrilar.append("kod_analiz")
+        return {"ok": True, "cevap": "Analiz yapıldı."}
+
+    def guvenlik(mesaj, karar, gecmis):
+        cagrilar.append("kod_guvenlik")
+        return {"ok": True, "cevap": "Güvenlik kontrolü yapıldı."}
+
+    koordinator = EagleAnaKoordinator(uzman_motorlari={
+        "program_uretme": program,
+        "kod_analiz": analiz,
+        "kod_guvenlik": guvenlik,
+    })
+
+    sonuc = koordinator.calistir(
+        "Python ile bir program yaz, hatalarını analiz et ve güvenlik kontrolü yap."
+    )
+
+    assert sonuc["ok"] is False, sonuc
+    assert cagrilar == ["program_uretme"], cagrilar
+    assert sonuc["tamamlanan_gorev"] == 0, sonuc
+
+
+def ana_koordinator_kodsuz_cikti_regresyon_test():
+    from eagle_ana_koordinator import EagleAnaKoordinator
+
+    cagrilar = []
+
+    def program(mesaj, karar, gecmis):
+        cagrilar.append("program_uretme")
+        return {"ok": True, "cevap": "Program üretildi."}
+
+    def analiz(mesaj, karar, gecmis):
+        cagrilar.append("kod_analiz")
+        return {"ok": True, "cevap": "Analiz yapıldı."}
+
+    def guvenlik(mesaj, karar, gecmis):
+        cagrilar.append("kod_guvenlik")
+        return {"ok": True, "cevap": "Güvenlik kontrolü yapıldı."}
+
+    koordinator = EagleAnaKoordinator(uzman_motorlari={
+        "program_uretme": program,
+        "kod_analiz": analiz,
+        "kod_guvenlik": guvenlik,
+    })
+
+    sonuc = koordinator.calistir(
+        "Python ile bir program yaz, hatalarını analiz et ve güvenlik kontrolü yap."
+    )
+
+    assert sonuc["ok"] is False, sonuc
+    assert cagrilar == ["program_uretme"], cagrilar
+    assert sonuc["tamamlanan_gorev"] == 1, sonuc
+
+
+def ana_koordinator_genel_sohbet_api_test():
+    import eagle_api
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    beklenen_cevap = "TEST: Cevap ana koordinatör üzerinden üretildi."
+    karar = {
+        "intent": "sohbet",
+        "arac": "eagle_sohbet",
+        "guven": "yüksek",
+    }
+
+    with (
+        patch.object(eagle_api, "sohbet_baglam_yukle", return_value={}),
+        patch.object(eagle_api, "eagle_karar_motoru", return_value=karar),
+        patch.object(eagle_api, "web_arastir", return_value=[]),
+        patch.object(
+            eagle_api.ana_koordinator,
+            "calistir",
+            return_value={
+                "ok": True,
+                "cevap": beklenen_cevap,
+            },
+        ) as koordinator_mock,
+        patch.object(
+            eagle_api,
+            "genel_sohbet",
+            side_effect=AssertionError(
+                "Başarılı koordinatör sonucunda eski sohbet motoru çağrıldı."
+            ),
+        ) as sohbet_mock,
+    ):
+        yanit = eagle_api.app.test_client().post(
+            "/api/sohbet",
+            json={"message": "Nasılsın?", "history": []},
+        )
+
+    veri = yanit.get_json() or {}
+
+    assert yanit.status_code == 200, veri
+    assert veri.get("ok") is True, veri
+    assert beklenen_cevap in veri.get("answer", ""), veri
+    assert koordinator_mock.call_count == 1, koordinator_mock.call_count
+    assert sohbet_mock.call_count == 0, sohbet_mock.call_count
+
+
 def api_gercek_afet_uçtan_uça_test():
     import eagle_api
     from pathlib import Path
@@ -2921,6 +3119,39 @@ test("Genel web cevap kalitesi", genel_web_cikti_kalitesi_test)
 test("Genel tanıtımda nesnel bilgi önceliği", genel_tanitimda_nesnel_bilgi_onceligi_test)
 test("Tanım sorusunda örnek cümlesi reddedilir", tanim_sorusunda_ornek_cumlesi_reddet_test)
 test("Genel bilgi konu alâkası ve güven puanı", genel_bilgi_konu_alakasi_ve_guven_test)
+def bilimsel_model_zaman_genislemesi_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+
+    soru = (
+        "Işık hızına yakın hızda hareket eden bir uzay gemisinde "
+        "5 yıl geçiren astronotlar, Dünya'ya döndüklerinde neden "
+        "daha fazla zaman geçmiş olabilir? Özel görelilikle açıkla. "
+        "Geminin hızı ışık hızının %99'u ise Dünya'da kaç yıl geçer? "
+        "Hesabını göster."
+    )
+
+    cevap = EagleMerkezMotoru.bilimsel_model_cevabi(soru)
+
+    assert cevap, "Bilimsel model cevap üretmedi."
+    assert "35,44" in cevap, f"Hesap sonucu eksik: {cevap}"
+    assert "γ" in cevap or "lorentz" in cevap.casefold(), (
+        f"Lorentz katsayısı/formülü eksik: {cevap}"
+    )
+    assert "özel görelilik" in cevap.casefold(), (
+        f"Bilimsel açıklama eksik: {cevap}"
+    )
+
+    alakasiz = EagleMerkezMotoru.bilimsel_model_cevabi(
+        "Avusturya'nın başkenti neresidir?"
+    )
+    assert not alakasiz, (
+        f"Bilimsel model alakasız soruya cevap verdi: {alakasiz}"
+    )
+
+test("Bilimsel model özel görelilik zaman genişlemesi", bilimsel_model_zaman_genislemesi_test)
+
+
+test("Genel web birleşik istek kapsamı", genel_web_birlesik_istek_kapsami_test)
 test("Wikipedia gezinme metni temizleme", wikipedia_gezinme_metni_temizleme_test)
 test("Web sonucu konu ilgililiği", web_sonuc_ilgililik_test)
 test("Web araması kelime eşleşme eşiği", web_eslesme_esigi_test)
@@ -2949,6 +3180,11 @@ test("Genel altın sorgusu ürün eşiği", finans_genel_altin_esik_test)
 test("Finans API veri ayrıştırma", finans_api_veri_ayristirma_test)
 test("API kod yazmadan açıklama ve program üretimi yönlendirmesi", api_fonksiyon_test)
 test("Genel bilgi soru algılama", genel_soru_algilama_test)
+test("Ana koordinatör genel sohbet gerçek Flask API", ana_koordinator_genel_sohbet_api_test)
+
+test("Ana koordinatör uzmanlar arası kod aktarımı", ana_koordinator_kod_aktarim_regresyon_test)
+test("Ana koordinatör başarısız bağımlılık zinciri", ana_koordinator_basarisiz_bagimlilik_regresyon_test)
+test("Ana koordinatör kodsuz çıktı engelleme", ana_koordinator_kodsuz_cikti_regresyon_test)
 test("Gerçek Flask afet API uçtan uca", api_gercek_afet_uçtan_uça_test)
 test("Afet koordinasyon modülü", afet_koordinasyon_regresyon_test)
 test("Afet koordinasyon merkez motoru entegrasyonu", afet_merkez_motoru_cagri_test)

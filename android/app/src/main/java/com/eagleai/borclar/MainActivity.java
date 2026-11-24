@@ -602,6 +602,7 @@ public class MainActivity extends Activity {
                     ""
             ).replaceAll("[ \\t]+\\|[ \\t]*$", "").trim();
             final JSONArray medyaOnerileri = apiCevap.mediaItems;
+            final JSONArray kodBulgulari = apiCevap.codeFindings;
             final JSONArray medyaGorselleri = apiCevap.mediaImages;
             final boolean yerGalerisi = apiCevap.placeGallery;
             final boolean medyaSorusu = apiCevap.mediaQuery;
@@ -620,7 +621,7 @@ public class MainActivity extends Activity {
                                 ? bitcoinFiyatKartiOlustur(bitcoinUsd, bitcoinUpdatedAt)
                                 : finansVerisi != null
                                     ? finansKartlariOlustur(finansVerisi)
-                                    : mesajOlustur("🦅\n\n" + cevapGosterim);
+                                    : mesajOlustur("🦅\n\n" + cevapGosterim, kodBulgulari);
                 mesajAlani.addView(cevapKarti);
 
                 if (projeDosyalari != null && projeDosyalari.length() > 0) {
@@ -968,6 +969,7 @@ public class MainActivity extends Activity {
     private static class ApiCevap {
         String answer = "Eagle-AI cevap vermedi.";
         JSONArray mediaItems;
+        JSONArray codeFindings;
         JSONArray mediaImages;
         boolean placeGallery;
         boolean mediaQuery;
@@ -1126,6 +1128,7 @@ public class MainActivity extends Activity {
                 );
 
                 apiCevap.mediaItems = cevapJson.optJSONArray("media_items");
+                apiCevap.codeFindings = cevapJson.optJSONArray("findings");
                 apiCevap.placeGallery = cevapJson.optBoolean("place_gallery", false);
                 apiCevap.mediaQuery = cevapJson.optBoolean("media_query", false);
                 apiCevap.bitcoinPrice = cevapJson.optBoolean("bitcoin_price", false);
@@ -1924,9 +1927,13 @@ private void sohbetYukle(String id) {
     }
 
     private CharSequence renklendirKod(String kod) {
+        return renklendirKod(kod, null);
+    }
+
+    private CharSequence renklendirKod(String kod, JSONArray bulgular) {
         SpannableStringBuilder styled = new SpannableStringBuilder(kod);
         Pattern tokenPattern = Pattern.compile(
-                "#[^\n]*|\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'\\\\])*'|\\b\\d+(?:\\.\\d+)?\\b|\\b(def|return|if|else|elif|for|while|import|from|class|try|except|with|as|True|False|None)\\b"
+                "#[^\\n]*|\"(?:\\\\.|[^\"])*\"|'(?:\\\\.|[^'\\\\])*'|\\b\\d+(?:\\.\\d+)?\\b|\\b(def|return|if|else|elif|for|while|import|from|class|try|except|with|as|True|False|None)\\b"
         );
         Matcher tokenMatcher = tokenPattern.matcher(kod);
         while (tokenMatcher.find()) {
@@ -1941,8 +1948,60 @@ private void sohbetYukle(String id) {
             } else {
                 color = Color.rgb(75, 91, 155);
             }
-            styled.setSpan(new ForegroundColorSpan(color), tokenMatcher.start(), tokenMatcher.end(),
+            styled.setSpan(new ForegroundColorSpan(color),
+                    tokenMatcher.start(), tokenMatcher.end(),
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+
+        if (bulgular == null || bulgular.length() == 0) return styled;
+
+        int bas = 0;
+        int satirNo = 1;
+        while (bas < kod.length()) {
+            int bit = kod.indexOf('\n', bas);
+            if (bit < 0) bit = kod.length();
+
+            for (int i = 0; i < bulgular.length(); i++) {
+                JSONObject b = bulgular.optJSONObject(i);
+                if (b == null || b.optInt("satir", -1) != satirNo || bit <= bas) {
+                    continue;
+                }
+
+                String tur = b.optString("tur", "").toLowerCase(java.util.Locale.ROOT);
+                String seviye = b.optString("seviye", "").toLowerCase(java.util.Locale.ROOT);
+                boolean hata = seviye.contains("kesin")
+                        || seviye.contains("error")
+                        || seviye.contains("hata")
+                        || seviye.contains("kritik")
+                        || seviye.contains("fatal")
+                        || tur.contains("syntax")
+                        || tur.contains("missingcolon")
+                        || tur.contains("unclosed")
+                        || tur.contains("reservedkeyword");
+
+                boolean risk = seviye.contains("risk");
+
+                boolean oneri = seviye.contains("öneri")
+                        || seviye.contains("oneri")
+                        || seviye.contains("suggestion");
+
+                int renk;
+                if (hata) {
+                    renk = Color.argb(75, 220, 45, 45);
+                } else if (risk) {
+                    renk = Color.argb(75, 245, 190, 35);
+                } else if (oneri) {
+                    renk = Color.argb(75, 45, 125, 235);
+                } else {
+                    renk = Color.argb(65, 245, 190, 35);
+                }
+
+                styled.setSpan(new android.text.style.BackgroundColorSpan(renk),
+                        bas, bit, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+
+            bas = bit + 1;
+            satirNo++;
         }
         return styled;
     }
@@ -2183,6 +2242,10 @@ private void sohbetYukle(String id) {
     }
 
     private LinearLayout kodKutusuOlustur(String kod) {
+        return kodKutusuOlustur(kod, null);
+    }
+
+    private LinearLayout kodKutusuOlustur(String kod, JSONArray bulgular) {
         final String kodTrim = kod.trim();
 
         LinearLayout disKutu = new LinearLayout(this);
@@ -2229,7 +2292,7 @@ private void sohbetYukle(String id) {
         buyutBtn.setPadding(16, 8, 16, 8);
         buyutBtn.setOnClickListener(v -> {
             TextView dialogTv = new TextView(this);
-            dialogTv.setText(renklendirKod(kodTrim), TextView.BufferType.SPANNABLE);
+            dialogTv.setText(renklendirKod(kodTrim, bulgular), TextView.BufferType.SPANNABLE);
             dialogTv.setTypeface(Typeface.MONOSPACE);
             dialogTv.setTextSize(15);
             dialogTv.setTextColor(Color.rgb(35, 48, 64));
@@ -2251,13 +2314,38 @@ private void sohbetYukle(String id) {
         baslikSatiri.addView(buyutBtn);
 
         TextView tv = new TextView(this);
-        tv.setText(renklendirKod(kodTrim), TextView.BufferType.SPANNABLE);
+        tv.setText(renklendirKod(kodTrim, bulgular), TextView.BufferType.SPANNABLE);
         tv.setTextSize(13);
         tv.setTextColor(Color.rgb(35, 48, 64));
         tv.setTypeface(Typeface.MONOSPACE);
         tv.setTextIsSelectable(true);
 
         disKutu.addView(baslikSatiri);
+
+        if (bulgular != null && bulgular.length() > 0) {
+            TextView bulguOzeti = new TextView(this);
+            StringBuilder ozetMetni = new StringBuilder();
+
+            for (int i = 0; i < bulgular.length(); i++) {
+                JSONObject b = bulgular.optJSONObject(i);
+                if (b == null) continue;
+
+                if (ozetMetni.length() > 0) ozetMetni.append("\n");
+                ozetMetni.append("● Satır ")
+                        .append(b.optInt("satir", 0))
+                        .append(" · ")
+                        .append(b.optString("mesaj", b.optString("tur", "Kod bulgusu")));
+            }
+
+            if (ozetMetni.length() > 0) {
+                bulguOzeti.setText(ozetMetni.toString());
+                bulguOzeti.setTextSize(12);
+                bulguOzeti.setTextColor(Color.rgb(176, 78, 45));
+                bulguOzeti.setPadding(12, 8, 12, 10);
+                disKutu.addView(bulguOzeti);
+            }
+        }
+
         disKutu.addView(tv);
 
         return disKutu;
@@ -2693,14 +2781,19 @@ private void sohbetYukle(String id) {
     }
 
     private void mesajIcerigiEkle(LinearLayout kutu, String metin) {
+        mesajIcerigiEkle(kutu, metin, null);
+    }
+
+    private void mesajIcerigiEkle(LinearLayout kutu, String metin, JSONArray bulgular) {
         if (superLigPuanKartlariEkle(kutu, metin)) return;
         if (voleybolSonucKartlariEkle(kutu, metin)) return;
         if (sonucKartiEkle(kutu, metin)) return;
-        Pattern blockPattern = Pattern.compile("```[a-zA-Z]*\\n([\\s\\S]*?)```");
+        Pattern blockPattern = Pattern.compile("```([a-zA-Z0-9_+.-]*)\\n([\\s\\S]*?)```");
         Matcher blockMatcher = blockPattern.matcher(metin);
 
         int sonBitis = 0;
 
+        boolean bulgularUygulandi = false;
         while (blockMatcher.find()) {
             int start = blockMatcher.start();
             int end = blockMatcher.end();
@@ -2712,8 +2805,15 @@ private void sohbetYukle(String id) {
                 }
             }
 
-            String kodMetni = blockMatcher.group(1);
-            kutu.addView(kodKutusuOlustur(kodMetni));
+            String dil = blockMatcher.group(1).toLowerCase(java.util.Locale.ROOT);
+            String kodMetni = blockMatcher.group(2);
+            boolean pythonKodu = dil.equals("python") || dil.equals("py") || dil.isEmpty();
+            JSONArray aktarilacakBulgular =
+                    (!bulgularUygulandi && pythonKodu) ? bulgular : null;
+            if (aktarilacakBulgular != null && aktarilacakBulgular.length() > 0) {
+                bulgularUygulandi = true;
+            }
+            kutu.addView(kodKutusuOlustur(kodMetni, aktarilacakBulgular));
 
             sonBitis = end;
         }
@@ -2727,11 +2827,15 @@ private void sohbetYukle(String id) {
     }
 
     private void icerikleriGuvenliEkle(LinearLayout kutu, String metin) {
+        icerikleriGuvenliEkle(kutu, metin, null);
+    }
+
+    private void icerikleriGuvenliEkle(LinearLayout kutu, String metin, JSONArray bulgular) {
         final int esik = 1500;
         final int onizlemeHedefi = 600;
 
         if (metin.length() <= esik) {
-            mesajIcerigiEkle(kutu, metin);
+            mesajIcerigiEkle(kutu, metin, bulgular);
             return;
         }
 
@@ -2765,7 +2869,7 @@ private void sohbetYukle(String id) {
         final String tamMetin = metin;
 
         if (kesFinal >= metin.length()) {
-            mesajIcerigiEkle(kutu, metin);
+            mesajIcerigiEkle(kutu, metin, bulgular);
             return;
         }
 
@@ -2794,7 +2898,7 @@ private void sohbetYukle(String id) {
         btnLp.setMargins(0, 12, 0, 4);
         devamBtn.setLayoutParams(btnLp);
 
-        mesajIcerigiEkle(alan, kisaMetin);
+        mesajIcerigiEkle(alan, kisaMetin, bulgular);
         alan.addView(devamBtn);
 
         devamBtn.setOnClickListener(v -> {
@@ -2802,11 +2906,11 @@ private void sohbetYukle(String id) {
             alan.removeAllViews();
 
             if (!acik) {
-                mesajIcerigiEkle(alan, tamMetin);
+                mesajIcerigiEkle(alan, tamMetin, bulgular);
                 alan.addView(devamBtn);
                 devamBtn.setText("Daha azını göster");
             } else {
-                mesajIcerigiEkle(alan, kisaMetin);
+                mesajIcerigiEkle(alan, kisaMetin, bulgular);
                 alan.addView(devamBtn);
                 devamBtn.setText("Daha fazlasını göster");
             }
@@ -4077,6 +4181,10 @@ JSONObject item = new JSONObject();
     }
 
     private LinearLayout mesajOlustur(String metin) {
+        return mesajOlustur(metin, null);
+    }
+
+    private LinearLayout mesajOlustur(String metin, JSONArray bulgular) {
         LinearLayout kutu = new LinearLayout(this);
         kutu.setOrientation(LinearLayout.VERTICAL);
         kutu.setPadding(16, 14, 16, 14);
@@ -4133,7 +4241,7 @@ JSONObject item = new JSONObject();
         } else if (gorunenMetin.startsWith("🦅")) {
             gorunenMetin = gorunenMetin.replaceFirst("^🦅\\s*", "").trim();
         }
-        icerikleriGuvenliEkle(kutu, gorunenMetin);
+        icerikleriGuvenliEkle(kutu, gorunenMetin, bulgular);
 
         LinearLayout altSatir = new LinearLayout(this);
         altSatir.setOrientation(LinearLayout.HORIZONTAL);

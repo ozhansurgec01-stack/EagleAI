@@ -20,6 +20,7 @@ import re
 from collections import Counter
 from urllib.parse import urlparse
 from eagle_afet_koordinasyon import afet_koordinasyon_cevabi
+from eagle_finansal_analiz import finansal_analiz_cevabi
 
 
 class EagleMerkezSonuc:
@@ -171,6 +172,44 @@ class EagleMerkezMotoru:
             .replace("I", "ı")
         )
         return re.sub(r"\s+", " ", text)
+
+    @classmethod
+    def genel_web_istek_kapsami_yeterli(cls, mesaj, cevap):
+        """Birleşik açıklama ve hesaplama taleplerini denetler."""
+        sade = str.maketrans({
+            "ç": "c", "ğ": "g", "ı": "i", "ö": "o", "ş": "s", "ü": "u",
+            "Ç": "c", "Ğ": "g", "İ": "i", "Ö": "o", "Ş": "s", "Ü": "u",
+        })
+        soru = cls.normalize(mesaj).translate(sade)
+        yanit = cls.normalize(cevap).translate(sade)
+
+        aciklama = bool(re.search(
+            r"\b(neden|nicin|acikla|aciklayin|sebep|nedenini)\b", soru
+        ))
+        hesap = bool(re.search(
+            r"\b(hesab|hesapla|hesaplam|islem adim|formul)\w*\b", soru
+        ))
+
+        if aciklama:
+            nedensellik = bool(re.search(
+                r"\b(cunku|nedeni|sebebi|bu nedenle|bu yuzden|dolayisiyla|"
+                r"sonucunda|kaynaklanir|yol acar|sayesinde)\b|"
+                r"\b\w+\s+icin\b",
+                yanit,
+            ))
+            if not nedensellik:
+                return False
+
+        if hesap:
+            islem = bool(re.search(
+                r"(?:=|≈|≃)\s*-?\d+(?:[.,]\d+)?|"
+                r"\d+(?:[.,]\d+)?\s*[×x*÷/+\-^]\s*\d",
+                yanit,
+            ))
+            if not islem:
+                return False
+
+        return True
 
     @classmethod
     def finans_fiyat_sorgusu_mu(cls, mesaj):
@@ -1949,6 +1988,99 @@ class EagleMerkezMotoru:
         }
 
     @classmethod
+    def bilimsel_model_cevabi(cls, mesaj):
+        """
+        Bilimsel model katmanı.
+        Yeni bilimsel modeller bu metoda genişletilebilir.
+        İlk model: özel görelilikte zaman genişlemesi.
+        """
+        try:
+            soru = cls.normalize(mesaj)
+            sade = soru.translate(str.maketrans({
+                "ç": "c", "ğ": "g", "ı": "i", "ö": "o",
+                "ş": "s", "ü": "u"
+            }))
+
+            gorelilik = any(x in sade for x in (
+                "ozel gorelilik",
+                "zaman genislemesi",
+                "lorentz",
+                "isik hizina yakin",
+                "isik hizinin",
+            ))
+            if not gorelilik:
+                return None
+
+            sure_eslesme = re.search(
+                r"(\d+(?:[.,]\d+)?)\s*(?:yil|sene)", sade
+            )
+            if not sure_eslesme:
+                return None
+
+            sure = float(sure_eslesme.group(1).replace(",", "."))
+
+            yuzde_eslesme = re.search(
+                r"(?:%|yuzde\s*)(\d+(?:[.,]\d+)?)", sade
+            )
+            if yuzde_eslesme:
+                hiz_orani = float(
+                    yuzde_eslesme.group(1).replace(",", ".")
+                ) / 100.0
+            else:
+                oran_eslesme = re.search(
+                    r"\b(0[.,]\d+)\s*c\b", sade
+                )
+                if not oran_eslesme:
+                    return None
+                hiz_orani = float(
+                    oran_eslesme.group(1).replace(",", ".")
+                )
+
+            if sure <= 0 or not 0 < hiz_orani < 1:
+                return None
+
+            gamma = 1.0 / (1.0 - hiz_orani ** 2) ** 0.5
+            dunya_suresi = sure * gamma
+
+            def yaz(sayi):
+                return f"{sayi:.2f}".replace(".", ",")
+
+            yuzde = hiz_orani * 100.0
+
+            cevap = (
+                "## Özel görelilik: zaman genişlemesi\n\n"
+                "Özel görelilik teorisine göre, ışık hızına yakın "
+                "hareket eden bir gözlemci için zaman, Dünya'daki "
+                "gözlemciye göre farklı miktarda geçebilir. "
+                "Uzay gemisindeki astronot kendi saatine baktığında "
+                "zamanı normal yaşar; fark, Dünya ve gemi saatleri "
+                "yeniden karşılaştırıldığında ortaya çıkar.\n\n"
+                "Bunun nedeni, ışık hızının tüm eylemsiz "
+                "gözlemciler için aynı olmasıdır. Bu koşul, yüksek "
+                "bağıl hızlarda zaman ve uzay ölçümlerinin "
+                "birbirinden farklı olmasına yol açar.\n\n"
+                "**Hesaplama**\n\n"
+                "Lorentz katsayısı:\n\n"
+                "γ = 1 / √(1 − v²/c²)\n\n"
+                f"Geminin hızı ışık hızının %{yaz(yuzde)}'i olduğundan "
+                f"v/c = {yaz(hiz_orani)}.\n\n"
+                f"γ = 1 / √(1 − {yaz(hiz_orani)}²) "
+                f"≈ {yaz(gamma)}\n\n"
+                "Dünya'da geçen süre:\n\n"
+                "t = γ × gemide geçen süre\n\n"
+                f"t ≈ {yaz(gamma)} × {yaz(sure)} yıl "
+                f"≈ **{yaz(dunya_suresi)} yıl**.\n\n"
+                f"Sonuç: Gemide {yaz(sure)} yıl geçerken, "
+                f"Dünya'da yaklaşık {yaz(dunya_suresi)} yıl geçer. "
+                "Bu hesap, geminin hızının sabit olduğu ve "
+                "ivmelenme/yavaşlama sürelerinin ihmal edildiği "
+                "varsayımına dayanır."
+            )
+            return cevap
+        except Exception:
+            return None
+
+    @classmethod
     def genel_web_cevabi(
         cls,
         mesaj,
@@ -1963,79 +2095,19 @@ class EagleMerkezMotoru:
         if not mesaj:
             return "", 0.0
 
-        # EAGLEAI_FINANSAL_CELISKI_ANALIZI_V1
+        # EAGLEAI_BILIMSEL_MODEL_KATMANI_V1
+        bilimsel_cevap = cls.bilimsel_model_cevabi(mesaj)
+        if bilimsel_cevap:
+            return bilimsel_cevap, 0.92
+
+
+        # EAGLEAI_FINANSAL_ANALIZ_V2
+        # Gösterge yönlerini okuyan yerel analiz (eagle_finansal_analiz.py).
+        # Sabit metin yerine verilen artış/düşüş ve yüzdelere göre üretir.
         try:
-            finans_metin = cls.normalize(mesaj)
-            finans_gostergeleri = (
-                ("gelir", ("gelir", "ciro", "satis")),
-                ("gider", ("gider", "masraf", "maliyet")),
-                ("nakit", ("nakit akisi", "nakit akışı", "nakit akis", "nakit akış", "cash flow")),
-                ("borc", ("borc", "borç", "kisa vadeli borc", "kısa vadeli borç")),
-                ("stok", ("stok", "envanter")),
-                ("alacak", ("alacak", "tahsilat", "ticari alacak")),
-                ("marj", ("kar marji", "kâr marjı", "brut kar", "brüt kâr")),
-            )
-            bulunan_gostergeler = [
-                ad for ad, terimler in finans_gostergeleri
-                if any(terim in finans_metin for terim in terimler)
-            ]
-            finans_analiz_niyeti = any(x in finans_metin for x in (
-                "analiz", "acikla", "açıkla", "degerlendir", "değerlendir",
-                "neden", "risk", "cozum", "çözüm", "plan", "yorumla",
-                "celiski", "çelişki",
-            ))
-            if len(bulunan_gostergeler) >= 3 and finans_analiz_niyeti:
-                cevap = (
-                    "## Finansal durum analizi\n\n"
-                    "**Ön değerlendirme:** Gelir artarken nakit akışının düşmesi, "
-                    "kısa vadeli borcun ve stokların yükselmesi; büyümenin nakde "
-                    "dönüşmediğine ve işletme sermayesi baskısına işaret eder. "
-                    "Tek başına bu veriler kesin nedeni kanıtlamaz.\n\n"
-                    "**Olası nedenler**\n"
-                    "- Vadeli satışların artması ve alacak tahsilatının gecikmesi. "
-                    "Ciro muhasebeleşirken nakit henüz tahsil edilmemiş olabilir.\n"
-                    "- Stok alımlarının satışlardan hızlı artması; yavaş dönen, "
-                    "fazla veya modası geçen stokların depoda birikmesi.\n"
-                    "- Tedarikçi ödemeleri, ücretler ve diğer işletme giderlerinin "
-                    "tahsilatlardan önce yapılması.\n"
-                    "- Kısa vadeli kredi kullanımı, kredi yenileme veya borç "
-                    "vadesinin yakın dönemde yoğunlaşması.\n"
-                    "- İskonto, ürün karması veya maliyet artışı nedeniyle "
-                    "kârlılığın nakit üretimini desteklememesi.\n\n"
-                    "**Başlıca finansal riskler**\n"
-                    "- Likidite açığı ve maaş/tedarikçi ödemelerinde gecikme.\n"
-                    "- Kısa vadeli borçların çevrilememesi ve faiz yükünün artması.\n"
-                    "- Stok değer düşüklüğü, bozulma ve elde tutma maliyeti.\n"
-                    "- Tahsil edilemeyen alacaklar ve büyüyen işletme sermayesi ihtiyacı.\n\n"
-                    "**Kontrol edilecek göstergeler**\n"
-                    "- Alacak tahsil süresi (DSO), stokta kalma süresi (DIO) ve "
-                    "borç ödeme süresi (DPO).\n"
-                    "- Nakit dönüşüm döngüsü: DSO + DIO - DPO.\n"
-                    "- Cari oran, asit-test oranı, net işletme sermayesi ve "
-                    "13 haftalık nakit akış tahmini.\n"
-                    "- Faaliyet nakit akışı / net kâr, brüt kâr marjı, "
-                    "stok devir hızı ve vadesi gelen borç takvimi.\n\n"
-                    "**90 günlük uygulanabilir plan**\n"
-                    "1. **İlk 0-15 gün:** Günlük nakit pozisyonu ve 13 haftalık "
-                    "nakit tahmini oluşturun. Vadesi geçen alacakları müşteri "
-                    "bazında sıralayın; kritik olmayan harcamaları ve yeni stok "
-                    "alımlarını gözden geçirin.\n"
-                    "2. **16-30 gün:** Büyük alacaklar için sorumlu ve tahsilat "
-                    "takvimi belirleyin. Yavaş dönen stokları ürün bazında ayırın; "
-                    "satın alma limitlerini gerçek satış hızına bağlayın.\n"
-                    "3. **31-60 gün:** Tedarikçilerle ödeme vadelerini, bankalarla "
-                    "borç vade dağılımını görüşün. Kârlılığı düşük ürünleri, "
-                    "iskontoları ve müşteri bazlı ödeme koşullarını inceleyin.\n"
-                    "4. **61-90 gün:** DSO, DIO, DPO, nakit dönüşüm döngüsü ve "
-                    "kısa vadeli borç oranını haftalık izleyin. Hedeflerden sapma "
-                    "için sorumlu ve düzeltici aksiyon atayın.\n\n"
-                    "**Öncelik:** Önce nakit tahsilatı ve stok kontrolü, ardından "
-                    "borç vade yapısı. Yüzde değişimleri tek başına yeterli değildir; "
-                    "tutarlar, dönemler, sektör ve bilanço kalemleri birlikte "
-                    "incelenmelidir. Bu değerlendirme ön analizdir, denetim veya "
-                    "yatırım tavsiyesi değildir."
-                )
-                return cevap, 0.96
+            finans_cevap, finans_guven = finansal_analiz_cevabi(mesaj)
+            if finans_cevap:
+                return finans_cevap, finans_guven
         except Exception:
             pass
 
@@ -3586,7 +3658,12 @@ class EagleMerkezMotoru:
         # istenebilir. Aynı kaynaktaki, daha önce karşılanmayan
         # soru kelimelerini içeren cümleleri birlikte değerlendir.
         cok_parcali_soru = bool(
-            re.search(r"\bve\b", soru)
+            re.search(
+                r"\b(ve|ayrica|bir de|bunun yaninda|ek olarak)\b",
+                cls.normalize(str(soru or "")).translate(str.maketrans({
+                    "ç": "c", "ğ": "g", "ı": "i", "ö": "o", "ş": "s", "ü": "u",
+                })),
+            )
         )
 
         if cok_parcali_soru:
@@ -3645,7 +3722,7 @@ class EagleMerkezMotoru:
                     karsilanan.update(yeni_soru_kelime)
                     toplam_puan += puan
 
-                    if len(secilecek) >= 2:
+                    if len(secilecek) >= 4:
                         break
 
                 if secilecek:
@@ -4370,11 +4447,8 @@ class EagleMerkezMotoru:
                 if baskent_sorusu
                 else 2
                 if re.search(r"\bnerede(?:dir)?\b", soru)
-                else 1
-                if (
-                    yonlendirme_sorusu
-                    or cok_parcali_soru
-                )
+                else 1 if yonlendirme_sorusu
+                else 4 if cok_parcali_soru
                 else 3
             ):
                 break
@@ -4509,6 +4583,8 @@ class EagleMerkezMotoru:
         # Güven puanı: konu kelimelerinin kapsanması, seçilen cümlelerin
         # doğrudan konuya değinmesi ve kaynak desteği. Sayfa okuyucunun
         # kullanılması tek başına güveni yükseltmez.
+        if not cls.genel_web_istek_kapsami_yeterli(mesaj, cevap):
+            return "", 0.0
         cevap_kelime = set(re.findall(
             r"[a-z0-9çğıöşü]+",
             cls.normalize(cevap)
@@ -5008,6 +5084,26 @@ class EagleMerkezMotoru:
                 gemini_gerekli=False,
                 kaynak_goster=False,
                 neden="Afet koordinasyon modülü yerel karar desteği üretti."
+            )
+
+        # Finansal durum analizi: karar motoru görevi "finansal_analiz" olarak
+        # sınıflandırdıysa ya da göstergelerden bu görev anlaşılıyorsa yerel,
+        # kural tabanlı analiz çalışır; web verisine bağlı değildir.
+        try:
+            finans_cevap, finans_guven = finansal_analiz_cevabi(
+                mesaj, gorev_turu=karar.get("islem")
+            )
+        except Exception:
+            finans_cevap, finans_guven = "", 0.0
+        if finans_cevap and finans_guven >= 0.75:
+            return EagleMerkezSonuc(
+                ok=True,
+                cevap=finans_cevap,
+                guven=finans_guven,
+                kaynak_sayisi=0,
+                gemini_gerekli=False,
+                kaynak_goster=False,
+                neden="Finansal analiz modülü yerel analiz üretti."
             )
 
         # Finans sorguları kendi ek web aramalarını yapabilmelidir.
