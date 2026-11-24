@@ -4452,6 +4452,11 @@ def web_arastirma_gerekli(mesaj):
     if konu_adi_mi(mesaj):
         return True
 
+    # "X kimdir", "X nasıl biri" kişi/konu sorusudur.
+    if re.search(r"(?<!\w)(?:kimdir|nasıl biri|nasil biri)(?!\w)",
+                 str(mesaj or "").casefold()):
+        return True
+
     kelimeler = [
         "şimdi", "şu an",
         "son dakika",

@@ -40,6 +40,14 @@ def test_karar_motoru_web_arastirma():
         assert eagle_karar_motoru(ad).get("arac") == "web_arastirma", ad
 
 
+def test_sosyal_kok_ve_kimdir():
+    for m in ("Nasılsınız?", "Günaydınlar"):
+        assert not konu_adi_mi(m), m
+    from eagle_api import eagle_karar_motoru
+    for m in ("Selamlar Jules Verne nasıl biri", "Jules Verne kimdir"):
+        assert eagle_karar_motoru(m).get("arac") == "web_arastirma", m
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items())
              if n.startswith("test_")]
