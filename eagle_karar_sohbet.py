@@ -28,6 +28,13 @@ _SORU_FIIL = {
 }
 
 
+_SOSYAL_KOK = (
+    "nasılsın", "nasilsin", "günaydın", "gunaydin", "merhaba",
+    "selam", "teşekkür", "tesekkur", "hoşça", "hosca",
+    "görüşür", "gorusur", "sağol", "sagol", "eyvallah",
+)
+
+
 def _kucult(metin):
     return str(metin or "").replace("İ", "i").replace("I", "ı").lower()
 
@@ -44,6 +51,8 @@ def konu_adi_mi(metin):
     if not 1 <= len(parca) <= 4:
         return False
     if yazim_normalle(metin) in _SELAM_ONAY:
+        return False
+    if any(_kucult(p).startswith(_SOSYAL_KOK) for p in parca):
         return False
     k = _kucult(metin)
     for x in BASIT_SOHBET_KELIMELERI:

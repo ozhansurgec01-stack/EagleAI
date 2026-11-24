@@ -3094,6 +3094,51 @@ def genel_web_cumle_tamligi_ve_metadata_filtre_test():
         )
     assert misir_guven >= 0.75, misir_guven
 
+
+
+def genel_bilgi_ogrenilmis_yonlendirme_koruma_test():
+    import eagle_api
+
+    dogru_genel = [
+        "Jules Verne",
+        "Jules Verne kimdir?",
+        "Franz Kafka nasıl biri?",
+        "Atatürk hakkında bilgi verir misin?",
+        "Fotosentez nedir?",
+        "Selamlar Jules Verne nasıl biri?",
+    ]
+    for soru in dogru_genel:
+        assert eagle_api.eagle_genel_bilgi_istegi(soru), (
+            f"Genel bilgi sorusu yakalanmadı: {soru}"
+        )
+
+    sosyal = ["Merhaba", "Nasılsınız?", "Bugün nasılsın?"]
+    for soru in sosyal:
+        assert not eagle_api.eagle_genel_bilgi_istegi(soru), (
+            f"Sosyal sohbet yanlışlıkla genel bilgi sayıldı: {soru}"
+        )
+
+    ogrenilmis = {
+        "intent": "sohbet",
+        "arac": "eagle_sohbet",
+        "bilgi": "Önceki başarılı sohbet yönlendirmesi",
+    }
+    sohbet = {"intent": "sohbet", "arac": "eagle_sohbet"}
+
+    assert not eagle_api.eagle_ogrenilmis_davranis_uygulanabilir_mi(
+        sohbet, ogrenilmis, "Jules Verne kimdir?"
+    ), "Genel bilgi sorusunda öğrenilmiş yönlendirme uygulandı."
+
+    basit_sohbet = {"intent": "basit_sohbet", "arac": "eagle_sohbet"}
+    assert not eagle_api.eagle_ogrenilmis_davranis_uygulanabilir_mi(
+        basit_sohbet, ogrenilmis, "Bugün nasılsın?"
+    ), "Basit sohbet kararına öğrenilmiş yönlendirme uygulandı."
+
+    assert eagle_api.eagle_ogrenilmis_davranis_uygulanabilir_mi(
+        sohbet, ogrenilmis, "Bugün nasılsın?"
+    ), "Uygun sohbette öğrenilmiş yönlendirme engellendi."
+
+test("Genel bilgi öğrenilmiş yönlendirme koruması", genel_bilgi_ogrenilmis_yonlendirme_koruma_test)
 test("Genel başlık-cümle uyumu", genel_baslik_cumle_uyumu_test)
 test("Genel web konu uyumu kök regresyonu", genel_web_konu_uyumu_kok_regresyon_test)
 test("Genel web cümle tamlığı ve metadata filtresi", genel_web_cumle_tamligi_ve_metadata_filtre_test)

@@ -4416,6 +4416,59 @@ ana_koordinator = eagle_ana_koordinatorunu_kur(
 )
 
 
+def eagle_genel_bilgi_istegi(mesaj, mesaj_karar=None):
+    """Genel bilgi ve kişi/konu tanıtımı isteklerini öğrenilmiş yönlendirmeden korur."""
+    for aday in (mesaj, mesaj_karar):
+        metin = str(aday or "").strip()
+        if not metin:
+            continue
+
+        metin = re.sub(
+            r"^(?:selam(?:lar)?|merhaba|hey|iyi\s+günler|iyi\s+gunler)"
+            r"[\s,!.:;-]*",
+            "",
+            metin,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        if konu_adi_mi(metin):
+            return True
+
+        norm = metin.casefold().replace("\u0307", "")
+        if re.search(
+            r"(?<!\w)(?:kimdir|nasıl\s+biri|nasil\s+biri|"
+            r"hakkında\s+bilgi|hakkinda\s+bilgi|"
+            r"ile\s+ilgili\s+bilgi|ile\s+ilgili\s+bilgiler|"
+            r"nedir|ne\s+demek|ne\s+işe\s+yarar|ne\s+ise\s+yarar|"
+            r"nasıl\s+çalışır|nasil\s+calisir|nerede\s+bulunur)"
+            r"(?!\w)",
+            norm,
+        ):
+            return True
+
+    return False
+
+
+def eagle_ogrenilmis_davranis_uygulanabilir_mi(karar, ogrenilmis_karar, mesaj, mesaj_karar=None):
+    """Öğrenilmiş yönlendirme için ortak karar kontrolü."""
+    if eagle_genel_bilgi_istegi(mesaj, mesaj_karar):
+        return False
+    if not ogrenilmis_karar:
+        return False
+    return (
+        karar.get("intent") != "basit_sohbet"
+        and (
+            karar.get("arac") == "eagle_sohbet"
+            or (
+                karar.get("intent") == "guncel_bilgi"
+                and ogrenilmis_karar.get("arac") == "web_arastirma"
+            )
+        )
+        and ogrenilmis_karar.get("arac")
+        in ("eagle_sohbet", "web_arastirma", "spor_kaynaklari", "hava_api")
+    )
+
+
 def web_arastirma_gerekli(mesaj):
     """Mesaj güncel internet bilgisi gerektiriyor mu?"""
     # Günlük konuşma beyanları tek başına web araştırması başlatmaz.
@@ -4450,6 +4503,11 @@ def web_arastirma_gerekli(mesaj):
 
     # Tek başına yazılan özel ad / konu adı bilgi isteğidir.
     if konu_adi_mi(mesaj):
+        return True
+
+    # "X kimdir", "X nasıl biri" kişi/konu sorusudur.
+    if re.search(r"(?<!\w)(?:kimdir|nasıl biri|nasil biri)(?!\w)",
+                 str(mesaj or "").casefold()):
         return True
 
     kelimeler = [
@@ -11751,21 +11809,15 @@ def sohbet():
             gecmis
         )
 
+    # Genel bilgi soruları eski öğrenilmiş sohbet davranışıyla ezilmemeli.
+    genel_bilgi_istegi = eagle_genel_bilgi_istegi(
+        mesaj_orijinal, mesaj_karar
+    )
+
     # 🧠 ÖĞRENİLMİŞ DAVRANIŞI UYGULA
-    # Özel kararları (spor, hava, borç, kod vb.) ezmeden yalnızca
-    # genel sohbet kararında öğrenilmiş aracı devreye al.
-    if (
-        ogrenilmis_karar
-        and karar.get("intent") != "basit_sohbet"
-        and (
-            karar.get("arac") == "eagle_sohbet"
-            or (
-                karar.get("intent") == "guncel_bilgi"
-                and ogrenilmis_karar.get("arac") == "web_arastirma"
-            )
-        )
-        and ogrenilmis_karar.get("arac")
-        in ("eagle_sohbet", "web_arastirma", "spor_kaynaklari", "hava_api")
+    # Genel bilgi dışında kalan uygun isteklerde öğrenilmiş aracı kullan.
+    if eagle_ogrenilmis_davranis_uygulanabilir_mi(
+        karar, ogrenilmis_karar, mesaj_orijinal, mesaj_karar
     ):
         karar = {
             **karar,
@@ -13749,50 +13801,13 @@ def sohbet():
                         flush=True
                     )
 
-        # 🧠 Öğrenme hafızası: güncel olmayan genel konuda önce mevcut bilgiyi kullan
-        mesaj_kucuk = mesaj.casefold()
-        guncel_isaretleri = [
-            "şimdi", "şu an", "son dakika", "güncel", "guncel",
-            "haber", "haberler", "maç", "mac", "skor", "puan durumu",
-            "bitcoin", "btc", "ethereum", "eth",
-            "altın", "gram altın", "dolar", "euro", "sterlin", "pound", "pounds", "gbp",
-            "en son", "son durum", "ne oldu",
-            "yeni bölüm", "yeni bolum", "bölüm", "bolum",
-            "yayınlandı", "yayimlandi", "yayında", "yayinda",
-            "dizi", "sezon", "fragman", "final yaptı", "final yapti"
-        ]
-
-        if not any(x in mesaj_kucuk for x in guncel_isaretleri):
-            # 🧠 Öğrenilmiş kayıt artık cevabı doğrudan üretmez.
-            # Üst akışta bulunan ogrenilmis_karar, öğrenilmiş davranış
-            # için aday olarak kullanılacaktır.
-            if ogrenilmis_karar:
-                print(
-                    "🧠 ÖĞRENİLMİŞ KAYIT KULLANILIYOR",
-                    flush=True
-                )
-
-                karar_ogrenilmis = {
-                    **karar,
-                    "arac": "eagle_sohbet",
-                    "ogrenmeden": True,
-                    "ogrenilmis_bilgi": ogrenilmis_karar.get("bilgi", ""),
-                }
-
-                cevap = genel_sohbet(
-                    mesaj,
-                    gecmis=gecmis,
-                    hafiza=kalici_hafiza,
-                    karar=karar_ogrenilmis,
-                        )
-
-                return jsonify({
-                    "ok": True,
-                    "answer": cevap,
-                    "web_search": False,
-                    "memory_count": len(hafiza_yukle()),
-                    "learned": True
-                })
+        # Öğrenilmiş bilgi, genel bilgi sorularında doğrudan cevap olarak
+        # döndürülmez. Araştırma ve normal cevap akışı devam eder.
+        if ogrenilmis_karar:
+            print(
+                "🧠 ÖĞRENİLMİŞ KAYIT ROUTING ADAYI — ERKEN CEVAP ENGELLENDİ",
+                flush=True
+            )
 
         arama_sorgusu = doviz_arama_sorgusu(mesaj)
         print(f"🌐 WEB SORGU: {arama_sorgusu!r}", flush=True)
@@ -14105,7 +14120,7 @@ def sohbet():
         r"(?:hakkında|hakkinda).*(?:bilgi|anlat|tanıt|tanit)"
         r"|bilgi.*(?:ver|lazım|lazim|istiyorum|almak)"
         r"|(?:tanıt|tanit|anlat)\w*"
-        r"|merak ediyorum|nasıl bir yer|nasil bir yer",
+        r"|kimdir|nasıl biri|nasil biri|merak ediyorum|nasıl bir yer|nasil bir yer",
         mesaj_yonlendirme
     ))
 
@@ -14138,6 +14153,7 @@ def sohbet():
             for ifade in (
                 "nasılsın",
                 "nasilsin",
+                "nasılsınız", "nasilsiniz",
                 "iyi misin",
                 "nasıl gidiyor",
                 "nasil gidiyor",
@@ -14167,6 +14183,7 @@ def sohbet():
         for ifade in (
             "nasılsın",
             "nasilsin",
+            "nasılsınız", "nasilsiniz",
             "iyi misin",
             "nasıl gidiyor",
             "nasil gidiyor",
