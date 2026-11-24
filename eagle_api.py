@@ -1,7 +1,7 @@
 from eagle_merkez_motoru import eagle_merkez_motorunu_kur
 from eagle_akil_motoru import eagle_akil_motorunu_kur
 from eagle_ana_koordinator import eagle_ana_koordinatorunu_kur
-from eagle_finansal_analiz import finansal_gorev_mu
+from eagle_finansal_analiz import finansal_gorev_mu, birikim_hesapla_cevabi
 from eagle_karar_komutlari import slash_komutunu_coz
 from eagle_karar_sohbet import erken_sohbet_karari
 from eagle_autofix import EagleAutoFixEngine
@@ -11252,6 +11252,26 @@ def sohbet():
     file_mime = str(
         data.get("file_mime", "image/jpeg")
     ).strip()
+
+    # EAGLEAI_NATURAL_LANGUAGE_SAVINGS_V1: web gerektirmeyen birikim hesabı.
+    if not file_base64 and mesaj:
+        try:
+            birikim_cevap, birikim_guven = birikim_hesapla_cevabi(mesaj)
+        except Exception as birikim_hatasi:
+            print(f"[Birikim] Yerel hesaplama hatası: {birikim_hatasi}", flush=True)
+            birikim_cevap, birikim_guven = "", 0.0
+
+        if birikim_cevap and birikim_guven >= 0.90:
+            sohbet_hafizaya_ekle(mesaj, birikim_cevap, konu="finansal_birikim")
+            return jsonify({
+                "ok": True,
+                "answer": birikim_cevap,
+                "eagle_direct": True,
+                "web_search": False,
+                "merkez_motor": True,
+                "financial_calculation": "savings",
+                "memory_count": len(hafiza_yukle())
+            })
 
     if file_base64:
         try:

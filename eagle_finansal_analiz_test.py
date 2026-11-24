@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """eagle_finansal_analiz.py testleri. Çalıştırma: python eagle_finansal_analiz_test.py"""
 import sys
-from eagle_finansal_analiz import finansal_analiz_cevabi, finansal_gorev_mu
+from eagle_finansal_analiz import finansal_analiz_cevabi, finansal_gorev_mu, birikim_hesapla_cevabi
 
 SENARYO = ("Bir şirketin gelirleri %30 artarken nakit akışı %40 düşmüş, kısa vadeli borçları %50 yükselmiş "
            "ve stokları %60 birikmiş. Bu çelişkiyi analiz et. Olası nedenleri, finansal riskleri, kontrol "
@@ -96,6 +96,41 @@ def t_tekil_gosterge_fallback():
     c, _ = finansal_analiz_cevabi("Marj düştü ve gider arttı, analiz et.")
     assert "Kâr marjı düşüyor" in c and "Gider artarken gelir artmıyor" in c
 
+
+def t_dogal_dil_birikim_hesabi():
+    c, g = birikim_hesapla_cevabi(
+        "Aylık gelirim 30000 TL, giderim 22000 TL. "
+        "Her ay kalan parayı biriktirirsem 6 ay sonunda ne kadar param olur?"
+    )
+    assert g >= 0.9
+    assert "Aylık birikim: 8.000,00 TL" in c, c
+    assert "6 ay sonunda birikim: 48.000,00 TL" in c, c
+
+def t_birikim_yazim_varyasyonlari():
+    c, g = birikim_hesapla_cevabi(
+        "Gelir 30.000 TL, aylık gider 22.000 TL; 6 ay birikim yapacağım."
+    )
+    assert c and g >= 0.9
+    assert "48.000,00 TL" in c, c
+
+def t_birikim_eksik_bilgide_sessiz():
+    for m in (
+        "Gelirim 30000 TL, giderim 22000 TL. Biriktirmek istiyorum.",
+        "6 ay boyunca her ay para biriktireceğim.",
+        "Aylık gelirim 30000 TL, 6 ay sonunda birikimim ne olur?",
+    ):
+        c, g = birikim_hesapla_cevabi(m)
+        assert c == "" and g == 0.0, (m, c, g)
+
+def t_birikim_alakasiz_finans_sorusunu_yutmaz():
+    for m in (
+        "Bir şirketin gelirleri %30 artarken giderleri %20 arttı. Analiz et.",
+        "Bugün dolar kaç TL?",
+        "Gelirimi artırmanın yollarını açıkla.",
+    ):
+        assert birikim_hesapla_cevabi(m) == ("", 0.0), m
+
+
 for ad, fn in [
     ("Mevcut regresyon testinin şartları (DSO/DIO/DPO/90 günlük/Likidite, güven>=0.9)", t_mevcut_testin_sartlari),
     ("Ters senaryo farklı ve doğru teşhis üretir", t_ters_senaryo_farkli),
@@ -113,6 +148,10 @@ for ad, fn in [
     ("Nedenler verilen yönlerle çelişmez", t_veriyle_celismeyen_nedenler),
     ("Deterministik çıktı", t_deterministik),
     ("Tekil gösterge değerlendirmesi", t_tekil_gosterge_fallback),
+    ("Doğal dil birikim hesabı 30k-22k x 6", t_dogal_dil_birikim_hesabi),
+    ("Birikim hesabı yazım varyasyonları", t_birikim_yazim_varyasyonlari),
+    ("Birikim hesabında eksik bilgi güvenli şekilde reddedilir", t_birikim_eksik_bilgide_sessiz),
+    ("Birikim katmanı alakasız finans sorularını yutmaz", t_birikim_alakasiz_finans_sorusunu_yutmaz),
 ]:
     test(ad, fn)
 

@@ -437,3 +437,86 @@ def finansal_analiz_cevabi(mesaj, gorev_turu=None):
     satirlar.append("")
     satirlar.append("Bu değerlendirme ön analizdir; denetim veya yatırım tavsiyesi değildir.")
     return "\n".join(satirlar), guven
+
+
+# ---------------------------------------------------------------------------
+# EAGLEAI_NATURAL_LANGUAGE_SAVINGS_V1
+# Gelir + gider + süre + biriktirme niyetini web'den önce yerel hesaplar.
+_BIRIKIM_SAYI = r"(?:\d{1,3}(?:[.\s]\d{3})+(?:,\d+)?|\d+(?:[,.]\d+)?)"
+
+def _birikim_sayiya_cevir(deger):
+    """Türkçe/uluslararası binlik ve ondalık ayraçlarını güvenli biçimde okur."""
+    s = str(deger or "").strip().replace(" ", "").replace("tl", "").replace("₺", "")
+    if not s:
+        return None
+    if "," in s and "." in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    elif s.count(".") > 1:
+        s = s.replace(".", "")
+    elif "." in s:
+        tam, kesir = s.rsplit(".", 1)
+        if len(kesir) == 3 and len(tam) <= 3:
+            s = s.replace(".", "")
+    try:
+        value = float(s)
+    except (TypeError, ValueError):
+        return None
+    if not 0 <= value <= 1_000_000_000_000:
+        return None
+    return value
+
+def birikim_hesapla_cevabi(mesaj):
+    """Aylık gelir/gider ve süre içeren birikim sorusuna (cevap, güven) döner."""
+    n = _norm(mesaj)
+    tasarruf_niyeti = any(x in n for x in (
+        "biriktir", "birikim", "biriktirir", "biriktirsem",
+        "kalan parayi", "kalan param", "tasarruf et",
+    ))
+    if not tasarruf_niyeti:
+        return "", 0.0
+
+    gelir_etiket = r"(?:aylik\s*)?(?:gelir(?:im|imiz)?|kazanc(?:im|imiz)?|maas(?:im|imiz)?)"
+    gider_etiket = r"(?:aylik\s*)?(?:gider(?:im|imiz)?|masraf(?:im|imiz)?|harcama(?:m|larim)?)"
+    tutar = _BIRIKIM_SAYI + r"\s*(?:tl|₺)?"
+    gelir_re = re.compile(r"(?:" + gelir_etiket + r"\s*(?:[:=]|yaklasik|ortalama)?\s*(" + tutar + r")|(" + tutar + r")\s*" + gelir_etiket + r")", re.I)
+    gider_re = re.compile(r"(?:" + gider_etiket + r"\s*(?:[:=]|yaklasik|ortalama)?\s*(" + tutar + r")|(" + tutar + r")\s*" + gider_etiket + r")", re.I)
+
+    gm = gelir_re.search(n)
+    em = gider_re.search(n)
+    if not gm or not em:
+        return "", 0.0
+
+    gelir = _birikim_sayiya_cevir(gm.group(1) or gm.group(2))
+    gider = _birikim_sayiya_cevir(em.group(1) or em.group(2))
+    if gelir is None or gider is None or gelir <= 0 or gider < 0:
+        return "", 0.0
+
+    sure = re.search(r"\b(\d{1,3})\s*(?:ay|aylik|ay boyunca)\b", n)
+    if not sure:
+        return "", 0.0
+    ay = int(sure.group(1))
+    if not 1 <= ay <= 600:
+        return "", 0.0
+
+    aylik_kalan = gelir - gider
+    toplam = aylik_kalan * ay
+    if aylik_kalan < 0:
+        cevap = (
+            f"Aylık giderin geliri {abs(aylik_kalan):,.2f} TL aşıyor. "
+            f"Bu durumda {ay} ay boyunca aynı düzende birikim oluşmaz; "
+            f"toplam açık {abs(toplam):,.2f} TL olur."
+        )
+    else:
+        cevap = (
+            f"Aylık gelir: {gelir:,.2f} TL\n"
+            f"Aylık gider: {gider:,.2f} TL\n"
+            f"Aylık birikim: {aylik_kalan:,.2f} TL\n"
+            f"{ay} ay sonunda birikim: {toplam:,.2f} TL"
+        )
+    cevap = cevap.replace(",", "X").replace(".", ",").replace("X", ".")
+    return cevap, 0.99
