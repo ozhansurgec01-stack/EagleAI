@@ -1,5 +1,7 @@
 from eagle_merkez_motoru import eagle_merkez_motorunu_kur
 from eagle_akil_motoru import eagle_akil_motorunu_kur
+from eagle_ana_koordinator import eagle_ana_koordinatorunu_kur
+from eagle_finansal_analiz import finansal_gorev_mu
 from eagle_karar_komutlari import slash_komutunu_coz
 from eagle_karar_sohbet import erken_sohbet_karari
 from eagle_autofix import EagleAutoFixEngine
@@ -2105,7 +2107,9 @@ def bilgi_bankasi_ara(mesaj):
                     )
                     ortak = sorgu_kelime & kayit_kelime
 
-                    if len(ortak) >= 2:
+                    # Genel aramada kısa kelime çakışmalarını ele.
+                    gerekli_eslesme = max(2, (len(sorgu_kelime) + 2) // 3)
+                    if len(ortak) >= gerekli_eslesme:
                         puan = len(ortak)
                         bulunan.append((puan, gosterilecek))
 
@@ -3552,6 +3556,39 @@ def eagle_karar_motoru(mesaj, gecmis=None):
         })
         return karar
 
+    # 📊 FİNANSAL ANALİZ
+    # Kayıtlı borç işlemlerinden farklı olarak şirket finansal
+    # durumunun değerlendirilmesi merkez analiz motoruna gider.
+    finansal_isaretler = (
+        "finansal", "şirket", "sirket", "gelirleri",
+        "nakit akışı", "nakit akisi", "stokları", "stoklari",
+        "kısa vadeli borç", "kisa vadeli borc",
+        "nakit akış", "nakit akis", "işletme sermayesi",
+        "kar marjı", "kâr marjı",
+    )
+    analitik_isaretler = (
+        "analiz", "riskleri", "değerlendir", "degerlendir",
+        "olası nedenleri", "olasi nedenleri",
+        "kontrol edilmesi gereken", "çözüm planı",
+        "cozum plani", "uygulanabilir çözüm",
+        "90 günlük", "kod yazmadan açıkla",
+        "kod yazmadan anlat",
+    )
+    if (
+        (finansal_gorev_mu(mesaj) or any(x in k for x in finansal_isaretler))
+        and (finansal_gorev_mu(mesaj) or any(x in k for x in analitik_isaretler))
+        and not acik_program_istegi
+    ):
+        karar.update({
+            "intent": "analiz",
+            "guven": "yüksek",
+            "neden": "Finansal durum değerlendirmesi merkez analiz motoruna yönlendirildi.",
+            "arac": "merkez_bilgi",
+            "islem": "finansal_analiz",
+            "dogrulama": True,
+        })
+        return karar
+
     # 🧮 ARDIŞIK ZAM / İNDİRİM HESABI
     # Türkçe binlik ayraçlarını ve işlem sırasını korur.
     zincir_fiyat = re.search(
@@ -4311,6 +4348,66 @@ def eagle_karar_motoru(mesaj, gecmis=None):
 akil_motor = eagle_akil_motorunu_kur(
     karar_motoru=eagle_karar_motoru,
     hafiza_yukle=hafiza_yukle
+)
+
+# EAGLE ANA KOORDİNATÖRÜ
+def _eagle_koordinator_kodunu_al(metin):
+    metin = str(metin or "").strip()
+    eslesen = re.search(r"```(?:python|py)?\s*(.*?)```", metin, re.S | re.I)
+    if eslesen:
+        return eslesen.group(1).strip()
+    if "\n" in metin and re.search(
+        r"(?m)^\s*(?:def |class |import |from |if |for |while |print\(|return\b)",
+        metin
+    ):
+        return metin
+    return ""
+
+
+def _eagle_uzman_genel_sohbet(mesaj, karar, gecmis):
+    cevap = genel_sohbet(
+        mesaj,
+        gecmis=gecmis,
+        hafiza=hafiza_yukle(),
+        karar=karar,
+    )
+    return {"ok": bool(str(cevap or "").strip()), "cevap": str(cevap or "")}
+
+
+def _eagle_uzman_program_uretme(mesaj, karar, gecmis):
+    return EagleProgramUretmeMotoru().uret(mesaj)
+
+
+def _eagle_uzman_kod_analiz(mesaj, karar, gecmis):
+    kod = _eagle_koordinator_kodunu_al(mesaj)
+    if not kod:
+        return {"ok": False, "hata": "Analiz edilecek kod bulunamadı."}
+    motor = autofix_engine.analiz_motoru
+    bulgular = motor.analiz_et(kod)
+    mantik = motor.mantik_analizi(kod, bulgular)
+    satirlar = ["EAGLE KOD ANALİZİ"]
+    satirlar.extend("- " + str(x) for x in (bulgular or []))
+    satirlar.extend("- " + str(x) for x in (mantik or []))
+    if len(satirlar) == 1:
+        satirlar.append("- İlk analizde belirgin bir bulgu tespit edilmedi.")
+    return {"ok": True, "cevap": "\n".join(satirlar)}
+
+
+def _eagle_uzman_kod_guvenlik(mesaj, karar, gecmis):
+    kod = _eagle_koordinator_kodunu_al(mesaj)
+    if not kod:
+        return {"ok": False, "hata": "Güvenlik kontrolü için kod bulunamadı."}
+    return EagleKodGuvenlikMotoru().kontrol_et(kod)
+
+
+ana_koordinator = eagle_ana_koordinatorunu_kur(
+    akil_motoru=akil_motor,
+    uzman_motorlari={
+        "genel_sohbet": _eagle_uzman_genel_sohbet,
+        "program_uretme": _eagle_uzman_program_uretme,
+        "kod_analiz": _eagle_uzman_kod_analiz,
+        "kod_guvenlik": _eagle_uzman_kod_guvenlik,
+    },
 )
 
 
@@ -12069,6 +12166,8 @@ def sohbet():
                     "code_execution": False,
                     "security_blocked": True,
                     "security_findings": guvenlik_sonucu.get("bulgular", []),
+                    "findings": bulgular,
+                    "logic_analysis": mantik,
                     "memory_count": len(hafiza_yukle())
                 })
 
@@ -13948,6 +14047,7 @@ def sohbet():
         karar.get("arac") == "bilgi_bankasi"
         and not bilgi_sonuclari
         and not autofix_istegi
+        and not analitik_istek_mi
     ):
         print("🌐 BİLGİ BANKASI SONUÇSUZ — WEB ARAŞTIRMASINA GEÇİLİYOR", flush=True)
         print(f"🌐 WEB SORGU: {mesaj!r}", flush=True)
@@ -14061,12 +14161,55 @@ def sohbet():
             or sosyal_sohbet
         )
     ):
-        cevap = genel_sohbet(
-            mesaj,
-            gecmis=gecmis,
-            hafiza=kalici_hafiza,
-            karar=karar,
-        )
+        # Genel sohbeti önce ana koordinatör ve seçilen uzman üzerinden yürüt.
+        try:
+            koordinator_sonuc = ana_koordinator.calistir(
+                mesaj=mesaj,
+                gecmis=gecmis,
+                karar=karar,
+            )
+            if isinstance(koordinator_sonuc, dict):
+                koordinator_ok = bool(koordinator_sonuc.get("ok", False))
+                koordinator_cevap = str(
+                    koordinator_sonuc.get(
+                        "cevap",
+                        koordinator_sonuc.get("answer", "")
+                    ) or ""
+                ).strip()
+            else:
+                koordinator_ok = bool(getattr(koordinator_sonuc, "ok", False))
+                koordinator_cevap = str(
+                    getattr(koordinator_sonuc, "cevap", "") or ""
+                ).strip()
+
+            if koordinator_ok and koordinator_cevap:
+                cevap = koordinator_cevap
+                print(
+                    "🧠 EAGLE KOORDİNATÖR: Genel sohbet uzmanı başarıyla çalıştı.",
+                    flush=True,
+                )
+            else:
+                print(
+                    "⚠️ EAGLE KOORDİNATÖR: Uzman sonucu alınamadı; mevcut sohbet motoruna geçiliyor.",
+                    flush=True,
+                )
+                cevap = genel_sohbet(
+                    mesaj,
+                    gecmis=gecmis,
+                    hafiza=kalici_hafiza,
+                    karar=karar,
+                )
+        except Exception as koordinator_hatasi:
+            print(
+                f"⚠️ EAGLE KOORDİNATÖR HATASI: {koordinator_hatasi}",
+                flush=True,
+            )
+            cevap = genel_sohbet(
+                mesaj,
+                gecmis=gecmis,
+                hafiza=kalici_hafiza,
+                karar=karar,
+            )
 
         # Başarılı genel sohbeti kalıcı sohbet hafızasına kaydet.
         # 🏟️ İki takım + skor/canlı sonuç sorgularını doğrudan SofaScore'dan çöz.
@@ -14442,13 +14585,22 @@ def sohbet():
     # Merkezi motor gerçek cevabı çıkarmayı dener.
     if karar.get("intent") != "spor":
         try:
-            merkez_sonuc = merkez_motor.calistir(
+            # EAGLE ANA KOORDİNATÖRÜ: uzman motor yönetimi
+            def _eagle_uzman_calistir(gorev_mesaji, gorev_karari, gorev_gecmisi):
+                return merkez_motor.calistir(
+                    mesaj=gorev_mesaji,
+                    karar=gorev_karari,
+                    web_verisi=web_verisi,
+                    sayfa_okuyucu=web_sayfa_oku,
+                    genel_sayfa_okuyucu=lambda url: web_sayfa_oku(url, metaveri_dahil=False, timeout=(3, 5)),
+                    web_arayici=web_arastir,
+                )
+
+            merkez_sonuc = ana_koordinator.calistir(
                 mesaj=mesaj,
+                gecmis=gecmis,
                 karar=karar,
-                web_verisi=web_verisi,
-                sayfa_okuyucu=web_sayfa_oku,
-                genel_sayfa_okuyucu=lambda url: web_sayfa_oku(url, metaveri_dahil=False, timeout=(3, 5)),
-                web_arayici=web_arastir,
+                uzman_calistir=_eagle_uzman_calistir,
             )
 
             if hasattr(merkez_sonuc, "as_dict"):
@@ -14603,15 +14755,18 @@ def sohbet():
                                             gemini_cevap,
                                             karar.get("komut", "")
                                         )
-                                        return jsonify({
-                                            "ok": True,
-                                            "answer": gemini_cevap,
-                                            "web_search": True,
-                                            "eagle_direct": True,
-                                            "merkez_motor": False,
-                                            "gemini_fallback": True,
-                                            "memory_count": len(hafiza_yukle())
-                                        })
+                                        if not merkez_motor.genel_web_istek_kapsami_yeterli(mesaj, gemini_cevap):
+                                            print("⚠️ Gemini cevabı istenen kapsamı karşılamadı.", flush=True)
+                                        else:
+                                            return jsonify({
+                                                "ok": True,
+                                                "answer": gemini_cevap,
+                                                "web_search": True,
+                                                "eagle_direct": True,
+                                                "merkez_motor": False,
+                                                "gemini_fallback": True,
+                                                "memory_count": len(hafiza_yukle())
+                                            })
 
                             print(
                                 "⚠️ Gemini text son çare cevap üretemedi.",
