@@ -2389,6 +2389,30 @@ class EagleMerkezMotoru:
             ):
                 return False
 
+            # EAGLEAI_COLON_PREFIXED_LIST_FILTER_V1
+            # Sayfa kazıyıcıları bazen başlık + iki nokta + virgülsüz
+            # bağlantı listesini tek bir "cümle" olarak birleştirir.
+            # Örn. "Okyanusları ayırmıştır: Atlas Okyanusu Hint Okyanusu
+            # Arktik Okyanusu ...". İki noktadan sonraki bölümde çok
+            # sayıda büyük harfle başlayan sözcük bulunuyor ve açıklayıcı
+            # bir yüklem yoksa bunu bilgi cümlesi değil liste artığı say.
+            if ":" in metin:
+                iki_nokta_sonrasi = metin.split(":", 1)[1]
+                buyuk_harfli_sozcukler = re.findall(
+                    r"\b[A-ZÇĞİÖŞÜ][a-zçğıöşü]{2,}\b",
+                    iki_nokta_sonrasi,
+                )
+                aciklayici_yuklem = re.search(
+                    r"\b(?:bulunur|bulunmaktadır|yer alır|yer alir|"
+                    r"geçer|gecer|oluşur|olusur|uzanır|uzanir|"
+                    r"ayrılır|ayrilir|ayırır|ayirir|"
+                    r"oluşturur|olusturur|kapsar|sunar|"
+                    r"olarak bilinir|olarak kabul edilir)\b",
+                    cls.normalize(iki_nokta_sonrasi),
+                )
+                if len(buyuk_harfli_sozcukler) >= 6 and not aciklayici_yuklem:
+                    return False
+
             # SEO/SSS başlıkları soru hakkında konuşur; sorunun cevabını vermez.
             if re.search(
                 r"\b(sorusunun (?:yaniti|cevabi)|"
