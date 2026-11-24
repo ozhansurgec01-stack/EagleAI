@@ -16,6 +16,8 @@ _SELAM_ONAY = {
     "ok", "okey", "peki", "olur", "sağ ol", "sag ol",
     "teşekkürler", "tesekkurler", "teşekkür ederim", "tesekkur ederim",
     "eagle", "eagleai",
+    "eyvallah", "hoşçakal", "hoscakal", "görüşürüz", "gorusuruz",
+    "iyiyim", "harika", "süper", "super", "anladım", "anladim",
 }
 
 _SORU_FIIL = {
@@ -43,6 +45,10 @@ def konu_adi_mi(metin):
         return False
     if yazim_normalle(metin) in _SELAM_ONAY:
         return False
+    k = _kucult(metin)
+    for x in BASIT_SOHBET_KELIMELERI:
+        if re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", k):
+            return False
     if any(_kucult(p) in _SORU_FIIL for p in parca):
         return False
     return all(p[:1].isupper() for p in parca)
