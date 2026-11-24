@@ -753,6 +753,11 @@ def finans_fiyat_sorgusu_mu(mesaj):
         or bitcoin_fiyat_sorgusu_mu(mesaj)
     )
 
+def _eagle_gorsel_galerisi_uygun_mu(mesaj, finans_verisi=None):
+    """Finans/fiyat sorgularına konu dışı görsel galerisi eklenmesini önler."""
+    return not finans_verisi and not finans_fiyat_sorgusu_mu(mesaj)
+
+
 def bilgi_bankasi_ara(mesaj):
     metin = str(mesaj or "").replace("İ", "i").lower()
 
@@ -14655,7 +14660,7 @@ def sohbet():
                     finans_verisi = finans_verisini_ayristir(merkez_cevap)
                     yer_gorselleri = (
                         _eagle_yer_gorsellerini_guvenli_getir(mesaj, merkez_cevap)
-                        if not finans_verisi else None
+                        if _eagle_gorsel_galerisi_uygun_mu(mesaj, finans_verisi) else None
                     )
                     yanit_verisi = {
                         "ok": True,
