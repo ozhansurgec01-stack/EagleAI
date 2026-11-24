@@ -14,6 +14,11 @@ def test_konu_adi_degil():
         assert not konu_adi_mi(m), m
 
 
+def test_sosyal_ifade_konu_adi_degil():
+    for m in ("Nasılsın?", "Teşekkürler", "Eyvallah", "Görüşürüz", "İyiyim"):
+        assert not konu_adi_mi(m), m
+
+
 def test_yazim_normalizasyonu():
     assert yazim_normalle("Verirmisin") == "verir misin"
     assert yazim_normalle("verir misin?") == "verir misin"
