@@ -425,7 +425,9 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None,
 # Sabit bir kalıp yerine, cümlenin akışına göre doğal bir reaksiyon verelim
     if len(metin) > 30:
         return "🦅 Bu konuyu detaylıca ele alabiliriz, gerçekten derin ve önemli detaylar barındırıyor."
-    return f"🦅 {mesaj} üzerine odaklanalım, devam edelim."
+    if _devam_mesaji_mi(kucuk):
+        return f"🦅 {mesaj} üzerine odaklanalım, devam edelim."
+    return "🦅 Bunu biraz açar mısın? Ne öğrenmek veya konuşmak istediğini yazarsan yardımcı olurum."
 
 
 def _soru_gibi_mi(metin):
