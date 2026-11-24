@@ -1881,6 +1881,63 @@ class EagleMerkezMotoru:
         return min(len(a), len(b)) >= 6 and ortak >= max(4, min(len(a), len(b)) - 2)
 
     @classmethod
+    def _genel_bilgi_kisi_cumlesi_mi(cls, mesaj, cumle):
+        """
+        Çok kelimeli kişi adlarında, adı yalnızca sonradan anan başka
+        bir kişi hakkındaki cümleleri biyografi cevabı olarak seçme.
+        """
+        konu = re.sub(
+            r"\s+(?:hakkında|hakkinda)\s+bilgi"
+            r"(?:\s+ver(?:ir)?(?:\s+misin|\s+mısın|"
+            r"\s+misiniz|\s+mısınız)?)?\s*[?.!]*$",
+            "",
+            str(mesaj or "").strip(),
+            flags=re.IGNORECASE,
+        ).strip(" ?.! ")
+
+        # Yalnızca açıkça büyük harfle yazılmış çok kelimeli özel adlara
+        # uygula. "iklim değişikliği", "Türkiye Cumhuriyeti" ve
+        # "Atlas Okyanusu" gibi genel/coğrafi konuları daraltma.
+        ozel_adlar = re.findall(
+            r"[A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+",
+            konu,
+        )
+        if len(ozel_adlar) < 2:
+            return True
+
+        konu_tokenlari = [
+            cls.normalize(x) for x in ozel_adlar
+        ]
+        genel_ozel_ad_ekleri = {
+            "cumhuriyeti", "kralligi", "imparatorlugu", "okyanusu",
+            "denizi", "nehri", "dagı", "dagi", "golü", "golu",
+            "korfezi", "bogazi", "adasi", "adalari", "yarimadasi",
+            "sehir", "sehri", "ili", "bolgesi", "universitesi",
+            "takimi", "dizisi", "filmi", "kitabi",
+        }
+        if konu_tokenlari[-1] in genel_ozel_ad_ekleri:
+            return True
+
+        cumle_tokenlari = re.findall(
+            r"[a-z0-9çğıöşü]+",
+            cls.normalize(str(cumle or "")),
+        )
+        if len(cumle_tokenlari) < len(konu_tokenlari):
+            return False
+
+        # Kişinin tam adı cümlenin girişinde, bitişik biçimde bulunmalı.
+        for baslangic in range(min(7, len(cumle_tokenlari))):
+            bitis = baslangic + len(konu_tokenlari)
+            if bitis > len(cumle_tokenlari):
+                break
+            if all(
+                cls._genel_web_token_eslesiyor(ad, token)
+                for ad, token in zip(konu_tokenlari, cumle_tokenlari[baslangic:bitis])
+            ):
+                return True
+        return False
+
+    @classmethod
     def _genel_web_konu_uyumu(cls, konu_kelime, baslik, cumle):
         """Tek ortak konu denetimi: kaynak başlığı ve cümle birlikte uymalı."""
         konu = list(dict.fromkeys(
@@ -2288,9 +2345,13 @@ class EagleMerkezMotoru:
 
         genel_bilgi_sorusu = bool(
             re.search(
-                r"\b(hakkında bilgi ver|hakkinda bilgi ver|"
-                r"bilgi verir misin|bilgi verir)\b",
-                soru
+                r"(?:\b(hakkında|hakkinda)\s+bilgi"
+                r"(?:\s+ver(?:ir)?(?:\s+misin|\s+mısın|"
+                r"\s+misiniz|\s+mısınız)?)?"
+                r"|\bbilgi\s+verir(?:\s+misin|\s+mısın|"
+                r"\s+misiniz|\s+mısınız)?)\s*[?.!]*$",
+                soru,
+                re.IGNORECASE,
             )
         )
 
@@ -2360,13 +2421,14 @@ class EagleMerkezMotoru:
         if genel_bilgi_sorusu:
             try:
                 konu = re.sub(
-                    r"\b(hakkında|hakkinda)\s+bilgi\s+ver(?:ir)?"
-                    r"(?:\s+misin|\s+mısın|\s+misiniz|\s+mısınız)?"
+                    r"\b(hakkında|hakkinda)\s+bilgi"
+                    r"(?:\s+ver(?:ir)?(?:\s+misin|\s+mısın|"
+                    r"\s+misiniz|\s+mısınız)?)?"
                     r"\s*[?.!]*$",
                     "",
                     soru,
                     flags=re.IGNORECASE,
-                ).strip(" ?.!")
+                ).strip(" ?.! ")
 
                 # "Uzak Şehir dizisi" gibi ifadelerden tür ekini çıkar.
                 # Böylece kaynak başlığı "Uzak Şehir" ile eşleşebilir.
@@ -2555,6 +2617,12 @@ class EagleMerkezMotoru:
                             r"satın al|giriş yap|üye ol|çerez politikası",
                             norm,
                             re.IGNORECASE,
+                        ):
+                            continue
+
+                        if (
+                            genel_bilgi_sorusu
+                            and not cls._genel_bilgi_kisi_cumlesi_mi(mesaj, cumle)
                         ):
                             continue
 
@@ -4206,6 +4274,11 @@ class EagleMerkezMotoru:
                 return True
             metin = cls.normalize(str(cumle or '')).strip()
             baslik_metin = cls.normalize(str(baslik or '')).strip()
+            if (
+                genel_bilgi_sorusu
+                and not cls._genel_bilgi_kisi_cumlesi_mi(mesaj, metin)
+            ):
+                return False
             if len(metin) < 35:
                 # Kısa ama doğrudan temel bilgi cümlelerini (başkent,
                 # resmî dil, nüfus, yüzölçümü vb.) parça metin sanıp eleme.
@@ -4638,6 +4711,9 @@ class EagleMerkezMotoru:
     def genel_altin_cevabi(cls, mesaj, veriler, web_arayici=None, sayfa_okuyucu=None):
         """İnternette bulunan güncel kaynakların sayfalarından toplu altın fiyatı çıkarır."""
         metin = cls.normalize(str(mesaj or ""))
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        bugun_iso = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
 
         metin_ascii = (
             metin
@@ -4704,10 +4780,42 @@ class EagleMerkezMotoru:
                         return v
             return None
 
+        def altin_kaynak_tanimi(url):
+            """Yalnızca HTML fiyat tablosu yapısı tanınan gerçek alan adlarını kabul et."""
+            try:
+                parca = urlparse(str(url or "").strip())
+                host = (parca.hostname or "").lower().rstrip(".")
+                yol = (parca.path or "").casefold()
+            except Exception:
+                return None
+
+            if host == "altinveri.com" or host.endswith(".altinveri.com"):
+                return "altinveri.com"
+            if (
+                host == "ahaber.com.tr" or host.endswith(".ahaber.com.tr")
+            ) and yol.startswith("/finans/altin"):
+                return "ahaber.com.tr"
+            return None
+
+        def fiyatlar_uyumlu(a, b, tolerans_yuzde=2.0):
+            if a.get("tarih") != bugun_iso or b.get("tarih") != bugun_iso:
+                return False
+            try:
+                alis_a, satis_a = float(a.get("alis")), float(a.get("satis"))
+                alis_b, satis_b = float(b.get("alis")), float(b.get("satis"))
+            except (TypeError, ValueError, AttributeError):
+                return False
+            if min(alis_a, satis_a, alis_b, satis_b) <= 0:
+                return False
+            return all(
+                abs(x - y) / ((x + y) / 2) * 100 <= tolerans_yuzde
+                for x, y in ((alis_a, alis_b), (satis_a, satis_b))
+            )
+
         kaynaklar = list(veriler or [])
 
         # Arama sonucu azsa aynı merkezi web aramasını kullan.
-        if web_arayici and len(kaynaklar) < 4:
+        if web_arayici:
             try:
                 ek = web_arayici(
                     "altın fiyatları bugün gram altın çeyrek altın yarım altın "
@@ -4814,14 +4922,9 @@ class EagleMerkezMotoru:
             if not url:
                 continue
 
-            # Şu an HTML tablo yapısı doğrulanmış kaynaklar.
-            if not any(
-                alan in url.casefold()
-                for alan in [
-                    "altinveri.com",
-                    "ahaber.com.tr/finans/altin",
-                ]
-            ):
+            # URL içinde alan adı metni aramak güvenli değildir:
+            # altinveri.com.sahte-site.example gibi adresleri de eşleştirebilir.
+            if altin_kaynak_tanimi(url) is None:
                 continue
 
             try:
@@ -4848,48 +4951,50 @@ class EagleMerkezMotoru:
             if not any(x.get("url") == url for x in tablo_urunleri[urun]):
                 tablo_urunleri[urun].append(kayit)
 
-        # AltınVeri fiyatını yalnızca başka bir gerçek kaynak
-        # aynı ürünü doğruluyorsa kullan.
+        # AltınVeri fiyatını yalnızca farklı ve izinli bir alan adındaki
+        # kaynak aynı ürünü alış/satış bazında %2 içinde doğrularsa kullan.
         for urun, kayitlar in tablo_urunleri.items():
-            if urun == "Gram Altın":
+            if urun == "Gram Altın" or urun in bulunan:
+                # API'lerden aynı gün ve iki kaynakla doğrulanan değerleri
+                # HTML sonuçları asla ezmesin.
                 continue
+
             altinveri = next(
                 (
                     x for x in kayitlar
-                    if "altinveri.com" in str(x.get("url", "")).casefold()
+                    if altin_kaynak_tanimi(x.get("url")) == "altinveri.com"
                 ),
                 None
             )
-
             if not altinveri:
                 continue
 
-            alis = altinveri.get("alis")
-            satis = altinveri.get("satis")
-
-            if alis is None or satis is None:
-                continue
-
-            # Aynı ürün için farklı bir gerçek URL olmalı.
-            dogrulama = [
-                x for x in kayitlar
-                if x.get("url")
-                and x.get("url") != altinveri.get("url")
-                and x.get("alis") is not None
-                and x.get("satis") is not None
-            ]
-
+            dogrulama = next(
+                (
+                    x for x in kayitlar
+                    if altin_kaynak_tanimi(x.get("url")) == "ahaber.com.tr"
+                    and altin_kaynak_tanimi(x.get("url"))
+                        != altin_kaynak_tanimi(altinveri.get("url"))
+                    and fiyatlar_uyumlu(altinveri, x)
+                ),
+                None
+            )
             if not dogrulama:
                 continue
 
             bulunan[urun] = (
-                alis,
-                satis,
-                len(dogrulama) + 1
+                (float(altinveri["alis"]) + float(dogrulama["alis"])) / 2,
+                (float(altinveri["satis"]) + float(dogrulama["satis"])) / 2,
+                2,
             )
 
-        # Özel tablo yolu yalnızca doğrulanmış ürünleri ekler.
-        # Mevcut parser aşağıda aynen devam eder.
+        # Metin tabanlı yedek çıkarım da yalnızca bugünün tarihi açıkça
+        # görülen ve tablo okuyucusunca güncel olduğu doğrulanan sayfalarda çalışır.
+        guncel_tablo_urlleri = {
+            str(x.get("url", "")).strip()
+            for x in tablo_kayitlari
+            if x.get("tarih") == bugun_iso and x.get("url")
+        }
 
         fiyat_re = re.compile(
             r"(\d{1,3}(?:[.\s]\d{3})+(?:,\d{1,4})?|\d+(?:,\d{1,4})?)"
@@ -4903,6 +5008,12 @@ class EagleMerkezMotoru:
             kaynak_eslesmeleri = []
 
             for veri in kaynaklar:
+                  url = str(veri.get("url", "")).strip()
+                  if (
+                      altin_kaynak_tanimi(url) is None
+                      or url not in guncel_tablo_urlleri
+                  ):
+                      continue
                   kaynak_metni = " ".join([
                       str(veri.get("title", "")),
                       str(veri.get("snippet", "")),
@@ -4950,20 +5061,33 @@ class EagleMerkezMotoru:
                       if bulundu_kaynak:
                           break
 
+            # URL değil, bağımsız izinli alan adı say. Aynı sitenin iki
+            # farklı sayfası iki ayrı doğrulama kaynağı değildir.
             tek = {}
             for x in kaynak_eslesmeleri:
-                if x["url"] and x["url"] not in tek:
-                    tek[x["url"]] = x
+                alan = altin_kaynak_tanimi(x.get("url"))
+                if alan and alan not in tek:
+                    tek[alan] = x
 
             kaynak_eslesmeleri = list(tek.values())
 
-            if len(kaynak_eslesmeleri) >= 2 and urun not in bulunan:
-                secilen = kaynak_eslesmeleri[0]
-                bulunan[urun] = (
-                    secilen["alis"],
-                    secilen["satis"],
-                    len(kaynak_eslesmeleri)
-                  )
+            if urun not in bulunan and len(kaynak_eslesmeleri) >= 2:
+                uyumlu_cift = None
+                for i, ilk in enumerate(kaynak_eslesmeleri):
+                    for ikinci in kaynak_eslesmeleri[i + 1:]:
+                        if fiyatlar_uyumlu(ilk, ikinci):
+                            uyumlu_cift = (ilk, ikinci)
+                            break
+                    if uyumlu_cift:
+                        break
+
+                if uyumlu_cift:
+                    ilk, ikinci = uyumlu_cift
+                    bulunan[urun] = (
+                        (ilk["alis"] + ikinci["alis"]) / 2,
+                        (ilk["satis"] + ikinci["satis"]) / 2,
+                        2,
+                    )
 
           # Açıkça tek ürün istenmişse yalnızca o ürünün doğrulanması yeterli.
         istenen_urun = next((
@@ -5366,6 +5490,48 @@ def altin_tablo_oku(url: str) -> list[dict]:
 
         soup = BeautifulSoup(cevap.text, "html.parser")
 
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        bugun = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+        sayfa_metni = soup.get_text(" ", strip=True)
+        sayfa_tarihi = None
+
+        # Tarih yalnızca açık ve tam gün/ay/yıl biçiminde yakalanır.
+        tarih_deseni = re.compile(
+            r"(?<!\d)(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?!\d)|"
+            r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)"
+        )
+        for eslesme in tarih_deseni.finditer(sayfa_metni):
+            es = eslesme.groups()
+            baglam = sayfa_metni[
+                max(0, eslesme.start() - 90):
+                min(len(sayfa_metni), eslesme.end() + 90)
+            ].casefold()
+            if not re.search(
+                r"güncelleme|guncelleme|updated|update|fiyat tarihi|"
+                r"veri tarihi|son işlem|son islem|bugün|bugun|tarih",
+                baglam,
+            ):
+                continue
+            try:
+                if es[0]:
+                    aday_tarih = datetime(
+                        int(es[2]), int(es[1]), int(es[0])
+                    ).date()
+                else:
+                    aday_tarih = datetime(
+                        int(es[3]), int(es[4]), int(es[5])
+                    ).date()
+            except ValueError:
+                continue
+            if aday_tarih == bugun:
+                sayfa_tarihi = aday_tarih.isoformat()
+                break
+
+        if sayfa_tarihi != bugun.isoformat():
+            return []
+
         urunler = [
             (r"\bgram\s+alt[ıi]n\b", "Gram Altın"),
             (r"\b[çc]eyrek\s+alt[ıi]n\b", "Çeyrek Altın"),
@@ -5485,6 +5651,7 @@ def altin_tablo_oku(url: str) -> list[dict]:
                 "alis": alis,
                 "satis": satis,
                 "url": url,
+                "tarih": sayfa_tarihi,
                 "ham": satir[:500]
             })
 
