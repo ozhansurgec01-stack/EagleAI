@@ -14,31 +14,53 @@ def _metin_temizle(metin):
 import json
 
 def _hafizadan_bilgi_cek(anahtar):
-    """Kişisel hafıza (eagle_ai_memory.json) içindeki yalnızca 'kullanici' katmanını tarar."""
+    """Kişisel hafızayı anlamlı tam kelime eşleşmesiyle tarar."""
     try:
         p = Path("eagle_ai_memory.json")
-        if p.exists():
-            veriler = json.loads(p.read_text(encoding="utf-8"))
-            if isinstance(veriler, dict):
-                kullanici_notlari = veriler.get("kullanici", [])
-            elif isinstance(veriler, list):
-                kullanici_notlari = veriler
-            else:
-                kullanici_notlari = []
+        if not p.exists():
+            return None
 
-            anahtar_kucuk = anahtar.casefold()
-            stop = {"ne", "nedir", "kim", "kimdir", "hakkında", "bilgi", "ver", "adı", "adin"}
-            kelimeler = [k for k in anahtar_kucuk.split() if k not in stop and len(k) > 1]
-            if not kelimeler:
-                kelimeler = [anahtar_kucuk]
+        veriler = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(veriler, dict):
+            kullanici_notlari = veriler.get("kullanici", [])
+        elif isinstance(veriler, list):
+            kullanici_notlari = veriler
+        else:
+            kullanici_notlari = []
 
-            for item in kullanici_notlari:
-                if isinstance(item, str):
-                    item_kucuk = item.casefold()
-                    if any(k in item_kucuk for k in kelimeler):
-                        return item
+        stop = {
+            "ne", "nedir", "kim", "kimdir", "hakkında", "hakkinda",
+            "bilgi", "ver", "adı", "adin", "ve", "ile", "bir",
+            "bu", "şu", "su", "ben", "sen", "sana", "benim",
+            "bana", "daha", "önce", "once", "hangi", "musun",
+            "mısın", "misin", "mi", "mı", "mu", "mü",
+            "hatırlıyor", "hatirliyor", "hafızanda", "hafizanda",
+            "projemden", "bahsetmiştim", "bahsetmistim",
+        }
+
+        kelimeler = {
+            k for k in re.findall(
+                r"[^\W_]+", str(anahtar).casefold(), flags=re.UNICODE
+            )
+            if len(k) > 2 and k not in stop
+        }
+
+        if not kelimeler:
+            return None
+
+        for item in kullanici_notlari:
+            if not isinstance(item, str):
+                continue
+
+            item_kelimeler = set(
+                re.findall(r"[^\W_]+", item.casefold(), flags=re.UNICODE)
+            )
+            if kelimeler & item_kelimeler:
+                return item
+
     except Exception:
         pass
+
     return None
 
 def _bilgi_bankasindan_cek(anahtar):
@@ -338,17 +360,6 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None,
 
     if rol == "gorus_isteme":
         return _gorus_uret(mesaj.strip(), "")
-    # === HAFIZA -> BİLGİ BANKASI SIRALAMASI ===
-    # 1. Adım: Kişisel Hafıza (eagle_ai_memory.json -> kullanıcı notları)
-    hafiza_bulunan = _hafizadan_bilgi_cek(kucuk)
-    if hafiza_bulunan:
-        return f"🦅 Hafızamda bununla ilgili şu bilgiyi buldum: {hafiza_bulunan}"
-
-    # 2. Adım: Teknik Bilgi Bankası (eagle_bilgi.json)
-    bilgi_bulunan = _bilgi_bankasindan_cek(kucuk)
-    if bilgi_bulunan:
-        return f"🦅 Bilgi bankama göre: {bilgi_bulunan}"
-    # ================================================
     """
     Genel ve küçük bir yerel cevap çekirdeği.
 
@@ -399,10 +410,11 @@ def _yerel_cevap(mesaj, son_kullanici="", son_eagle="", hafiza=None, karar=None,
     if _devam_mesaji_mi(kucuk) and son_kullanici:
         return _devam_uret(metin, son_kullanici, son_eagle)
 
-    # Önce kişisel hafızada veya bilgi bankasında bu anahtar kelimeyi arayalım
-    hafiza_sonuc = _hafizadan_bilgi_cek(kucuk)
-    if hafiza_sonuc:
-        return f"🦅 Hafızamda bununla ilgili şu bilgiyi buldum: {hafiza_sonuc}"
+    # Kişisel hafıza yalnızca açık hafıza/geçmiş taleplerinde aranır.
+    if _hafiza_uygun_mu(kucuk):
+        hafiza_sonuc = _hafizadan_bilgi_cek(kucuk)
+        if hafiza_sonuc:
+            return f"🦅 Hafızamda bununla ilgili şu bilgiyi buldum: {hafiza_sonuc}"
 
     bilgi_sonuc = _bilgi_bankasindan_cek(kucuk)
     if bilgi_sonuc:
@@ -621,6 +633,7 @@ def _selam_mi(metin):
 
 
 def _hafiza_uygun_mu(metin):
+    metin = str(metin or "").casefold()
     return any(
         ifade in metin
         for ifade in (
@@ -630,9 +643,21 @@ def _hafiza_uygun_mu(metin):
             "daha once",
             "hafızanda",
             "hafizanda",
+            "benim hakkımda",
+            "benim hakkimda",
+            "benden ne biliyorsun",
+            "benimle ilgili ne biliyorsun",
+            "ne hatırlıyorsun",
+            "ne hatirliyorsun",
+            "sana ne anlatmıştım",
+            "sana ne anlatmistim",
+            "hangi projemden bahsetmiştim",
+            "hangi projemden bahsetmistim",
+            "projem neydi",
+            "hangi projem",
+            "hangi projeydi",
         )
     )
-
 
 def _gorus_uret(mesaj, onceki_kullanici):
     if onceki_kullanici:
