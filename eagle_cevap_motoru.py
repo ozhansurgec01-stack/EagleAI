@@ -35,7 +35,6 @@ def _hafizadan_bilgi_cek(anahtar):
             "bana", "daha", "önce", "once", "hangi", "musun",
             "mısın", "misin", "mi", "mı", "mu", "mü",
             "hatırlıyor", "hatirliyor", "hafızanda", "hafizanda",
-            "projemden", "bahsetmiştim", "bahsetmistim",
         }
 
         kelimeler = {
@@ -55,7 +54,12 @@ def _hafizadan_bilgi_cek(anahtar):
             item_kelimeler = set(
                 re.findall(r"[^\W_]+", item.casefold(), flags=re.UNICODE)
             )
-            if kelimeler & item_kelimeler:
+            if item.lstrip().startswith("/"):
+                continue
+            kokler = {t[:5] for t in item_kelimeler if len(t) >= 5}
+            if kelimeler & item_kelimeler or any(
+                len(k) >= 6 and k[:5] in kokler for k in kelimeler
+            ):
                 return item
 
     except Exception:

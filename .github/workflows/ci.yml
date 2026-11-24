@@ -38,6 +38,11 @@ jobs:
       - name: Run regression tests
         run: python eagle_regresyon_test.py
 
+      - name: Run intent and memory tests
+        run: |
+          python eagle_niyet_test.py
+          python eagle_hafiza_test.py
+
   android-compile:
     name: Android Java compilation
     runs-on: ubuntu-latest
