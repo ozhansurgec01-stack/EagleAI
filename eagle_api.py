@@ -3,7 +3,7 @@ from eagle_akil_motoru import eagle_akil_motorunu_kur
 from eagle_ana_koordinator import eagle_ana_koordinatorunu_kur
 from eagle_finansal_analiz import finansal_gorev_mu, birikim_hesapla_cevabi
 from eagle_karar_komutlari import slash_komutunu_coz
-from eagle_karar_sohbet import erken_sohbet_karari
+from eagle_karar_sohbet import erken_sohbet_karari, konu_adi_mi
 from eagle_autofix import EagleAutoFixEngine
 from eagle_genel_sohbet import genel_sohbet
 from eagle_cevap_motoru import _soru_gibi_mi, _slash_komut_uygula
@@ -4447,6 +4447,10 @@ def web_arastirma_gerekli(mesaj):
     )
     if izleme_beyani and not acik_istek:
         return False
+
+    # Tek başına yazılan özel ad / konu adı bilgi isteğidir.
+    if konu_adi_mi(mesaj):
+        return True
 
     kelimeler = [
         "şimdi", "şu an",
