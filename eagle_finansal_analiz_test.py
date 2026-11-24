@@ -113,6 +113,21 @@ def t_birikim_yazim_varyasyonlari():
     assert c and g >= 0.9
     assert "48.000,00 TL" in c, c
 
+def t_birikim_sure_yazim_varyasyonlari():
+    ifadeler = (
+        "Aylık gelirim 30.000 TL, giderim 22.000 TL. Her ay kalan paramı biriktirirsem 6 ayda ne kadar biriktiririm?",
+        "Aylık gelirim 30.000 TL, giderim 22.000 TL. 6 ay içinde ne kadar biriktiririm?",
+        "Aylık gelirim 30.000 TL, giderim 22.000 TL. 6 ay boyunca birikim yapacağım.",
+        "Aylık gelirim 30.000 TL, giderim 22.000 TL. 6 aylık sürede ne kadar biriktiririm?",
+        "Aylık gelirim 30.000 TL, giderim 22.000 TL. 6 ay sonra birikimim ne olur?",
+    )
+    for mesaj in ifadeler:
+        c, g = birikim_hesapla_cevabi(mesaj)
+        assert c and g >= 0.9, (mesaj, c, g)
+        assert "Aylık birikim: 8.000,00 TL" in c, (mesaj, c)
+        assert "48.000,00 TL" in c, (mesaj, c)
+
+
 def t_birikim_eksik_bilgide_sessiz():
     for m in (
         "Gelirim 30000 TL, giderim 22000 TL. Biriktirmek istiyorum.",
@@ -150,6 +165,7 @@ for ad, fn in [
     ("Tekil gösterge değerlendirmesi", t_tekil_gosterge_fallback),
     ("Doğal dil birikim hesabı 30k-22k x 6", t_dogal_dil_birikim_hesabi),
     ("Birikim hesabı yazım varyasyonları", t_birikim_yazim_varyasyonlari),
+    ("Birikim hesabı süre yazım varyasyonları (ayda/içinde/boyunca/aylık/sonra)", t_birikim_sure_yazim_varyasyonlari),
     ("Birikim hesabında eksik bilgi güvenli şekilde reddedilir", t_birikim_eksik_bilgide_sessiz),
     ("Birikim katmanı alakasız finans sorularını yutmaz", t_birikim_alakasiz_finans_sorusunu_yutmaz),
 ]:

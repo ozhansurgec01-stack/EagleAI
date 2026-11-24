@@ -496,7 +496,10 @@ def birikim_hesapla_cevabi(mesaj):
     if gelir is None or gider is None or gelir <= 0 or gider < 0:
         return "", 0.0
 
-    sure = re.search(r"\b(\d{1,3})\s*(?:ay|aylik|ay boyunca)\b", n)
+    sure = re.search(
+        r"\b(\d{1,3})\s*(?:ayda|aylik|ay)(?:\s+(?:icinde|sonunda|boyunca|sonra|surede))?\b",
+        n,
+    )
     if not sure:
         return "", 0.0
     ay = int(sure.group(1))
