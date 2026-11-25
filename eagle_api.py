@@ -4505,6 +4505,15 @@ def web_arastirma_gerekli(mesaj):
     if konu_adi_mi(mesaj):
         return True
 
+    # "<Ad> ... hikayesi" gibi adı geçen, araştırılabilir konu isteği.
+    # Cümle başı büyük harf (telefon klavyesi) sayılmaz: özel ad ilk
+    # sözcükten sonra gelmeli.
+    if re.search(
+        r"^\S+\s.*?\b[A-ZÇĞİÖŞÜ][\wçğıöşü]+\b.*\b(?:hikayesi|hikâyesi|öyküsü|efsanesi)\b",
+        str(mesaj or ""),
+    ):
+        return True
+
     # "X kimdir", "X nasıl biri" kişi/konu sorusudur.
     if re.search(r"(?<!\w)(?:kimdir|nasıl biri|nasil biri)(?!\w)",
                  str(mesaj or "").casefold()):
