@@ -596,6 +596,7 @@ public class MainActivity extends Activity {
                         "Telefonun aynı Wi-Fi ağında olduğundan " +
                         "ve Termux'taki eagle_api.py sunucusunun çalıştığından emin ol.";
             }
+            final JSONObject arastirma = apiCevap.research;
             final String cevapFinal = apiCevap.answer;
             final String cevapGosterim = cevapFinal.replaceAll(
                     "(?i)\\s*\\|?\\s*Görsel\\s*:\\s*https://upload\\.wikimedia\\.org/[^\\s|<>\"']+",
@@ -610,18 +611,19 @@ public class MainActivity extends Activity {
             final String bitcoinUsd = apiCevap.bitcoinUsd;
             final String bitcoinUpdatedAt = apiCevap.bitcoinUpdatedAt;
             final JSONObject finansVerisi = apiCevap.financeData;
+            final String finansalHesaplamaTuru = apiCevap.financialCalculation;
             final JSONObject projeDosyalari = apiCevap.projectFiles;
             final String projeAdi = apiCevap.projectName;
 
             runOnUiThread(() -> {
                 mesajAlani.removeView(durum);
 
-                LinearLayout cevapKarti =
-                        bitcoinFiyati && !bitcoinUsd.isEmpty()
-                                ? bitcoinFiyatKartiOlustur(bitcoinUsd, bitcoinUpdatedAt)
-                                : finansVerisi != null
-                                    ? finansKartlariOlustur(finansVerisi)
-                                    : mesajOlustur("🦅\n\n" + cevapGosterim, kodBulgulari);
+                LinearLayout cevapKarti = sonucKartiOlustur(
+                        arastirmaMetni(cevapGosterim, arastirma), kodBulgulari, bitcoinFiyati,
+                        bitcoinUsd, bitcoinUpdatedAt, finansVerisi,
+                        finansalHesaplamaTuru
+                );
+                arastirmaKartlariEkle(cevapKarti, arastirma);
                 mesajAlani.addView(cevapKarti);
 
                 if (projeDosyalari != null && projeDosyalari.length() > 0) {
@@ -646,13 +648,13 @@ public class MainActivity extends Activity {
                         "🦅\n\n" + cevapGosterim,
                         medyaOnerileri,
                         mesajId,
-                        kaydedilecekGorseller
+                        kaydedilecekGorseller, arastirma
                 );
                 final String sohbetId = sohbeteMesajEkle(
                         "🦅\n\n" + cevapGosterim,
                         medyaOnerileri,
                         mesajId,
-                        kaydedilecekGorseller
+                        kaydedilecekGorseller, arastirma
                 );
 
                 if (gonderilecekResim == null) {
@@ -669,7 +671,7 @@ public class MainActivity extends Activity {
                                 cevapKarti, mesaj, cevapFinal, sohbetId, mesajId);
                     }
                 }
-                metniSesliOku(cevapGosterim);
+                metniSesliOku(arastirmaMetni(cevapGosterim, arastirma));
 
                 kaydirma.post(() ->
                         kaydirma.fullScroll(View.FOCUS_DOWN)
@@ -966,9 +968,79 @@ public class MainActivity extends Activity {
 
 
 
+    private String arastirmaMetni(String metin, JSONObject bilgi) {
+        if (bilgi == null) return metin;
+        JSONArray kaynaklar = bilgi.optJSONArray("research_sources");
+        if (kaynaklar == null || kaynaklar.length() == 0) return metin;
+        int index = metin.lastIndexOf("\n\nKaynaklar:\n");
+        if (index >= 0) return metin.substring(0, index).trim();
+        index = metin.lastIndexOf("\nKaynak: https://");
+        if (index >= 0 && !metin.substring(index + 1).contains("\n")) return metin.substring(0, index).trim();
+        return metin;
+    }
+
+    private JSONObject arastirmaBilgisi(JSONObject json) {
+        String durum = json.optString("research_status", "");
+        if (durum.isEmpty()) return null;
+        JSONObject bilgi = new JSONObject();
+        try {
+            bilgi.put("research_status", durum);
+            bilgi.put("verification_status", json.optString("verification_status", ""));
+            JSONArray kaynaklar = json.optJSONArray("research_sources");
+            if (kaynaklar != null) bilgi.put("research_sources", kaynaklar);
+            return bilgi;
+        } catch (org.json.JSONException e) { return null; }
+    }
+
+    private void arastirmaKartlariEkle(LinearLayout kart, JSONObject bilgi) {
+        if (bilgi == null) return;
+        String durum = bilgi.optString("research_status", "");
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(12, 12, 12, 12);
+        panel.setBackground(yuvarlakArkaPlan(Color.rgb(244, 247, 250), Color.rgb(211, 222, 232), 12));
+        TextView baslik = new TextView(this);
+        baslik.setText("official_record".equals(durum) ? "Resmî katalog kaydı • Bağımsız teyit yok"
+                : "grounded".equals(durum) ? "Kaynak destekli iddia • Bağımsız teyit yok"
+                : "Araştırma tamamlanamadı • Doğrulanmadı");
+        baslik.setTextColor(Color.rgb(42, 58, 72));
+        baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        panel.addView(baslik);
+        JSONArray kaynaklar = bilgi.optJSONArray("research_sources");
+        if (kaynaklar != null) for (int i = 0; i < kaynaklar.length(); i++) {
+            JSONObject kaynak = kaynaklar.optJSONObject(i);
+            if (kaynak == null) continue;
+            String adres = kaynak.optString("url", "");
+            final Uri uri;
+            try {
+                java.net.URI parsed = new java.net.URI(adres);
+                if (!"https".equalsIgnoreCase(parsed.getScheme()) || parsed.getHost() == null
+                        || parsed.getUserInfo() != null) continue;
+                uri = Uri.parse(adres);
+            } catch (Exception e) { continue; }
+            String tur = kaynak.optString("source_type", "");
+            String etiket = "official_api".equals(tur) ? "Resmî API"
+                    : "reported_official_domain".equals(tur) ? "Bildirilen resmî alan adı"
+                    : "user_content".equals(tur) ? "Kullanıcı içeriği" : "Kaynak";
+            TextView link = new TextView(this);
+            link.setText("[" + kaynak.optInt("id", i + 1) + "] "
+                    + kaynak.optString("title", "Kaynağı aç") + " · " + etiket + " ↗");
+            link.setTextColor(Color.rgb(34, 88, 108));
+            link.setTextSize(14);
+            link.setPadding(0, 12, 0, 12);
+            link.setOnClickListener(v -> {
+                try { startActivity(new Intent(Intent.ACTION_VIEW, uri)); }
+                catch (Exception e) { Toast.makeText(this, "Kaynak açılamadı.", Toast.LENGTH_SHORT).show(); }
+            });
+            panel.addView(link);
+        }
+        kart.addView(panel, Math.max(0, kart.getChildCount() - 1));
+    }
+
     private static class ApiCevap {
         String answer = "Eagle-AI cevap vermedi.";
         JSONArray mediaItems;
+        JSONObject research;
         JSONArray codeFindings;
         JSONArray mediaImages;
         boolean placeGallery;
@@ -977,6 +1049,7 @@ public class MainActivity extends Activity {
         String bitcoinUsd = "";
         String bitcoinUpdatedAt = "";
         JSONObject financeData;
+        String financialCalculation = "";
         JSONObject projectFiles;
         String projectName = "eagle_project";
     }
@@ -1127,6 +1200,7 @@ public class MainActivity extends Activity {
                         "Eagle-AI cevap vermedi."
                 );
 
+                apiCevap.research = arastirmaBilgisi(cevapJson);
                 apiCevap.mediaItems = cevapJson.optJSONArray("media_items");
                 apiCevap.codeFindings = cevapJson.optJSONArray("findings");
                 apiCevap.placeGallery = cevapJson.optBoolean("place_gallery", false);
@@ -1135,6 +1209,7 @@ public class MainActivity extends Activity {
                 apiCevap.bitcoinUsd = cevapJson.optString("bitcoin_usd", "");
                 apiCevap.bitcoinUpdatedAt = cevapJson.optString("bitcoin_updated_at", "");
                 apiCevap.financeData = cevapJson.optJSONObject("finance_data");
+                apiCevap.financialCalculation = cevapJson.optString("financial_calculation", "");
                 apiCevap.projectFiles = cevapJson.optJSONObject("dosyalar");
                 apiCevap.projectName = cevapJson.optString(
                         "proje_adi", "eagle_project"
@@ -1212,6 +1287,11 @@ public class MainActivity extends Activity {
             }
 
             ApiCevap hataCevap = new ApiCevap();
+            hataCevap.research = arastirmaBilgisi(cevapJson);
+            if (hataCevap.research != null && !cevapJson.optString("answer", "").trim().isEmpty()) {
+                hataCevap.answer = cevapJson.optString("answer");
+                return hataCevap;
+            }
             hataCevap.answer = "API hatası: " +
                     cevapJson.optString("error", "Bilinmeyen hata.");
             return hataCevap;
@@ -1275,6 +1355,17 @@ public class MainActivity extends Activity {
             String mesajId,
             JSONArray medyaGorselleri
     ) {
+        mesajKaydiniEkle(mesajlar, metin, medyaOnerileri, mesajId, medyaGorselleri, null);
+    }
+
+    private void mesajKaydiniEkle(
+            JSONArray mesajlar,
+            String metin,
+            JSONArray medyaOnerileri,
+            String mesajId,
+            JSONArray medyaGorselleri,
+            JSONObject arastirma
+    ) {
         boolean medyaVar = medyaOnerileri != null && medyaOnerileri.length() > 0;
         boolean gorselVar = medyaGorselleri != null && medyaGorselleri.length() > 0;
         boolean idVar = mesajId != null && !mesajId.isEmpty();
@@ -1296,6 +1387,7 @@ public class MainActivity extends Activity {
             if (gorselVar) {
                 kayit.put("media_images", new JSONArray(medyaGorselleri.toString()));
             }
+            if (arastirma != null) kayit.put("research", arastirma);
             mesajlar.put(kayit);
         } catch (Exception e) {
             android.util.Log.e("EagleGorsel", "Mesaj kaydı oluşturulamadı.", e);
@@ -1562,6 +1654,7 @@ public class MainActivity extends Activity {
         JSONArray medyaOnerileri = null;
         JSONArray medyaGorselleri = null;
         JSONArray galeriItems = null;
+        JSONObject arastirma = null;
 
         if (kayit instanceof JSONObject) {
             JSONObject mesaj = (JSONObject) kayit;
@@ -1569,11 +1662,13 @@ public class MainActivity extends Activity {
             medyaOnerileri = mesaj.optJSONArray("media_items");
             medyaGorselleri = mesaj.optJSONArray("media_images");
             galeriItems = mesaj.optJSONArray("gallery_items");
+            arastirma = mesaj.optJSONObject("research");
         } else {
             metin = mesajlar.optString(index, "");
         }
 
-        LinearLayout kart = mesajOlustur(metin);
+        LinearLayout kart = mesajOlustur(arastirmaMetni(metin, arastirma));
+        arastirmaKartlariEkle(kart, arastirma);
         mesajAlani.addView(kart);
 
         if (medyaOnerileri != null && medyaOnerileri.length() > 0) {
@@ -1601,13 +1696,23 @@ public class MainActivity extends Activity {
             String mesajId,
             JSONArray medyaGorselleri
     ) {
+        gecmiseKaydet(metin, medyaOnerileri, mesajId, medyaGorselleri, null);
+    }
+
+    private void gecmiseKaydet(
+            String metin,
+            JSONArray medyaOnerileri,
+            String mesajId,
+            JSONArray medyaGorselleri,
+            JSONObject arastirma
+    ) {
         synchronized (KAYIT_KILIDI) {
             try {
                 SharedPreferences sp = getSharedPreferences(GECMIS_PREF, MODE_PRIVATE);
                 String mevcut = sp.getString(GECMIS_KEY, "[]");
                 JSONArray dizi = new JSONArray(mevcut);
                 mesajKaydiniEkle(
-                        dizi, metin, medyaOnerileri, mesajId, medyaGorselleri
+                        dizi, metin, medyaOnerileri, mesajId, medyaGorselleri, arastirma
                 );
                 sp.edit().putString(GECMIS_KEY, dizi.toString()).apply();
             } catch (Exception e) {
@@ -1835,6 +1940,16 @@ private void sohbetYukle(String id) {
             String mesajId,
             JSONArray medyaGorselleri
     ) {
+        return sohbeteMesajEkle(metin, medyaOnerileri, mesajId, medyaGorselleri, null);
+    }
+
+    private String sohbeteMesajEkle(
+            String metin,
+            JSONArray medyaOnerileri,
+            String mesajId,
+            JSONArray medyaGorselleri,
+            JSONObject arastirma
+    ) {
         synchronized (KAYIT_KILIDI) {
             try {
                 SharedPreferences sp = getSharedPreferences(SOHBET_PREF, MODE_PRIVATE);
@@ -1865,7 +1980,7 @@ private void sohbetYukle(String id) {
 
                     JSONArray mesajlar = new JSONArray();
                     mesajKaydiniEkle(
-                            mesajlar, metin, medyaOnerileri, mesajId, medyaGorselleri
+                            mesajlar, metin, medyaOnerileri, mesajId, medyaGorselleri, arastirma
                     );
                     sohbet.put("mesajlar", mesajlar);
 
@@ -1895,7 +2010,7 @@ private void sohbetYukle(String id) {
 
                             mesajKaydiniEkle(
                                     mesajlar, metin, medyaOnerileri,
-                                    mesajId, medyaGorselleri
+                                    mesajId, medyaGorselleri, arastirma
                             );
                             sohbet.put(
                                     "tarih",
@@ -4051,6 +4166,149 @@ JSONObject item = new JSONObject();
         kart.setLayoutParams(kartLp);
 
         return kart;
+    }
+
+
+    private LinearLayout sonucKartiOlustur(
+            String cevap, JSONArray kodBulgulari, boolean bitcoinFiyati,
+            String bitcoinUsd, String bitcoinUpdatedAt, JSONObject finansVerisi,
+            String hesaplamaTuru) {
+        if (bitcoinFiyati && bitcoinUsd != null && !bitcoinUsd.isEmpty()) {
+            return bitcoinFiyatKartiOlustur(bitcoinUsd, bitcoinUpdatedAt);
+        }
+        if (finansVerisi != null) return finansKartlariOlustur(finansVerisi);
+        if ("savings".equalsIgnoreCase(hesaplamaTuru)) {
+            LinearLayout kart = birikimSonucKartiOlustur(cevap);
+            if (kart != null) return kart;
+        }
+        return mesajOlustur("🦅\n\n" + cevap, kodBulgulari);
+    }
+
+    private String finansEtiketiOku(String metin, String etiket) {
+        if (metin == null) return "";
+        Matcher m = Pattern.compile("(?im)^\\s*" + Pattern.quote(etiket)
+                + "\\s*:\\s*([0-9][0-9., ]*)\\s*(?:TL)?\\s*$").matcher(metin);
+        return m.find() ? m.group(1).trim() : "";
+    }
+
+    private double turkceParaOku(String deger) {
+        if (deger == null || deger.trim().isEmpty()) return Double.NaN;
+        try {
+            return Double.parseDouble(deger.replace(" ", "").replace(".", "").replace(",", "."));
+        } catch (Exception e) { return Double.NaN; }
+    }
+
+    private String turkceParaYaz(double tutar) {
+        java.text.NumberFormat nf = java.text.NumberFormat.getNumberInstance(new Locale("tr", "TR"));
+        nf.setMinimumFractionDigits(2);
+        nf.setMaximumFractionDigits(2);
+        return nf.format(tutar) + " TL";
+    }
+
+    private LinearLayout birikimSonucKartiOlustur(String cevap) {
+        String gelirS = finansEtiketiOku(cevap, "Aylık gelir");
+        String giderS = finansEtiketiOku(cevap, "Aylık gider");
+        String aylikS = finansEtiketiOku(cevap, "Aylık birikim");
+        Matcher m = Pattern.compile("(?im)^\\s*(\\d{1,3})\\s+ay\\s+sonunda\\s+birikim\\s*:\\s*([0-9., ]+)\\s*(?:TL)?\\s*$")
+                .matcher(cevap == null ? "" : cevap);
+        int ay = 0;
+        String toplamS = "";
+        if (m.find()) {
+            try { ay = Integer.parseInt(m.group(1)); } catch (Exception ignored) {}
+            toplamS = m.group(2).trim();
+        }
+        double gelir = turkceParaOku(gelirS);
+        double gider = turkceParaOku(giderS);
+        double aylik = turkceParaOku(aylikS);
+        double toplam = turkceParaOku(toplamS);
+        if (Double.isNaN(gelir) || Double.isNaN(gider) || Double.isNaN(aylik)
+                || Double.isNaN(toplam) || Double.isInfinite(toplam)) return null;
+
+        int pad = (int)(14 * getResources().getDisplayMetrics().density);
+        int yesil = Color.rgb(29, 137, 88);
+        int gri = Color.rgb(103, 115, 128);
+        LinearLayout kart = new LinearLayout(this);
+        kart.setOrientation(LinearLayout.VERTICAL);
+        kart.setPadding(pad, pad, pad, pad);
+        kart.setBackground(yuvarlakArkaPlan(Color.WHITE, Color.rgb(224, 231, 238), 18));
+
+        TextView baslik = new TextView(this);
+        baslik.setText("🦅 EAGLE-AI  •  FİNANSAL ANALİZ");
+        baslik.setTextColor(gri); baslik.setTextSize(12);
+        baslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        kart.addView(baslik);
+
+        TextView etiket = new TextView(this);
+        etiket.setText("BİRİKİM PLANI HAZIR");
+        etiket.setTextColor(yesil); etiket.setTextSize(11);
+        etiket.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        etiket.setPadding(0, pad / 2, 0, pad / 2);
+        kart.addView(etiket);
+
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(pad, pad, pad, pad);
+        hero.setBackground(yuvarlakArkaPlan(Color.rgb(232,247,239), Color.rgb(232,247,239), 14));
+        TextView heroBaslik = new TextView(this);
+        heroBaslik.setText(ay > 0 ? ay + " AY SONUNDA TAHMİNİ BİRİKİM" : "TOPLAM BİRİKİM");
+        heroBaslik.setTextColor(yesil); heroBaslik.setTextSize(12);
+        heroBaslik.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        hero.addView(heroBaslik);
+        TextView heroTutar = new TextView(this);
+        heroTutar.setText(turkceParaYaz(toplam)); heroTutar.setTextColor(Color.rgb(20,105,68));
+        heroTutar.setTextSize(26); heroTutar.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        heroTutar.setPadding(0, pad / 3, 0, 0);
+        hero.addView(heroTutar);
+        kart.addView(hero);
+
+        LinearLayout ikili = new LinearLayout(this);
+        ikili.setOrientation(LinearLayout.HORIZONTAL);
+        ikili.setPadding(0, pad, 0, 0);
+        finansMiniKartEkle(ikili, "AYLIK GELİR", gelir, true);
+        finansMiniKartEkle(ikili, "AYLIK GİDER", gider, false);
+        kart.addView(ikili);
+
+        TextView aylikSatir = new TextView(this);
+        aylikSatir.setText("Aylık birikim   " + turkceParaYaz(aylik));
+        aylikSatir.setTextColor(Color.rgb(35,45,58)); aylikSatir.setTextSize(15);
+        aylikSatir.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        aylikSatir.setPadding(0, pad, 0, pad / 2);
+        kart.addView(aylikSatir);
+
+        double oran = gelir > 0 ? Math.max(0, Math.min(100, aylik / gelir * 100)) : 0;
+        TextView oranView = new TextView(this);
+        oranView.setText("Gelire göre birikim oranı  •  " + String.format(Locale.getDefault(), "%.1f", oran) + "%");
+        oranView.setTextColor(gri); oranView.setTextSize(12);
+        kart.addView(oranView);
+        android.widget.ProgressBar bar = new android.widget.ProgressBar(this, null,
+                android.R.attr.progressBarStyleHorizontal);
+        bar.setMax(100); bar.setProgress((int)Math.round(oran));
+        bar.setProgressTintList(android.content.res.ColorStateList.valueOf(yesil));
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, (int)(7 * getResources().getDisplayMetrics().density));
+        barLp.topMargin = pad / 2; kart.addView(bar, barLp);
+
+        TextView not = new TextView(this);
+        not.setText("Not: Hesaplama sabit aylık birikim varsayımına dayanır; faiz ve yatırım getirisi dahil değildir.");
+        not.setTextColor(gri); not.setTextSize(11); not.setPadding(0, pad, 0, 0);
+        kart.addView(not);
+        return kart;
+    }
+
+    private void finansMiniKartEkle(LinearLayout parent, String baslik, double tutar, boolean gelir) {
+        int gap = (int)(6 * getResources().getDisplayMetrics().density);
+        LinearLayout mini = new LinearLayout(this);
+        mini.setOrientation(LinearLayout.VERTICAL);
+        mini.setPadding(gap + 4, gap + 4, gap + 4, gap + 4);
+        mini.setBackground(yuvarlakArkaPlan(Color.rgb(246,248,250), Color.rgb(235,239,243), 12));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(0, 0, gap, 0); parent.addView(mini, lp);
+        TextView b = new TextView(this); b.setText(baslik); b.setTextColor(Color.rgb(105,116,130));
+        b.setTextSize(10); b.setTypeface(Typeface.DEFAULT, Typeface.BOLD); mini.addView(b);
+        TextView t = new TextView(this); t.setText(turkceParaYaz(tutar));
+        t.setTextColor(gelir ? Color.rgb(31,142,93) : Color.rgb(190,75,70));
+        t.setTextSize(14); t.setTypeface(Typeface.DEFAULT, Typeface.BOLD); mini.addView(t);
     }
 
     private LinearLayout finansKartlariOlustur(JSONObject veri) {
