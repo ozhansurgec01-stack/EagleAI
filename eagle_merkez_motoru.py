@@ -19,8 +19,126 @@ Mevcut eagle_api.py motorlarını değiştirmez.
 import re
 from collections import Counter
 from urllib.parse import urlparse
+from eagle_arastirma_niyeti import anlati_istegi_mi
 from eagle_afet_koordinasyon import afet_koordinasyon_cevabi
 from eagle_finansal_analiz import finansal_analiz_cevabi
+
+
+_GENEL_WEB_ULKE_AD_ESLESMELERI = tuple(
+    frozenset(satir.split("|"))
+    for satir in """abd|america|usa
+afganistan|afghanistan
+albania|arnavutluk
+algeria|cezayir
+almanya|germany
+antarctica|antarktika
+argentina|arjantin
+armenia|ermenistan
+australia|avustralya
+austria|avusturya
+azerbaijan|azerbaycan
+bahamalar|bahamas
+bahrain|bahreyn
+bangladesh|bangladeş
+belgium|belçika
+bhutan|butan
+bolivia|bolivya
+botsvana|botswana
+brazil|brezilya
+britain|england|ingiltere
+bulgaria|bulgaristan
+cambodia|kamboçya
+cameroon|kamerun
+canada|kanada
+cebelitarık|gibraltar
+chad|çad
+chile|şili
+china|çin
+cibuti|djibouti
+colombia|kolombiya
+comoros|komorlar
+croatia|hırvatistan
+cuba|küba
+cyprus|kıbrıs
+czechia|çekya
+danimarka|denmark
+dominica|dominika
+ecuador|ekvador
+egypt|mısır
+endonezya|indonesia
+eritre|eritrea
+estonia|estonya
+esvatini|eswatini
+ethiopia|etiyopya
+fas|morocco
+filipinler|philippines
+finland|finlandiya
+france|fransa
+gambia|gambiya
+gana|ghana
+georgia|gürcistan
+gine|guinea
+greece|yunanistan
+greenland|grönland
+hindistan|india
+hollanda|netherlands
+hungary|macaristan
+irak|iraq
+jamaica|jamaika
+japan|japonya
+jordan|ürdün
+karadağ|montenegro
+katar|qatar
+kazakhstan|kazakistan
+kuveyt|kuwait
+kyrgyzstan|kırgızistan
+latvia|letonya
+lebanon|lübnan
+liberia|liberya
+lithuania|litvanya
+luxembourg|lüksemburg
+madagascar|madagaskar
+malavi|malawi
+malaysia|malezya
+maldives|maldivler
+martinik|martinique
+mauritania|moritanya
+meksika|mexico
+monaco|monako
+mongolia|moğolistan
+mozambik|mozambique
+namibia|namibya
+nicaragua|nikaragua
+niger|nijer
+nigeria|nijerya
+norveç|norway
+oman|umman
+poland|polonya
+portekiz|portugal
+romania|romanya
+ruanda|rwanda
+russia|rusya
+serbia|sırbistan
+seychelles|seyşeller
+singapore|singapur
+slovakia|slovakya
+slovenia|slovenya
+somali|somalia
+surinam|suriname
+suriye|syria
+tacikistan|tajikistan
+taiwan|tayvan
+tanzania|tanzanya
+tayland|thailand
+tunisia|tunus
+turkey|türkiye
+turkmenistan|türkmenistan
+ukraine|ukrayna
+uzbekistan|özbekistan
+zambia|zambiya
+zimbabve|zimbabwe""".splitlines()
+    if "|" in satir
+)
 
 
 class EagleMerkezSonuc:
@@ -297,6 +415,9 @@ class EagleMerkezMotoru:
                 if x
             ).strip()
 
+            kaynak_metni = str(sonuc.get("text", "") or "").strip()
+            if kaynak_metni:
+                metin = kaynak_metni
             if not metin:
                 continue
 
@@ -306,6 +427,8 @@ class EagleMerkezMotoru:
                 "url": url,
                 "domain": cls.domain(url),
                 "text": metin,
+                **({"_eagle_country_extract": True} if sonuc.get("_eagle_country_extract") is True else {}),
+                **({"_eagle_country_structured": True} if sonuc.get("_eagle_country_structured") is True else {}),
             })
 
         return temiz
@@ -1864,13 +1987,36 @@ class EagleMerkezMotoru:
         }
 
 
-    @staticmethod
-    def _genel_web_token_eslesiyor(konu_tokeni, metin_tokeni):
-        """Türkçe çekim ekleri bulunan konu kelimelerini güvenli eşleştirir."""
+    @classmethod
+    def genel_web_ulke_token_eslesiyor(cls, konu_tokeni, metin_tokeni):
+        """Türkçe ve İngilizce tek kelimelik ülke adlarını eşleştirir."""
+        a = cls.normalize(konu_tokeni)
+        b = cls.normalize(metin_tokeni)
+        if not a or not b:
+            return False
+        return any(a in grup and b in grup for grup in _GENEL_WEB_ULKE_AD_ESLESMELERI)
+
+    @classmethod
+    def ulke_tanitim_konusu(cls, mesaj):
+        konu = re.sub(r"\s+(?:hakkında|hakkinda)(?:\s+bilgi)?(?:\s+ver(?:ir)?(?:\s+m[ıi]s[ıi]n)?)?$", "", cls.normalize(mesaj).strip(" ?!."))
+        return konu if cls.genel_web_ulke_token_eslesiyor(konu, konu) else ""
+
+    @classmethod
+    def ulke_tanitim_basligi_mi(cls, ulke, baslik):
+        ana = re.split(r"\s+(?:[-–—|])\s*|\s*:\s*", str(baslik or ""), maxsplit=1)[0]
+        ana = cls.normalize(ana).strip()
+        ana = re.sub(r"\s+(?:hakk[ıi]nda (?:temel bilgiler|bilgi)|genel bak[ıi][şs]|overview|facts)$", "", ana)
+        return cls.genel_web_ulke_token_eslesiyor(ulke, ana)
+
+    @classmethod
+    def _genel_web_token_eslesiyor(cls, konu_tokeni, metin_tokeni):
+        """Türkçe çekim eklerini ve bilinen ülke adı karşılıklarını eşleştirir."""
         a = str(konu_tokeni or "")
         b = str(metin_tokeni or "")
         if not a or not b:
             return False
+        if cls.genel_web_ulke_token_eslesiyor(a, b):
+            return True
         if a == b or a.startswith(b) or b.startswith(a):
             return True
         ortak = 0
@@ -2203,6 +2349,40 @@ class EagleMerkezMotoru:
                 return finans_cevap, finans_guven
         except Exception:
             pass
+
+        # EAGLEAI_ANLATI_SENTEZI_GEMINIYE_DEVIR_V1
+        # Hikâye/anekdot sorularında farklı kaynaklardan kopuk cümleleri
+        # birleştirmek olay örgüsünü bozabilir. Kaynaklar API katmanındaki
+        # Gemini sentezine aktarılır; bu metot güvenli biçimde boş döner.
+        if anlati_istegi_mi(mesaj):
+            return "", 0.0
+
+        # Ülke tanıtımı dar alt konulara geri düşmemeli.
+        ulke = cls.ulke_tanitim_konusu(mesaj)
+        if ulke:
+            for kaynak in veriler or []:
+                if not isinstance(kaynak, dict):
+                    continue
+                baslik = re.split(r"\s+[-–|]\s+", str(kaynak.get("title", "")))[0]
+                if not cls.ulke_tanitim_basligi_mi(ulke, baslik):
+                    continue
+                metin = str(kaynak.get("text", "") or "").strip()
+                if kaynak.get("_eagle_country_structured") is True and cls.domain(kaynak.get("url", "")) in {"wikidata.org", "www.wikidata.org"} and metin:
+                    return metin, 0.78
+                if kaynak.get("_eagle_country_extract") and len(metin) >= 180:
+                    metin = re.sub(r"^([^\s]+)\s+\1(?=\s|[, (])", r"\1", metin, flags=re.I)
+                    metin = re.sub(r"\s*\([^()]*:\s*\)", "", metin)
+                    # Ham ansiklopedi metni güncel iddiaların doğrulandığı anlamına gelmez.
+                    ilk = metin.split("\n", 1)[0]
+                    cumleler = re.split(r"(?<=[.!?])\s+(?=[A-ZÇĞİÖŞÜ])", ilk)
+                    secilen = [c for c in cumleler if not re.search(
+                        r"\b(?:mevcut kral|mevcut başbakan|GSYİH|NAFTA|en zengin|dünyanın en)\b", c, re.I)]
+                    cevap = " ".join(secilen[:6]).strip()
+                    if len(cevap) >= 100:
+                        return cevap, 0.78
+            veriler = [v for v in veriler or [] if isinstance(v, dict) and cls.ulke_tanitim_basligi_mi(ulke, v.get("title", ""))]
+            if not veriler:
+                return "", 0.0
 
         # EAGLEAI_YAPILANDIRILMIS_WEB_BILGISI_V1
         # Web sayfalarındaki etiket-değer alanlarından doğrudan cevap üret.
@@ -2602,8 +2782,17 @@ class EagleMerkezMotoru:
                         r"[a-z0-9çğıöşü]+", baslik_norm
                     ))
                     baslik_eslesme = sum(
-                        1 for k in konu_kelime if k in baslik_kelime
+                        1 for k in konu_kelime
+                        if any(
+                            cls._genel_web_token_eslesiyor(k, b)
+                            for b in baslik_kelime
+                        )
                     )
+                    # Eş ad yalnızca başlığın tamamı eşleşirse tam başlıktır.
+                    tam_baslik = tam_baslik or cls.ulke_tanitim_basligi_mi(konu_norm, baslik_ana)
+                    ulke_tanitimi = cls.genel_web_ulke_token_eslesiyor(konu_norm, konu_norm)
+                    if ulke_tanitimi and not tam_baslik:
+                        continue
                     baslik_puani = baslik_eslesme * 6
                     if tam_baslik:
                         baslik_puani += 20
@@ -2665,6 +2854,7 @@ class EagleMerkezMotoru:
                 kaynaklar_hizli.sort(key=lambda x: x[0], reverse=True)
                 aday_cumleler = []
                 gorulen_cumleler = set()
+                gorulen_kelime_kumeleri = []
 
                 for oncelik, baslik, icerik in kaynaklar_hizli:
                     temiz = re.sub(r"<[^>]+>", " ", icerik)
@@ -2743,6 +2933,11 @@ class EagleMerkezMotoru:
                             continue
 
                         cumle_puani = oncelik + konu_uyumu["puan"]
+                        kelimeler = set(re.findall(r"\w+", norm))
+                        if any(len(kelimeler & eski) / max(1, len(kelimeler | eski)) >= 0.80
+                               for eski in gorulen_kelime_kumeleri):
+                            continue
+                        gorulen_kelime_kumeleri.append(kelimeler)
                         gorulen_cumleler.add(norm)
                         aday_cumleler.append((cumle_puani, cumle))
 
@@ -2790,7 +2985,7 @@ class EagleMerkezMotoru:
                     r"\1'\2", cevap, flags=re.IGNORECASE
                 )
                 cevap = re.sub(
-                    r"([A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+)*)\s+(nın|nin|nun|nün|da|de|ta|te|dan|den|tan|ten)\b",
+                    r"([A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+(?:\s+[A-ZÇĞİÖŞÜ][a-zA-ZÇĞİÖŞÜçğıöşü]+)*)\s+(nın|nin|nun|nün|da|de|ta|te|dan|den|tan|ten)\b(?!\s+[A-ZÇĞİÖŞÜ])",
                     lambda m: m.group(1) + "'" + m.group(2),
                     cevap,
                 )
@@ -5557,12 +5752,12 @@ class EagleMerkezMotoru:
             kaynak_sayisi=(
                 kaynak_ozet["kaynak_sayisi"]
             ),
-            gemini_gerekli=False,
+            gemini_gerekli=True,
             kaynak_goster=False,
             neden=(
                 "Web verisi var ancak merkezi motor "
                 "güvenli net cevap çıkaramadı. "
-                "Gemini kullanılmayacak."
+                "Kaynaklı son-çare sentezi üst katmana bırakıldı."
             )
         )
 
