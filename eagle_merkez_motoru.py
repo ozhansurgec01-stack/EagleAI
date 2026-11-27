@@ -2663,7 +2663,8 @@ class EagleMerkezMotoru:
             if re.search(
                 r"\b(vikimedya liste maddesi|wikimedia list article|"
                 r"liste maddesi|bu liste(?:,| mevcut|de |deki )|"
-                r"list article|table of contents|contents list)\b",
+                r"list article|table of contents|contents list|"
+                r"listesi .{0,100}(?:istatistiklerini|bilgilerini|verilerini) sunmaktadir)\b",
                 norm,
             ):
                 return False
@@ -2995,6 +2996,9 @@ class EagleMerkezMotoru:
                     ]
 
                 cevap = " ".join(secilen).strip()
+                # Kaynak başlığının paragraf başına iki kez eklenmesini temizle.
+                if konu:
+                    cevap = re.sub(r"^(" + re.escape(konu) + r")\s+\1(?=[\s,])", r"\1", cevap, flags=re.I)
 
                 # Genel web cevaplarında Türkçe yazım temizliği.
                 cevap = cevap.replace("ⓘ", "")
