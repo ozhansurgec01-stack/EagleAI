@@ -75,7 +75,7 @@ def guvenlik_hook(workspace):
         if event not in dosya_olaylari:
             return
 
-        if event == "os.rename":
+        if event in {"os.rename", "os.link", "os.symlink"}:
             yollar = args[:2]
         else:
             yollar = args[:1]
@@ -90,6 +90,10 @@ def guvenlik_hook(workspace):
                 yazma = isinstance(mode, str) and any(
                     bayrak in mode for bayrak in ("w", "a", "x", "+")
                 )
+
+                flags = args[2] if len(args) > 2 else 0
+                if isinstance(flags, int):
+                    yazma = yazma or bool(flags & (os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND))
 
                 if not _guvenli_yol(
                     yol,
