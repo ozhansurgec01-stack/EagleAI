@@ -12315,6 +12315,8 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     from urllib.parse import unquote
 
     ham = str(soru or "").strip()
+    ham = re.sub(r"(?i)\bverir(?=m[ıi]s[ıi]n(?:[ıi]z)?\b)", "verir ", ham)
+    ham = re.sub(r"(?i)\bile\s+ilgili\s+bilgi\b", "hakkında bilgi", ham)
     norm = ham.casefold().replace("ı", "i")
     tanitim = re.search(r"\b(hakkinda|hakkında|bilgi ver|tanit|tanıt|anlat|goster|göster|gezilecek|turistik|nereleri|yerleri)\b", norm)
     yalın_ulke = merkez_motor.genel_web_ulke_token_eslesiyor(ham, ham)
@@ -12576,7 +12578,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         # bir kelime yanlış fotoğrafı doğruymuş gibi gösteremez.
         anchor_title = konu_ankorlari & baslik_tokens
         scene_title = olumlu & baslik_tokens
-        if not anchor_title or not scene_title:
+        if not anchor_title or (not scene_title and not (tur == "place" and guvenilir_sorgu)):
             return -100
 
         # Birleşik/özgül konularda tek bir ortak kelime yeterli değildir.
