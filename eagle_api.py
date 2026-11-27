@@ -6118,6 +6118,8 @@ def tvf_voleybol_sonuclari_getir(limit=8):
 def _web_arama_sorgusunu_sadelestir(sorgu):
     """Doğal dildeki bilgi isteğini genel arama sorgusuna dönüştürür."""
     temiz = str(sorgu or "")[:400]
+    temiz = re.sub(r"(?i)\bverir(?=m[ıi]s[ıi]n(?:[ıi]z)?\b)", "verir ", temiz)
+    temiz = re.sub(r"(?i)\bile\s+ilgili\s+bilgi\b", "hakkında bilgi", temiz)
 
     # Nezaket ifadelerini ve yaygın soru kalıplarını kaldır;
     # konunun kendisini arama sorgusunda koru.
