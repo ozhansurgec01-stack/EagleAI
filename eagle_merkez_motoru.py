@@ -2859,12 +2859,11 @@ class EagleMerkezMotoru:
                                     e, flush=True
                                 )
 
-                    # Sayfa metni varsa arama özetini tekrar ekleme.
-                    if not icerikler:
-                        if metin:
-                            icerikler.append(metin)
-                        if ozet:
-                            icerikler.append(ozet)
+                    # Sayfa içeriği öncelikli; kısa veya eksik sayfalarda
+                    # kaynak özeti de kalite ve tekrar filtrelerinden geçsin.
+                    for ek_metin in (metin, ozet):
+                        if ek_metin and ek_metin not in icerikler:
+                            icerikler.append(ek_metin)
                     for icerik in icerikler:
                         kaynaklar_hizli.append(
                             (baslik_puani, baslik, icerik)
