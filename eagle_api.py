@@ -12340,7 +12340,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         return re.sub(r"[^a-z0-9]+", " ", deger).strip()
 
     konu_norm = normla(konu)
-    limit = max(1, min(int(limit or 8), 10))
+    limit = max(1, min(int(limit or 8), 4))
     cache = getattr(_eagle_yer_gorsellerini_getir, "_cache", {})
     cache_key = (konu_norm, limit)
     now = time.time()
@@ -12443,6 +12443,8 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             tur = "nature"
         elif entity_tokens & {"city", "town", "capital", "municipality", "sehir", "kent"}:
             tur = "city"
+        elif entity_tokens & {"planet", "gezegen", "asteroid", "asteroit", "comet", "star", "yildiz", "satellite", "uydu", "galaxy", "galaksi"}:
+            tur = "astronomy"
         else:
             tur = "place"
 
@@ -12529,7 +12531,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         # galerisine alınmaz. Çok sözcüklü ifadeler bütün olarak denetlenir.
         medya_ve_belge = tokens(
             "map maps location locator cartography chart diagram banknote banknotes "
-            "currency money coin coins stamp stamps ticket document agreement treaty "
+            "currency money coin coins medal medals medallion medallions stamp stamps ticket document agreement treaty "
             "conference meeting delegation signing summit diplomatic logo flag seal "
             "poster roadmap wallpaper wallpapers television tv episode season series "
             "show programme program magazine newspaper book cover illustration "
@@ -12580,7 +12582,10 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         # bir kelime yanlış fotoğrafı doğruymuş gibi gösteremez.
         anchor_title = konu_ankorlari & baslik_tokens
         scene_title = olumlu & baslik_tokens
-        if not anchor_title or (not scene_title and not (tur == "place" and guvenilir_sorgu)):
+        if tur == "astronomy":
+            if not anchor_title or (not guvenilir_sorgu and not (ts & tokens("planet gezegen dwarf nasa spacecraft telescope astronomy astronomical asteroid comet galaxy surface orbit horizons hubble voyager cassini space"))):
+                return -100
+        elif not anchor_title or (not scene_title and not (tur == "place" and guvenilir_sorgu)):
             return -100
 
         # Birleşik/özgül konularda tek bir ortak kelime yeterli değildir.
@@ -12753,13 +12758,16 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     if p18:
         try:
             r = requests.get("https://commons.wikimedia.org/w/api.php",
-                params={"action": "query", "titles": "|".join("File:" + x for x in p18), "prop": "imageinfo", "iiprop": "url|mime|extmetadata", "iiurlwidth": 1000, "format": "json"},
+                params={"action": "query", "titles": "|".join("File:" + x for x in p18), "prop": "imageinfo", "iiprop": "url|mime|size|extmetadata", "iiurlwidth": 1000, "format": "json"},
                 headers=headers, timeout=6)
             if r.status_code == 429:
                 commons_429 = True
             r.raise_for_status()
             for page in r.json().get("query", {}).get("pages", {}).values():
                 info = (page.get("imageinfo") or [{}])[0]
+                w, h = info.get("width"), info.get("height")
+                if w and h and (min(w, h) < 200 or max(w, h) / min(w, h) > 3):
+                    continue
                 if not str(info.get("mime", "")).startswith("image/"):
                     continue
                 title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
@@ -12794,13 +12802,16 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         try:
             r = requests.get("https://commons.wikimedia.org/w/api.php",
                 params={"action": "query", "generator": "categorymembers", "gcmtitle": "Category:" + commons_kategori,
-                        "gcmtype": "file", "gcmlimit": 18, "prop": "imageinfo", "iiprop": "url|mime|extmetadata", "iiurlwidth": 1000, "format": "json"},
+                        "gcmtype": "file", "gcmlimit": 18, "prop": "imageinfo", "iiprop": "url|mime|size|extmetadata", "iiurlwidth": 1000, "format": "json"},
                 headers=headers, timeout=6)
             if r.status_code == 429:
                 commons_429 = True
             r.raise_for_status()
             for page in r.json().get("query", {}).get("pages", {}).values():
                 info = (page.get("imageinfo") or [{}])[0]
+                w, h = info.get("width"), info.get("height")
+                if w and h and (min(w, h) < 200 or max(w, h) / min(w, h) > 3):
+                    continue
                 if str(info.get("mime", "")).startswith("image/"):
                     title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
                     desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
@@ -12828,13 +12839,16 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                 r = requests.get("https://commons.wikimedia.org/w/api.php",
                     params={"action": "query", "generator": "search", "gsrsearch": f"{ingilizce_ad} {terim}",
                             "gsrnamespace": 6, "gsrlimit": 20, "prop": "imageinfo",
-                            "iiprop": "url|mime|extmetadata", "iiurlwidth": 1000, "format": "json"},
+                            "iiprop": "url|mime|size|extmetadata", "iiurlwidth": 1000, "format": "json"},
                     headers=headers, timeout=6)
                 if r.status_code == 429:
                     commons_429 = True
                 r.raise_for_status()
                 for page in r.json().get("query", {}).get("pages", {}).values():
                     info = (page.get("imageinfo") or [{}])[0]
+                    w, h = info.get("width"), info.get("height")
+                    if w and h and (min(w, h) < 200 or max(w, h) / min(w, h) > 3):
+                        continue
                     if str(info.get("mime", "")).startswith("image/"):
                         title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
                         desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
@@ -12873,6 +12887,8 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             sorgular = [f"{sorgu_adi} nature landscape photography",
                         f"{sorgu_adi} aerial view scenery photo",
                         f"{sorgu_adi} natural scenery mountains water"]
+        elif tur == "astronomy":
+            sorgular = [f"{sorgu_adi} astronomy NASA spacecraft image", f"{sorgu_adi} astronomical object telescope photograph"]
         else:
             sorgular = [f"{sorgu_adi} landscape photography",
                         f"{sorgu_adi} landmark nature photo",
