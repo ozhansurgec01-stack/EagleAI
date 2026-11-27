@@ -66,7 +66,12 @@ jobs:
           for question in ("Venüs hakkında bilgi verirmisin", "Plüton ile ilgili bilgi verirmisin", "Kanada hakkında bilgi", "Mısır piramitlerini anlat", "Fotosentez nedir"):
               try:
                   sources = eagle_api.web_arastir(question, limit=6)
-                  answer, confidence = EagleMerkezMotoru.genel_web_cevabi(question, sources)
+                  for source in sources:
+                      print("SOURCE", source.get("title"), source.get("url"), str(source.get("snippet") or source.get("text") or "")[:240], flush=True)
+                  answer, confidence = EagleMerkezMotoru.genel_web_cevabi(
+                      question, sources, sayfa_okuyucu=eagle_api.web_sayfa_oku,
+                      genel_sayfa_okuyucu=lambda url: eagle_api.web_sayfa_oku(url, metaveri_dahil=False, timeout=(3, 5)),
+                  )
                   images = eagle_api._eagle_yer_gorsellerini_getir(question, answer) or []
                   print(question, "sources=", len(sources), "confidence=", confidence, "images=", len(images), flush=True)
                   print(answer, flush=True)
