@@ -6,7 +6,7 @@ def anlati_istegi_mi(mesaj):
     m = str(mesaj or '').casefold().replace('\u0307', '')
     if re.search(r'\b(?:hikay\w*|hikâ[yv]\w*|öykü\w*|oyku\w*|efsane\w*|anekdot\w*|masal\w*|rivayet\w*)\b', m):
         return True
-    olay = re.search(r'\b(?:olay\w*|vaka\w*|saldır\w*|saldir\w*|ufo\w*|kaçır\w*|kacir\w*|batış\w*|batis\w*|batma\w*|kaza\w*|felaket\w*|trajedi\w*|isyan\w*|devrim\w*|savaş\w*|savas\w*)\b', m)
+    olay = re.search(r'\b(?:olay\w*|vaka\w*|saldır\w*|saldir\w*|ufo\w*|kaçır\w*|kacir\w*|batış\w*|batis\w*|batma\w*|kaza\w*|felaket\w*|facia\w*|afet\w*|trajedi\w*|isyan\w*|devrim\w*|savaş\w*|savas\w*)\b', m)
     ayrinti = re.search(r'\b(?:anlat\w*|detay\w*|kronolojik|ayrınt\w*|ayrint\w*|başından sonuna|basindan sonuna)\b', m)
     yalın_olay = re.search(r'\b(?:olayı|olayi|vakası|vakasi)\s*[?!.]*$', m) and len(m.split()) <= 6
     return bool(olay and (ayrinti or yalın_olay))

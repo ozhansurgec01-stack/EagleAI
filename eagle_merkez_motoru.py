@@ -17,6 +17,7 @@ Mevcut eagle_api.py motorlarını değiştirmez.
 """
 
 import re
+import math
 from collections import Counter
 from urllib.parse import urlparse
 from eagle_arastirma_niyeti import anlati_istegi_mi
@@ -1998,7 +1999,7 @@ class EagleMerkezMotoru:
 
     @classmethod
     def ulke_tanitim_konusu(cls, mesaj):
-        konu = re.sub(r"\s+(?:hakkında|hakkinda)(?:\s+bilgi)?(?:\s+ver(?:ir)?(?:\s+m[ıi]s[ıi]n)?)?$", "", cls.normalize(mesaj).strip(" ?!."))
+        konu = re.sub(r"\s+(?:hakkında|hakkinda)(?:\s+(?:detaylı|detayli|ayrıntılı|ayrintili|genel|kapsamlı|kapsamli))?(?:\s+bilgi)?(?:\s+ver(?:ir)?(?:\s+m[ıi]s[ıi]n)?)?$", "", cls.normalize(mesaj).strip(" ?!."))
         return konu if cls.genel_web_ulke_token_eslesiyor(konu, konu) else ""
 
     @classmethod
@@ -2251,7 +2252,7 @@ class EagleMerkezMotoru:
                 return None
 
             sure_eslesme = re.search(
-                r"(\d+(?:[.,]\d+)?)\s*(?:yil|sene)", sade
+                r"(?<![\w.,+-])([+-]?\d+(?:[.,]\d+)?)\s*(?:yil|sene)", sade
             )
             if not sure_eslesme:
                 return None
@@ -2275,11 +2276,13 @@ class EagleMerkezMotoru:
                     oran_eslesme.group(1).replace(",", ".")
                 )
 
-            if sure <= 0 or not 0 < hiz_orani < 1:
+            if not math.isfinite(sure) or sure <= 0 or not 0 < hiz_orani < 1:
                 return None
 
             gamma = 1.0 / (1.0 - hiz_orani ** 2) ** 0.5
             dunya_suresi = sure * gamma
+            if not math.isfinite(dunya_suresi):
+                return None
 
             def yaz(sayi):
                 return f"{sayi:.2f}".replace(".", ",")

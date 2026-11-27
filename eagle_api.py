@@ -46,12 +46,6 @@ import re
 import json
 import ast
 import sympy as sp
-from sympy.parsing.sympy_parser import (
-    parse_expr,
-    standard_transformations,
-    implicit_multiplication_application,
-    convert_xor,
-)
 import operator
 from decimal import Decimal, ROUND_HALF_UP
 import subprocess
@@ -182,6 +176,30 @@ def api_borc_sil():
         }), 500
 
 
+def eagle_yerel_matematik(mesaj):
+    """Strict standalone expressions, before web and learned routing."""
+    q = str(mesaj).strip().rstrip("?!. ")
+    q = re.sub(r"\s+(?:kaç eder|kaçtır|kaç|hesapla|doğru mu|denklemini çöz|denklemi çöz|çöz)$", "", q, flags=re.I)
+    q = q.replace("×", "*").replace("÷", "/").replace("−", "-").replace("²", "^2").replace("³", "^3").replace(",", ".")
+    num = r"[0-9+*/().^\s-]+"
+    m = re.fullmatch(rf"({num})(<=|>=|==|!=|<|>|≤|≥)({num})", q)
+    if m:
+        a, op, b = m.groups()
+        ok1, x = guvenli_hesapla(a.replace("^", "**")); ok2, y = guvenli_hesapla(b.replace("^", "**"))
+        if not (ok1 and ok2): return "Karşılaştırma hesaplanamadı."
+        fn = {"<": operator.lt, ">": operator.gt, "<=": operator.le, ">=": operator.ge, "≤": operator.le, "≥": operator.ge, "==": operator.eq, "!=": operator.ne}[op]
+        return f"{a.strip()} {op} {b.strip()}: " + ("Doğru." if fn(x,y) else "Yanlış.")
+    if re.fullmatch(r"[0-9a-zA-Z+*/().^=\s-]+", q) and q.count("=") == 1 and re.search(r"[a-zA-Z]", q) and (re.search(r"[+*/^()-]", q) or re.search(r"denklemi|çöz", mesaj, re.I)):
+        result = sembolik_denklem_coz(q)
+        if result is None: return "Bu denklem mevcut çözüm kapsamının dışında veya geçersiz."
+        roots = result["cozumler"]
+        return ", ".join(f"{result['degisken']} = {v}" for v in roots) if roots else "Çözüm yok."
+    if re.fullmatch(num, q) and re.search(r"[+*/^-]", q) and re.search(r"\d", q):
+        ok, value = guvenli_hesapla(q.replace("^", "**"))
+        return f"Sonuç: {value}" if ok else "İşlem hesaplanamadı: " + str(value)
+    return None
+
+
 @app.route('/api/odeme-yap', methods=['POST'])
 def api_odeme_yap():
     try:
@@ -221,37 +239,45 @@ _GUVENLI_ISLEMLER = {
     ast.Pow: operator.pow,
 }
 
-def guvenli_hesapla(ifade):
+def guvenli_hesapla(ifade, ortam=None):
+    """Sınırlı AST aritmetiği; sonlu gerçek sayılar ve kaynak sınırları."""
+    import math
     try:
-        agac = ast.parse(str(ifade), mode="eval")
+        ifade = str(ifade).strip()
+        if len(ifade) > 2048:
+            raise ValueError("İfade çok uzun")
+        agac = ast.parse(ifade, mode="eval")
+        if sum(1 for _ in ast.walk(agac)) > 256:
+            raise ValueError("İfade çok karmaşık")
+        ortam = ortam or {}
+
+        def kontrol(deger):
+            if type(deger) is int and deger.bit_length() <= 4096:
+                return deger
+            if type(deger) is float and math.isfinite(deger):
+                return deger
+            raise ValueError("Sonlu gerçek sayı sınırı aşıldı")
 
         def hesapla(node):
             if isinstance(node, ast.Expression):
                 return hesapla(node.body)
-
-            if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
-                return node.value
-
+            if isinstance(node, ast.Constant):
+                return kontrol(node.value)
+            if isinstance(node, ast.Name) and node.id in ortam:
+                return kontrol(ortam[node.id])
             if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
                 deger = hesapla(node.operand)
-                return deger if isinstance(node.op, ast.UAdd) else -deger
-
+                return kontrol(deger if isinstance(node.op, ast.UAdd) else -deger)
             if isinstance(node, ast.BinOp) and type(node.op) in _GUVENLI_ISLEMLER:
-                sol = hesapla(node.left)
-                sag = hesapla(node.right)
-
+                sol, sag = hesapla(node.left), hesapla(node.right)
                 if type(node.op) is ast.Pow and abs(sag) > 10:
                     raise ValueError("Üs çok büyük")
-
-                return _GUVENLI_ISLEMLER[type(node.op)](sol, sag)
-
+                return kontrol(_GUVENLI_ISLEMLER[type(node.op)](sol, sag))
             raise ValueError("İzin verilmeyen ifade")
 
         return True, hesapla(agac)
-
     except Exception as e:
         return False, str(e)
-
 
 
 def guvenli_mantiksal_hesapla(metin):
@@ -276,38 +302,10 @@ def guvenli_mantiksal_hesapla(metin):
 
         for ad, ifade in atamalar:
             ifade = ifade.strip()
-            try:
-                agac = ast.parse(ifade, mode="eval")
-
-                def hesapla(node):
-                    if isinstance(node, ast.Expression):
-                        return hesapla(node.body)
-
-                    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
-                        return node.value
-
-                    if isinstance(node, ast.Name) and node.id in ortam:
-                        return ortam[node.id]
-
-                    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
-                        deger = hesapla(node.operand)
-                        return deger if isinstance(node.op, ast.UAdd) else -deger
-
-                    if isinstance(node, ast.BinOp) and type(node.op) in _GUVENLI_ISLEMLER:
-                        sol = hesapla(node.left)
-                        sag = hesapla(node.right)
-
-                        if type(node.op) is ast.Pow and abs(sag) > 10:
-                            raise ValueError("Üs çok büyük")
-
-                        return _GUVENLI_ISLEMLER[type(node.op)](sol, sag)
-
-                    raise ValueError("İzin verilmeyen ifade")
-
-                ortam[ad] = hesapla(agac)
-
-            except Exception:
+            ok, sonuc = guvenli_hesapla(ifade, ortam)
+            if not ok:
                 return False, ""
+            ortam[ad] = sonuc
 
         if not iddialar_metni:
             return False, ""
@@ -331,20 +329,13 @@ def guvenli_mantiksal_hesapla(metin):
             agac = ast.parse(ifade, mode="eval").body
 
             if not isinstance(agac, ast.Compare):
-                continue
+                return False, ""
 
             def deger(node):
-                if isinstance(node, ast.Name) and node.id in ortam:
-                    return ortam[node.id]
-                if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
-                    return node.value
-                if isinstance(node, ast.BinOp) and type(node.op) in _GUVENLI_ISLEMLER:
-                    sol = deger(node.left)
-                    sag = deger(node.right)
-                    if type(node.op) is ast.Pow and abs(sag) > 10:
-                        raise ValueError("Üs çok büyük")
-                    return _GUVENLI_ISLEMLER[type(node.op)](sol, sag)
-                raise ValueError("İzin verilmeyen ifade")
+                ok, sonuc = guvenli_hesapla(ast.unparse(node), ortam)
+                if not ok:
+                    raise ValueError(sonuc)
+                return sonuc
 
             sol = deger(agac.left)
             sonuc = True
@@ -364,6 +355,7 @@ def guvenli_mantiksal_hesapla(metin):
                     parca = sol < sag
                 elif isinstance(op, ast.LtE):
                     parca = sol <= sag
+                else:
                     raise ValueError("İzin verilmeyen karşılaştırma")
 
                 sonuc = sonuc and parca
@@ -372,6 +364,7 @@ def guvenli_mantiksal_hesapla(metin):
             if sonuc:
                 dogru += 1
                 durum = "DOĞRU"
+            else:
                 yanlis += 1
                 durum = "YANLIŞ"
 
@@ -745,6 +738,23 @@ def finans_fiyat_sorgusu_mu(mesaj):
 def _eagle_gorsel_galerisi_uygun_mu(mesaj, finans_verisi=None):
     """Finans/fiyat sorgularına konu dışı görsel galerisi eklenmesini önler."""
     return not finans_verisi and not finans_fiyat_sorgusu_mu(mesaj)
+
+
+def eagle_yerel_kavram(mesaj):
+    """Dar kapsamlı, internet gerektirmeyen kavram açıklamaları."""
+    m = str(mesaj or "").casefold().replace("\u0307", "").translate(str.maketrans("şçğıöü", "scgiou"))
+    if re.fullmatch(r"python(?:'da|da)?\s+(?:liste|list)\s+(?:ve|ile)\s+tuple\s+(?:arasindaki\s+)?fark(?:i|lari)?(?:\s+nedir)?[?.! ]*", m):
+        return ("Python'da liste ve tuple sıralı, indekslenebilir veri yapılarıdır. "
+                "Liste değiştirilebilir: [1, 2] ve append(3) ile eleman eklenebilir. "
+                "Tuple değiştirilemez: (1, 2); oluşturulduktan sonra elemanları yeniden atanamaz. "
+                "Değişen koleksiyonlar için liste, sabit kayıtlar için tuple tercih edilir.")
+    if re.fullmatch(r"kara delik(?:ler)? nasil olusur[?.! ]*", m):
+        return ("Yıldız kütleli kara delikler, yeterince büyük kütleli yıldızların çekirdeği "
+                "nükleer yakıtı tükendiğinde kendi kütleçekimi altında çökerse oluşabilir. "
+                "Çöküş bir olay ufku oluşturduğunda ışık bile bu sınırın içinden dışarı kaçamaz. "
+                "Her yıldız kara deliğe dönüşmez; daha düşük kütleli kalıntılar beyaz cüce veya nötron yıldızı olabilir. "
+                "Süper kütleli kara deliklerin oluşumu ise büyüme, birleşmeler ve erken evrendeki çekirdek oluşumu gibi süreçlerle araştırılmaktadır.")
+    return None
 
 
 def bilgi_bankasi_ara(mesaj):
@@ -2740,85 +2750,62 @@ def spor_arama_sorgusu(mesaj):
     return f"{mesaj.strip()} maç fikstür güncel"
 
 def sembolik_denklem_coz(metin):
-    """Güvenli biçimde basit sembolik denklemleri çözer."""
+    """Sınırlı dereceli tek değişkenli denklemler; eval kullanılmaz."""
     try:
         ifade = str(metin or "").strip()
-
-        if "=" not in ifade:
+        if len(ifade) > 256 or ifade.count("=") != 1:
             return None
-
-        # SymPy parse_expr eval tabanlı olduğundan yalnızca
-        # matematiksel karakterlere izin ver.
-        if not re.fullmatch(r"[0-9A-Za-z_+\-*/^().=\sπΠ]+", ifade):
-            return None
-
-        parcalar = ifade.split("=")
-        if len(parcalar) != 2:
-            return None
-
-        sol, sag = [x.strip() for x in parcalar]
-
-        if not sol or not sag:
-            return None
-
-        # Python ataması ile matematiksel denklemi ayır.
-        # Tek değişkenli basit atamalar açıkça "çöz" denmedikçe
-        # mevcut Python kod analizine bırakılacak.
+        sol, sag = map(str.strip, ifade.split("="))
         if re.fullmatch(r"[A-Za-z_]\w*", sol) and re.fullmatch(r"[0-9.]+", sag):
             return None
-
-        transformations = standard_transformations + (
-            implicit_multiplication_application,
-            convert_xor,
-        )
-
-        # Yalnızca metindeki gerçek sembolleri locals'a al.
-        semboller = sorted(set(re.findall(r"[A-Za-z_]\w*", ifade)))
-        local_dict = {}
-
-        for ad in semboller:
-            if ad in {"sin", "cos", "tan", "sqrt", "log", "exp"}:
-                return None
-            local_dict[ad] = sp.Symbol(ad)
-
-        # π desteği
-        local_dict["π"] = sp.pi
-        local_dict["Π"] = sp.pi
-
-        sol_expr = parse_expr(
-            sol,
-            local_dict=local_dict,
-            transformations=transformations,
-        )
-        sag_expr = parse_expr(
-            sag,
-            local_dict=local_dict,
-            transformations=transformations,
-        )
-
-        denklem = sp.Eq(sol_expr, sag_expr)
-
-        degiskenler = sorted(
-            denklem.free_symbols,
-            key=lambda x: str(x)
-        )
-
-        if len(degiskenler) != 1:
+        def oku(text):
+            if not re.fullmatch(r"[0-9A-Za-z+\-*/^().\sπΠ]+", text):
+                raise ValueError("Geçersiz ifade")
+            text = re.sub(r"(?<=[0-9)])\s*(?=[A-Za-zπΠ(])", "*", text)
+            text = re.sub(r"(?<=[A-Za-zπΠ])\s*(?=\()", "*", text)
+            tree = ast.parse(text.replace("^", "**"), mode="eval")
+            if sum(1 for _ in ast.walk(tree)) > 64:
+                raise ValueError("İfade çok uzun")
+            def visit(n):
+                if isinstance(n, ast.Constant) and type(n.value) in (int, float):
+                    if abs(n.value) > 10**12:
+                        raise ValueError("Sayı sınırı")
+                    return sp.Rational(str(n.value))
+                if isinstance(n, ast.Name) and len(n.id) == 1:
+                    return sp.pi if n.id in ("π", "Π") else sp.Symbol(n.id)
+                if isinstance(n, ast.UnaryOp) and isinstance(n.op, (ast.UAdd, ast.USub)):
+                    v = visit(n.operand)
+                    return -v if isinstance(n.op, ast.USub) else v
+                if isinstance(n, ast.BinOp):
+                    l, r = visit(n.left), visit(n.right)
+                    if isinstance(n.op, ast.Pow):
+                        if not isinstance(n.right, ast.Constant) or type(n.right.value) is not int or not 0 <= n.right.value <= 4:
+                            raise ValueError("Üs sınırı")
+                        v = l**r
+                    elif isinstance(n.op, ast.Add): v = l+r
+                    elif isinstance(n.op, ast.Sub): v = l-r
+                    elif isinstance(n.op, ast.Mult): v = l*r
+                    elif isinstance(n.op, ast.Div) and r != 0 and not r.free_symbols: v = l/r
+                    else: raise ValueError("Desteklenmeyen işlem")
+                    if sp.count_ops(v) > 64 or any(abs(i) > 10**50 for i in v.atoms(sp.Integer)):
+                        raise ValueError("İfade sınırı")
+                    if v.free_symbols and sp.Poly(v, *sorted(v.free_symbols, key=str)).total_degree() > 4:
+                        raise ValueError("Derece sınırı")
+                    return v
+                raise ValueError("Desteklenmeyen ifade")
+            return visit(tree.body)
+        l, r = oku(sol), oku(sag)
+        symbols = l.free_symbols | r.free_symbols
+        if len(symbols) != 1:
             return None
-
-        degisken = degiskenler[0]
-        cozumler = sp.solve(denklem, degisken)
-
-        return {
-            "denklem": denklem,
-            "degisken": degisken,
-            "cozumler": cozumler,
-        }
-
+        x = next(iter(symbols))
+        poly = sp.Poly(l-r, x)
+        if poly.degree() > 4 or poly.is_zero:
+            return None
+        return {"denklem": sp.Eq(l, r, evaluate=False), "degisken": x,
+                "cozumler": sp.solve(poly.as_expr(), x)}
     except Exception:
         return None
-
-
 
 
 def _eagle_tmdb_norm(metin):
@@ -5239,6 +5226,127 @@ def uefa_sampiyonlar_ligi_getir(mesaj=""):
     return sonuc
 
 
+def eagle_lig_fikstur_kapsami(mesaj, simdi):
+    """Açık lig ve tarih kapsamını tek noktada belirle."""
+    import re
+    from datetime import timedelta
+    m = str(mesaj or "").casefold().replace("\u0307", "")
+    m = m.translate(str.maketrans("şçğıöü", "scgiou"))
+    ligler = (
+        ("Şampiyonlar Ligi", "uefa.champions", r"sampiyonlar ligi|champions league"),
+        ("Avrupa Ligi", "uefa.europa", r"avrupa ligi|europa league"),
+        ("Konferans Ligi", "uefa.europa.conf", r"konferans ligi|conference league"),
+        ("Premier League", "eng.1", r"premier lig|premier league"),
+        ("La Liga", "esp.1", r"la liga"),
+        ("Bundesliga", "ger.1", r"bundesliga"),
+        ("Serie A", "ita.1", r"serie a"),
+        ("Ligue 1", "fra.1", r"ligue 1"),
+    )
+    secim = [x for x in ligler if re.search(r"\b(?:" + x[2] + r")\b", m)]
+    if len(secim) != 1 or not re.search(r"\b(?:mac\w*|fikstur\w*|karsilasma\w*|skor\w*|sonuc\w*)\b", m):
+        return None
+    if re.search(r"\b(?:puan durumu|canli|kac kac)\b", m):
+        return None
+    # Takım özelindeki soruları genel lig listesiyle değiştirme.
+    kalan = re.sub(secim[0][2], "", m)
+    kalan = re.sub(r"\b(?:mac\w*|fikstur\w*|karsilasma\w*|skor\w*|sonuc\w*|bugun\w*|yarin\w*|dun\w*|bu|gelecek|hafta\w*|hangi|ne|zaman|var|mi|oynanan|oynanacak|goster|listele|nedir|nelerdir|son)\b", "", kalan)
+    if re.search(r"\w", kalan):
+        return None
+    sonuc = bool(re.search(r"\b(?:skor\w*|sonuc\w*|oynanan)\b", m))
+    gun = simdi.date()
+    if re.search(r"\bdun\w*\b", m):
+        bas = bit = gun - timedelta(days=1)
+    elif re.search(r"\byarin\w*\b", m):
+        bas = bit = gun + timedelta(days=1)
+    elif re.search(r"\bbugun\w*\b", m):
+        bas = bit = gun
+    elif "gelecek hafta" in m or "bu hafta" in m:
+        bas = gun - timedelta(days=gun.weekday()) + timedelta(days=7 if "gelecek hafta" in m else 0)
+        bit = bas + timedelta(days=6)
+    elif sonuc:
+        bas, bit = gun - timedelta(days=6), gun
+    else:
+        bas, bit = gun, gun + timedelta(days=13)
+    return secim[0][0], secim[0][1], bas, bit, sonuc
+
+
+def eagle_lig_fikstur_cevabi(kapsam, simdi):
+    """Yalnızca seçilen organizasyonun tarihli ESPN kayıtlarını sun."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import requests
+    lig, kod, bas, bit, sonuc = kapsam
+    baslik = f"🏆 {lig} — {bas:%d.%m.%Y} / {bit:%d.%m.%Y}"
+    kaynak = "ESPN"
+    try:
+        r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{kod}/scoreboard", params={"dates": f"{bas:%Y%m%d}-{bit:%Y%m%d}", "limit": 500}, timeout=5)
+        r.raise_for_status()
+        events = r.json()["events"]
+        if not isinstance(events, list):
+            raise ValueError("events")
+    except Exception as exc:
+        print("ESPN fikstür erişimi:", type(exc).__name__)
+        kaynak = "SofaScore"
+        ids = {"uefa.champions": 7, "uefa.europa": 679, "uefa.europa.conf": 17015,
+               "eng.1": 17, "esp.1": 8, "ger.1": 35, "ita.1": 23, "fra.1": 34}
+        try:
+            from datetime import timedelta, timezone
+            from concurrent.futures import ThreadPoolExecutor
+            def oku(gun):
+                r = requests.get(f"https://www.sofascore.com/api/v1/sport/football/scheduled-events/{gun:%Y-%m-%d}", timeout=4, headers={"User-Agent": "Mozilla/5.0"})
+                r.raise_for_status()
+                rows = r.json()["events"]
+                if not isinstance(rows, list):
+                    raise ValueError("events")
+                out = []
+                for e in rows:
+                    try:
+                        if e["tournament"]["uniqueTournament"]["id"] != ids[kod]:
+                            continue
+                        state = e["status"]["type"]
+                        if state not in ("notstarted", "finished"):
+                            continue
+                        teams = []
+                        for side in ("home", "away"):
+                            t = {"homeAway": side, "team": {"displayName": e[side+"Team"]["name"]}}
+                            if state == "finished":
+                                t["score"] = e[side+"Score"]["current"]
+                            teams.append(t)
+                        out.append({"date": datetime.fromtimestamp(e["startTimestamp"], timezone.utc).isoformat(), "status": {"type": {"state": "pre" if state == "notstarted" else "post", "completed": state == "finished"}}, "competitions": [{"competitors": teams}]})
+                    except (KeyError, TypeError, ValueError, OverflowError, OSError):
+                        continue
+                return out
+            # UTC tarih sınırındaki karşılaşmaları da kapsa.
+            days = [bas + timedelta(days=i-1) for i in range((bit-bas).days+2)]
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                events = [e for rows in pool.map(oku, days) for e in rows]
+        except Exception as exc:
+            print("SofaScore fikstür erişimi:", type(exc).__name__)
+            return False, baslik + "\nMaç kaynaklarına şu anda ulaşılamadı."
+    satirlar = []
+    for e in events:
+        try:
+            dt = datetime.fromisoformat(e["date"].replace("Z", "+00:00"))
+            if dt.utcoffset() is None:
+                continue
+            dt = dt.astimezone(ZoneInfo("Europe/Istanbul"))
+            durum = e["status"]["type"]
+            if not bas <= dt.date() <= bit or (sonuc and not durum.get("completed")) or (not sonuc and (durum.get("state") != "pre" or dt < simdi)):
+                continue
+            takimlar = {t["homeAway"]: t for t in e["competitions"][0]["competitors"]}
+            ev, dep = takimlar["home"], takimlar["away"]
+            ad1, ad2 = ev["team"]["displayName"], dep["team"]["displayName"]
+            if not ad1 or not ad2:
+                continue
+            skor = f" — {ev['score']}-{dep['score']}" if sonuc else ""
+            satirlar.append((dt, f"{dt:%d.%m.%Y %H:%M} — {ad1} - {ad2}{skor}"))
+        except (KeyError, ValueError, TypeError, IndexError, AttributeError):
+            continue
+    if not satirlar:
+        return False, baslik + "\nBu aralıkta gösterilebilecek doğrulanmış maç kaydı bulunamadı."
+    return True, baslik + "\n\n" + "\n".join(dict.fromkeys(x[1] for x in sorted(satirlar))) + f"\n\nKaynak: {kaynak}"
+
+
 def genel_spor_fiksturu_getir(mesaj=""):
     """ESPN skorboard API'sinden fikstür ve tamamlanmış maç sonuçlarını getirir."""
     try:
@@ -5992,7 +6100,7 @@ def _web_arama_sorgusunu_sadelestir(sorgu):
     )
     temiz = re.sub(r"[?؟!]+", " ", temiz)
     temiz = re.sub(r"\s+", " ", temiz).strip(" ,.-")
-    temiz = re.sub(r"(?<=[a-zA-ZğüşöçıİĞÜŞÖÇ])(?=[A-ZĞÜŞÖÇ])", " ", temiz)
+    temiz = re.sub(r"(?<=[a-zğüşöçıi])(?=[A-ZİĞÜŞÖÇ])", " ", temiz)
     return temiz or str(sorgu or "")[:400]
 
 
@@ -6018,6 +6126,7 @@ def _eagle_cok_dilli_anlati_sorgulari(sorgu):
         "ufo": "UFO", "uçan": "flying", "ucan": "flying",
         "daire": "disc", "uçan daire": "flying saucer",
         "olay": "incident", "olayı": "incident", "olaylar": "incidents",
+        "faciası": "disaster", "faciasi": "disaster", "çernobil": "Chernobyl", "geçidi": "pass",
         "saldırı": "attack", "saldirisi": "attack", "saldırısı": "attack",
         "saldırılar": "attacks", "saldirilar": "attacks",
         "hikaye": "story", "hikayesi": "story", "hikâyе": "story",
@@ -6084,7 +6193,8 @@ def _eagle_cok_dilli_anlati_sorgulari(sorgu):
     almanca = " ".join(almanca_ceviriler.get(k, k) for k in ingilizce.split())
 
     sorgular = []
-    for aday in (ingilizce, almanca):
+    ispanyolca = " ".join({"UFO": "OVNI", "incident": "incidente", "story": "historia", "attack": "ataque", "legend": "leyenda", "abduction": "abducción", "mystery": "misterio"}.get(k, k) for k in ingilizce.split())
+    for aday in (ingilizce, ispanyolca, almanca):
         aday = re.sub(r"\s+", " ", aday).strip()
         if len(aday) >= 5 and aday.casefold() != str(sorgu or "").casefold():
             if aday not in sorgular:
@@ -6405,7 +6515,14 @@ def _eagle_tarihsel_konu(sorgu):
 def _eagle_yapilandirilmis_ulke(ulke):
     """Wikidata: ülke kimliği, tarihli nüfus ve Türkçe alan etiketleri."""
     def api(**params):
+        import time
+        if time.monotonic() < getattr(_eagle_yapilandirilmis_ulke, "_retry_after", 0):
+            return {}
         r = requests.get("https://www.wikidata.org/w/api.php", params={"format": "json", **params}, headers={"User-Agent": _wikimedia_user_agent()}, timeout=8)
+        if r.status_code == 429:
+            try: delay = max(60, int(r.headers.get("Retry-After", "60")))
+            except (ValueError, TypeError): delay = 60
+            _eagle_yapilandirilmis_ulke._retry_after = time.monotonic() + delay
         r.raise_for_status()
         data = r.json()
         return data if isinstance(data, dict) and not data.get("error") and data.get("success") is not False else {}
@@ -6477,9 +6594,19 @@ def _eagle_arastirma_yetersiz(cevap):
     return bool(re.search(r"(?:bilgi|kanıt|veri|sonuç|cevap).{0,65}(?:bulunmamaktadır|bulunamadı|bulunmuyor|bulamadım|ulaşamadım|mevcut değil)|(?:yeterli|güvenilir).{0,30}(?:bilgi|kaynak).{0,30}(?:yok|değil|bulunma)|çıkarabilmem mümkün değildir", str(cevap).casefold()))
 
 
+def _eagle_gundem_sorgusu(sorgu):
+    q = re.sub(r"\s+", " ", str(sorgu).casefold().replace("\u0307", "")).strip(" ?.! ")
+    yer = r"(?:dünya(?:da|nın)?|türkiye(?:['’]?de|['’]?nin)?)"
+    konu = r"(?:gündem(?:i|inde)?|haber(?:ler|leri)?)"
+    soru = r"(?:neler var|ne var|nedir|neler oldu|hangi olaylar yaşandı|neler yaşandı)"
+    return bool(re.fullmatch(rf"(?:bugün|güncel|son dakika)\s+(?:{yer}\s+)?(?:{konu}(?:\s+{soru})?|{soru})", q)
+                or re.fullmatch(rf"{yer}\s+{konu}(?:\s+bugün)?(?:\s+{soru})?", q)
+                or re.fullmatch(rf"{yer}\s+bugün\s+(?:{konu}\s+)?(?:{soru}|neler oluyor|ne oluyor)", q))
+
+
 def _eagle_guncel_olay_sorgusu(sorgu):
     q = str(sorgu).casefold()
-    return bool(re.search(r"\b(?:en son|son dakika|bugün|güncel)\b", q) and re.search(r"\b(?:nerede|ne zaman|hangi şehir|hangi ülke)\b", q) and re.search(r"görüld|gerçekleş|meydana|yaşand|olay|deprem|yangın|kaza", q))
+    return _eagle_gundem_sorgusu(sorgu) or bool(re.search(r"\b(?:en son|son dakika|bugün|güncel)\b", q) and re.search(r"\b(?:nerede|ne zaman|hangi şehir|hangi ülke)\b", q) and re.search(r"görüld|gerçekleş|meydana|yaşand|olay|deprem|yangın|kaza", q))
 
 
 def _eagle_haber_kaynaklari(sorgu, limit=6):
@@ -6527,13 +6654,124 @@ def _eagle_haber_kaynaklari(sorgu, limit=6):
     return result[:limit]
 
 
+def _eagle_yayinci_haberleri(sorgu, limit=6):
+    """Sabit yayıncı RSS adreslerinden doğrudan makale keşfi."""
+    from datetime import datetime, timezone, timedelta
+    from email.utils import parsedate_to_datetime
+    from urllib.parse import urlsplit
+    from xml.etree import ElementTree as ET
+    from concurrent.futures import ThreadPoolExecutor
+    broad = globals().get("_eagle_gundem_sorgusu", lambda q: False)(sorgu)
+    domestic = broad and bool(re.search(r"\btürkiye", sorgu.casefold().replace("\u0307", "")))
+    feeds = [("https://www.aa.com.tr/tr/rss/default?cat=guncel", "aa.com.tr"),
+             ("https://www.trthaber.com/sondakika.rss", "trthaber.com"),
+             ("https://feeds.bbci.co.uk/news/world/rss.xml", "bbc.co.uk"),
+             ("https://www.theguardian.com/world/rss", "theguardian.com")]
+    def read(feed):
+        address, domain = feed
+        rows = []
+        try:
+            r = requests.get(address, timeout=(3, 5), allow_redirects=False, headers={"User-Agent": _wikimedia_user_agent()})
+            if r.status_code != 200 or len(r.content) > 2000000:
+                print(f"Yayıncı RSS {domain}: HTTP {r.status_code}", flush=True)
+                return rows
+            now = datetime.now(timezone.utc)
+            for item in ET.fromstring(r.content).findall("./channel/item"):
+                try:
+                    title = item.findtext("title", "").strip()
+                    url = item.findtext("link", "").strip()
+                    u = urlsplit(url)
+                    host = u.hostname or ""
+                    published = parsedate_to_datetime(item.findtext("pubDate", ""))
+                    if (u.scheme != "https" or u.username or u.password or u.port not in (None, 443)
+                        or not (host == domain or host.endswith("."+domain)) or not u.path.strip("/")
+                        or not now-timedelta(days=30) <= published <= now or not title
+                        or not _eagle_haber_basligi_uygun(sorgu, title)
+                        or (broad and published.astimezone(timezone(timedelta(hours=3))).date() != now.astimezone(timezone(timedelta(hours=3))).date())
+                        or (not broad and not _web_sonucu_sorguyla_ilgili_mi(sorgu, {"title": title, "snippet": title}))):
+                        continue
+                    from html import unescape
+                    description = unescape(re.sub(r"<[^>]*>", " ", unescape(item.findtext("description", ""))))
+                    description = " ".join(description.split())[:450]
+                    category = "/".join(item.findall("category")[i].text or "" for i in range(len(item.findall("category"))))
+                    domestic_section = bool(re.search(r"/(?:turkiye|türkiye|gundem|gündem)/", u.path.casefold()))
+                    domestic_title = bool(re.search(r"\b(?:türkiye|türk|ankara|istanbul|izmir|adana|tbmm)\b", title.casefold().replace("\u0307", "")))
+                    if domestic and not (domestic_section or domestic_title):
+                        continue
+                    rows.append({"title": title, "url": url, "publisher": "https://"+host,
+                                 "published": published.isoformat(), "description": description, "category": category,
+                                 "_eagle_news": True, "_eagle_direct_feed": True})
+                except (ValueError, TypeError):
+                    continue
+        except Exception as hata:
+            print(f"Yayıncı RSS {domain}: {type(hata).__name__}", flush=True)
+        return rows
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        rows = [row for group in pool.map(read, feeds) for row in group]
+    ordered = sorted({r["url"]: r for r in rows}.values(), key=lambda r: datetime.fromisoformat(r["published"]), reverse=True)
+    if not broad:
+        return ordered[:limit]
+    from difflib import SequenceMatcher
+    selected, deferred, counts = [], [], {}
+    for row in ordered:
+        title = row["title"].casefold()
+        if any(SequenceMatcher(None, title, old["title"].casefold()).ratio() >= .80 for old in selected + deferred):
+            continue
+        host = (urlsplit(row["publisher"]).hostname or "").removeprefix("www.")
+        if counts.get(host, 0) >= 2:
+            deferred.append(row)
+            continue
+        selected.append(row)
+        counts[host] = counts.get(host, 0) + 1
+    return (selected + deferred)[:limit]
+
+
+def _eagle_gdelt_haberleri(sorgu, limit=6):
+    """Anahtarsız GDELT keşfi; seenDate yayın veya olay tarihi değildir."""
+    from datetime import datetime, timezone, timedelta
+    from urllib.parse import urlsplit
+    q = re.sub(r"\b(?:en son|son dakika|bugün|güncel|nerede|ne zaman)\b", " ", sorgu, flags=re.I).strip(" ?")
+    if re.search(r"\bufo\b", q, re.I):
+        q = '(UFO OR UAP) (sighting OR görüldü)'
+    if not q:
+        return []
+    try:
+        r = requests.get("https://api.gdeltproject.org/api/v2/doc/doc", params={"query": q, "mode": "artlist", "format": "json", "timespan": "30d", "maxrecords": 20, "sort": "datedesc"}, timeout=(3, 8), allow_redirects=False)
+        if r.status_code != 200:
+            print(f"GDELT HTTP {r.status_code}", flush=True)
+            return []
+        rows, seen = [], set()
+        now = datetime.now(timezone.utc)
+        for a in r.json().get("articles", []):
+            try:
+                url, title = a.get("url", ""), a.get("title", "")
+                u = urlsplit(url)
+                host = (u.hostname or "").removeprefix("www.")
+                date = datetime.strptime(a.get("seendate", ""), "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+                if (u.scheme != "https" or u.username or u.password or u.port not in (None, 443)
+                    or not re.fullmatch(r"[a-z0-9.-]+\.[a-z]{2,}", host) or not u.path.strip("/")
+                    or host != str(a.get("domain", "")).lower().removeprefix("www.") or host in seen
+                    or not now-timedelta(days=30) <= date <= now or not title
+                    or not _eagle_haber_basligi_uygun(sorgu, title)
+                    or not _web_sonucu_sorguyla_ilgili_mi(sorgu, {"title": title, "snippet": title})):
+                    continue
+                seen.add(host)
+                rows.append({"title": title, "url": url, "publisher": "https://"+u.hostname, "indexed": date.isoformat(), "_eagle_news": True, "_eagle_gdelt": True})
+            except (ValueError, TypeError, AttributeError):
+                continue
+        return rows[:limit]
+    except Exception as hata:
+        print(f"GDELT araştırması atlandı: {type(hata).__name__}", flush=True)
+        return []
+
+
 def _eagle_haber_basligi_uygun(sorgu, baslik):
     if re.search(r"\bufo\b", sorgu, re.I):
         return not bool(re.search(r"(?:ufo.{0,25}(?:bulut|cloud)|(?:bulut|cloud).{0,25}ufo|mercek bulut|lenticular cloud)", baslik, re.I))
     return True
 
 
-def _eagle_haber_makale_url(haber):
+def _eagle_haber_makale_url(haber, engelli=None):
     """RSS ara adresi yerine yayıncı alanında başlık eşleşmesi ara."""
     from urllib.parse import urlsplit, parse_qs
     from difflib import SequenceMatcher
@@ -6552,11 +6790,35 @@ def _eagle_haber_makale_url(haber):
     title = haber.get("title", "").rsplit(" - ", 1)[0].strip()
     if not title:
         return ""
+    if haber.get("_eagle_gdelt") or haber.get("_eagle_direct_feed"):
+        return haber["url"] if uygun(haber["url"]) else ""
     try:
         r = requests.get(haber["url"], headers={"User-Agent": _wikimedia_user_agent()}, timeout=(3, 4), allow_redirects=False)
         target = r.headers.get("Location", "")
         if r.status_code in (301, 302, 303, 307, 308) and uygun(target):
             return target
+    except Exception:
+        pass
+    # Resolve the RSS token through the Google News page protocol, if available.
+    # This is optional: the protocol is undocumented and may change.
+    try:
+        import json
+        token = re.fullmatch(r"/rss/articles/([A-Za-z0-9_-]{1,2048})", urlsplit(haber["url"]).path)
+        if token and host(haber["url"]) == "news.google.com" and r.status_code == 200:
+            tag = BeautifulSoup(r.text, "html.parser").select_one("[data-n-a-sg][data-n-a-ts]")
+            if tag:
+                context = [["X", "X", ["X", "X"], None, None, 1, 1, "US:en", None, 1, None, None, None, None, None, 0, 1], "X", "X", 1, [1, 1, 1], 1, 1, None, 0, 0, None, 0]
+                payload = ["garturlreq", context, token[1], int(tag["data-n-a-ts"]), tag["data-n-a-sg"]]
+                result = requests.post("https://news.google.com/_/DotsSplashUi/data/batchexecute", data={"f.req": json.dumps([[["Fbv4je", json.dumps(payload), None, "generic"]]])}, timeout=(3, 5), allow_redirects=False)
+                if result.status_code == 200:
+                    for line in result.text.splitlines():
+                        if not line.startswith("["):
+                            continue
+                        for row in json.loads(line):
+                            if isinstance(row, list) and len(row) > 2 and row[1] == "Fbv4je":
+                                decoded = json.loads(row[2])
+                                if decoded[0] == "garturlres" and uygun(decoded[1]):
+                                    return decoded[1]
     except Exception:
         pass
     import base64
@@ -6566,9 +6828,13 @@ def _eagle_haber_makale_url(haber):
         ("https://html.duckduckgo.com/html/", "a.result__a"),
     )
     for endpoint, selector in providers:
+        if engelli is not None and endpoint in engelli:
+            continue
         try:
             r = requests.get(endpoint, params={"q": query}, headers={"User-Agent": _wikimedia_user_agent()}, timeout=(3, 5))
             if r.status_code != 200:
+                if engelli is not None and r.status_code in (202, 403, 429, 503):
+                    engelli.add(endpoint)
                 print(f"Haber arama HTTP {r.status_code}: {endpoint}", flush=True)
                 continue
             candidates = []
@@ -6704,6 +6970,7 @@ def _eagle_grounded_arastirma(sorgu):
         sources = {}
         passages = []
         events = []
+        partials = []
         rejected = {"format": 0, "date": 0, "cloud": 0, "source": 0}
         supports = meta.get("groundingSupports", [])
         if latest:
@@ -6751,20 +7018,33 @@ def _eagle_grounded_arastirma(sorgu):
             segment = support.get("segment", {}).get("text", "").strip()
             if not segment:
                 continue
+            partial = False
             if latest:
                 segment = re.sub(r"^[-*]\s+", "", segment).replace("**", "")
                 match = re.fullmatch(r"Olay\s*:\s*(\d{4}-\d{2}-\d{2})\s*\|\s*Yer\s*:\s*([^|\n]{2,100}?)\s*\|\s*Açıklama\s*:\s*([^|\n]{15,600}[.!?])", segment)
                 if not match:
                     rejected["format"] += 1
-                    continue
-                try:
-                    event_date = date.fromisoformat(match[1])
-                except ValueError:
-                    rejected["date"] += 1
-                    continue
-                if not today - timedelta(days=30) <= event_date <= today:
-                    rejected["date"] += 1
-                    continue
+                    # A complete cited prose sentence can be useful context, but
+                    # never qualifies as a dated/latest event record.
+                    topic = set(re.findall(r"[^\W\d_]+", sorgu.casefold())) - {
+                        "en", "son", "nerede", "ne", "zaman", "hangi", "şehir", "ülke",
+                        "bugün", "güncel", "oldu", "görüldü", "gerçekleşti", "meydana", "geldi", "yaşandı"}
+                    words = set(re.findall(r"[^\W\d_]+", segment.casefold()))
+                    if (not topic.intersection(words) or not 40 <= len(segment) <= 600
+                            or not re.fullmatch(r"[^\n|]+[.!?]", segment)
+                            or re.search(r"\b(?:Olay|Yer|Açıklama)\s*:", segment, re.I)
+                            or any(int(y) != today.year for y in re.findall(r"\b(?:19|20)\d{2}\b", segment))):
+                        continue
+                    partial = True
+                else:
+                    try:
+                        event_date = date.fromisoformat(match[1])
+                    except ValueError:
+                        rejected["date"] += 1
+                        continue
+                    if not today - timedelta(days=30) <= event_date <= today:
+                        rejected["date"] += 1
+                        continue
                 if re.search(r"\bufo\b", sorgu, re.I) and re.search(r"bulut|cloud|lenticular", segment, re.I):
                     rejected["cloud"] += 1
                     continue
@@ -6785,20 +7065,29 @@ def _eagle_grounded_arastirma(sorgu):
                 rejected["source"] += 1
             if refs:
                 passage = segment + " [" + ", ".join(refs) + "]"
-                passages.append(passage)
-                if latest:
-                    events.append((event_date, passage))
+                if partial:
+                    partials.append(passage)
+                else:
+                    passages.append(passage)
+                    if latest:
+                        events.append((event_date, passage))
+        partial_only = latest and not events and bool(partials)
+        if partial_only:
+            passages = list(dict.fromkeys(partials))[:3]
         if not passages or not sources or not meta.get("webSearchQueries"):
             print(f"Grounding: kabul edilen kayıt yok; destek={len(supports)}, kaynak={len(chunks)}, arama={bool(meta.get('webSearchQueries'))}, red={rejected}", flush=True)
             return None
-        if latest:
+        if latest and not partial_only:
             newest = max(d for d, _ in events)
             passages = [p for d, p in events if d == newest][:3]
+        if latest:
             used = {int(n) for p in passages for n in re.findall(r"\d+", p.rsplit("[", 1)[-1])}
             sources = {uri: v for uri, v in sources.items() if v[0] in used}
         answer = "Google Search kaynaklarının desteklediği bilgiler (bağımsız olay doğrulaması değildir):\n\n" + "\n".join(dict.fromkeys(passages))
         if latest:
             answer = "Son 30 günde bulunan en yeni kaynak destekli olay iddiası; dünya genelindeki en son olay olduğu doğrulanmadı.\n\n" + "\n".join(dict.fromkeys(passages))
+        if partial_only:
+            answer = "En son olayın tarihi ve yeri doğrulanamadı. Aşağıdaki kaynak destekli metinler yalnızca araştırma bağlamıdır; güncel olay kaydı değildir.\n\n" + "\n".join(passages)
         # Grounding atıfları bağımsız teyit veya yayıncı kimliği doğrulaması değildir.
         records = []
         for uri, (n, title) in sources.items():
@@ -6818,8 +7107,8 @@ def _eagle_grounded_arastirma(sorgu):
             return None
         answer += "\n\nBağımsız teyit yapılmadı; farklı kaynak adresleri bağımsız kanıt sayılmaz."
         answer += "\n\nKaynaklar:\n" + "\n".join(f"[{n}] {title}: {uri}" for uri, (n, title) in sources.items())
-        return {"ok": True, "answer": answer, "web_search": True, "eagle_direct": True,
-                "research_status": "grounded", "event_verified": False,
+        return {"ok": not partial_only, "answer": answer, "web_search": True, "eagle_direct": True,
+                "research_status": "partial" if partial_only else "grounded", "event_verified": False,
                 "verification_status": "unverified_claim", "research_sources": records}
     except Exception as hata:
         print(f"Grounding başarısız: {type(hata).__name__}", flush=True)
@@ -6828,37 +7117,122 @@ def _eagle_grounded_arastirma(sorgu):
 
 def _eagle_olay_haber_ozeti(sorgu, haberler, okuyucu, adres_cozucu=None):
     """Başlık ve erişilebilen metni ayır; doğrulanmamış olay tarihini uydurma."""
-    satirlar = []
-    adres_cozucu = adres_cozucu or _eagle_haber_makale_url
-    for h in haberler[:5]:
-        if not h.get("_eagle_news") or not _eagle_haber_basligi_uygun(sorgu, h.get("title", "")):
-            continue
+    from urllib.parse import urlsplit
+    from datetime import date
+    satirlar, kaynaklar, kanitlar = [], [], []
+    from difflib import SequenceMatcher
+    if adres_cozucu is None:
+        engelli = set()
+        adres_cozucu = lambda h: _eagle_haber_makale_url(h, engelli)
+    def eski_yil(metin):
+        # Explicit historical years, not publication dates.
+        return any(int(y) < date.today().year for y in re.findall(r"\b(?:19[0-9]{2}|20[0-9]{2})\b", metin))
+    def guvenli(adres):
+        try:
+            u = urlsplit(adres)
+            return u.scheme == "https" and bool(u.hostname) and not u.username and not u.password
+        except ValueError:
+            return False
+    for h in haberler[:6]:
         baslik = h.get("title", "")
+        if not h.get("_eagle_news") or not _eagle_haber_basligi_uygun(sorgu, baslik) or eski_yil(baslik):
+            continue
         makale = ""
         try:
-            makale = adres_cozucu(h)
-            metin = okuyucu(makale, limit=6000, metaveri_dahil=False, timeout=(3, 5)) or "" if makale else ""
+            makale = adres_cozucu(h) or ""
+            metin = okuyucu(makale, limit=6000, metaveri_dahil=False, timeout=(3, 5)) or "" if guvenli(makale) else ""
         except Exception:
             metin = ""
-        # Yalnızca konuya uygun tam cümleleri al, başlığı tam metin sayma.
-        cumleler = []
-        for c in re.split(r"(?<=[.!?])\s+|\n+", metin):
-            c = c.strip()
-            if 80 <= len(c) <= 450 and c.endswith((".", "!", "?")) and _eagle_haber_basligi_uygun(sorgu, c) and _web_sonucu_sorguyla_ilgili_mi(sorgu, {"title": c, "snippet": c}):
-                cumleler.append(c)
-            if len(cumleler) == 2:
-                break
+        cumle = next((c.strip() for c in re.split(r"(?<=[.!?])\s+|\n+", metin)
+                      if 80 <= len(c.strip()) <= 450 and c.strip().endswith((".", "!", "?"))
+                      and not eski_yil(c) and _eagle_haber_basligi_uygun(sorgu, c)
+                      and _web_sonucu_sorguyla_ilgili_mi(sorgu, {"title": c, "snippet": c})), "")
+        if not cumle or not guvenli(makale) or any(k["url"] == makale for k in kaynaklar):
+            continue
+        norm = " ".join(re.findall(r"[^\W_]+", cumle.casefold()))
+        if any(SequenceMatcher(None, norm, old).ratio() >= .85 for old in kanitlar):
+            continue
+        kanitlar.append(norm)
+        n = len(kaynaklar) + 1
         tarih = str(h.get("published", ""))[:10]
-        satir = f"- {baslik} (yayın: {tarih or 'bilinmiyor'})."
-        if cumleler:
-            satir += " Kaynak metninden: " + " ".join(cumleler)
-        else:
-            satir += " Tam metin doğrulanamadı."
-        satirlar.append(satir + " " + (makale or h["url"]))
+        kaynaklar.append({"id": n, "title": baslik, "url": makale,
+                         "domain": urlsplit(makale).hostname, "source_type": "news_article",
+                         "published": tarih, "independently_verified": False})
+        if h.get("indexed"):
+            kaynaklar[-1]["indexed"] = h["indexed"][:10]
+        satirlar.append(f"- Yayın: {tarih or 'bilinmiyor'}. Kaynak metninden: {cumle} [{n}]")
+        if len(satirlar) >= 3:
+            break
     cevap = "En son olayın yerini ve gerçekleşme tarihini bağımsız kaynaklarla doğrulayamadım."
     if satirlar:
         cevap += "\n\nİlgili haberlerde aktarılan bilgiler (yayın tarihi olay tarihi değildir):\n" + "\n".join(satirlar)
-    return {"ok": False, "answer": cevap, "web_search": True, "eagle_direct": True, "research_status": "partial" if satirlar else "unverified"}
+        cevap += "\n\nKaynaklar:\n" + "\n".join(f"[{k['id']}] {k['title']}: {k['url']}" for k in kaynaklar)
+    else:
+        cevap += "\nTam metin doğrulanamadı; yalnızca haber başlıkları olay kanıtı sayılmadı."
+    return {"ok": False, "answer": cevap, "web_search": True, "eagle_direct": True,
+            "research_status": "partial" if satirlar else "unverified", "event_verified": False,
+            "verification_status": "unverified_claim", "research_sources": kaynaklar}
+
+
+def _eagle_bagimsiz_olay_arastirma(sorgu, okuyucu):
+    """Eagle önce kendi kaynaklarını kullanır; kısmi haberleri doğrulanmış bilgi saymaz."""
+    import hashlib
+    import json
+    import sqlite3
+    import time
+    from contextlib import closing
+    from pathlib import Path
+    key = hashlib.sha256(re.sub(r"\s+", " ", sorgu.strip().casefold()).encode()).hexdigest()
+    db = None
+    try:
+        path = Path(os.getenv("EAGLE_RESEARCH_CACHE", str(Path.home() / ".eagleai" / "research.sqlite3")))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(str(path), timeout=1)
+        db.execute("CREATE TABLE IF NOT EXISTS research (key TEXT PRIMARY KEY, saved REAL, payload TEXT)")
+        db.execute("DELETE FROM research WHERE saved < ?", (time.time() - 1800,))
+        db.commit()
+        row = db.execute("SELECT saved,payload FROM research WHERE key=?", (key,)).fetchone()
+        if row and 0 <= time.time() - row[0] <= 600:
+            data = json.loads(row[1])
+            if data.get("research_status") == "partial" and data.get("research_sources") and data.get("event_verified") is False:
+                return {**data, "research_cached": True, "research_cache_age_seconds": int(time.time()-row[0]),
+                        "answer": "Önbellekteki kısmi araştırma (yeni arama yapılmadı):\n\n" + data["answer"]}
+    except (OSError, ValueError, sqlite3.Error):
+        pass
+    finally:
+        if db is not None:
+            db.close()
+    broad = globals().get("_eagle_gundem_sorgusu", lambda q: False)(sorgu)
+    if broad:
+        rows = _eagle_yayinci_haberleri(sorgu)
+        sources = [{"id": i, "title": h["title"], "url": h["url"], "published": h["published"],
+                    "source_type": "publisher_feed", "independently_verified": False, "description": h.get("description", "")} for i, h in enumerate(rows, 1)]
+        answer = "Bugün yayıncıların yayımladığı haberler ve varsa RSS özetleri (olay tarihleri ve tam metinler doğrulanmadı):\n" + "\n".join(f"[{k['id']}] {k['title']}" + (" — Yayıncı özeti: " + k["description"] if k["description"] and k["description"].casefold() != k["title"].casefold() else "") for k in sources) if sources else "Bugünün yayıncı haberlerine erişemedim."
+        return {"ok": bool(sources), "answer": answer, "research_sources": sources, "research_status": "headlines" if sources else "unverified", "event_verified": False, "verification_status": "unverified_claim", "web_search": True, "eagle_direct": True}
+    result = _eagle_olay_haber_ozeti(sorgu, _eagle_haber_kaynaklari(sorgu), okuyucu)
+    if not result.get("research_sources"):
+        gdelt = _eagle_gdelt_haberleri(sorgu)
+        if gdelt:
+            result = _eagle_olay_haber_ozeti(sorgu, gdelt, okuyucu)
+    if not result.get("research_sources"):
+        feeds = globals().get("_eagle_yayinci_haberleri")
+        rows = feeds(sorgu) if feeds else []
+        if rows:
+            result = _eagle_olay_haber_ozeti(sorgu, rows, okuyucu)
+    if result.get("research_status") == "partial" and result.get("research_sources"):
+        try:
+            with closing(sqlite3.connect(str(path), timeout=1)) as conn, conn:
+                conn.execute("INSERT OR REPLACE INTO research VALUES (?,?,?)", (key, time.time(), json.dumps(result, ensure_ascii=False)))
+                conn.execute("DELETE FROM research WHERE key IN (SELECT key FROM research ORDER BY saved DESC LIMIT -1 OFFSET 200)")
+        except (OSError, ValueError, sqlite3.Error, UnboundLocalError):
+            pass
+        return result
+    # Gemini is opt-in for this route; no paid search provider is required.
+    if os.getenv("EAGLE_GEMINI_RESEARCH_FALLBACK", "0") == "1":
+        grounded = _eagle_grounded_arastirma(sorgu)
+        if grounded:
+            return grounded
+    return result
 
 
 def _eagle_ulke_miras(kayit):
@@ -6866,6 +7240,16 @@ def _eagle_ulke_miras(kayit):
     qid = kayit["url"].rsplit("/", 1)[-1]
     if not re.fullmatch(r"Q[1-9][0-9]*", qid):
         return kayit
+    import time
+    cache = getattr(_eagle_ulke_miras, "_cache", {})
+    def ekle(names, cached=False):
+        text = kayit["text"] + "\n\nDünya Mirası kayıtlarından örnekler: " + "; ".join(names[:5]) + "."
+        if cached:
+            text += " (Önceden alınmış Wikidata kaydı.)"
+        return {**kayit, "text": text, "snippet": text}
+    previous = cache.get(qid)
+    if previous and 0 <= time.monotonic() - previous[0] <= 86400:
+        return ekle(previous[1], cached=True)
     query = ("SELECT DISTINCT ?place ?placeLabel WHERE { ?place wdt:P757 ?heritageId; wdt:P17 wd:" + qid +
              "; wdt:P1435 wd:Q9259. FILTER NOT EXISTS { ?place wdt:P361 ?parent . ?parent wdt:P1435 wd:Q9259. } SERVICE wikibase:label { bd:serviceParam wikibase:language 'tr,en'. } } ORDER BY ?place LIMIT 6")
     try:
@@ -6877,11 +7261,320 @@ def _eagle_ulke_miras(kayit):
             if name and not re.fullmatch(r"Q[0-9]+", name) and name not in names:
                 names.append(name)
         if names:
-            text = kayit["text"] + "\n\nDünya Mirası kayıtlarından örnekler: " + "; ".join(names[:5]) + "."
-            return {**kayit, "text": text, "snippet": text}
+            cache[qid] = (time.monotonic(), names[:5])
+            if len(cache) > 200:
+                cache.pop(min(cache, key=lambda k: cache[k][0]))
+            _eagle_ulke_miras._cache = cache
+            return ekle(names)
     except Exception as hata:
         print(f"Ülke miras sorgusu atlandı: {hata}", flush=True)
+    previous = cache.get(qid)
+    if previous and 0 <= time.monotonic() - previous[0] <= 86400:
+        return ekle(previous[1], cached=True)
     return kayit
+
+
+def _eagle_ulke_bilgi_hafizasi(ulke, kayit=None):
+    """Kaynaklı ülke kayıtları; haber iddiaları bu depoya alınmaz."""
+    import sqlite3, json, time
+    from pathlib import Path
+    from contextlib import closing
+    key = " ".join(ulke.casefold().split())
+    def valid(data):
+        return (isinstance(data, dict) and data.get("_eagle_country_structured") is True
+                and re.fullmatch(r"https://www.wikidata.org/wiki/Q[1-9][0-9]*", data.get("url", ""))
+                and merkez_motor.genel_web_ulke_token_eslesiyor(ulke, data.get("title", ""))
+                and "Başkent:" in data.get("text", ""))
+    try:
+        path = Path(os.getenv("EAGLE_KNOWLEDGE_DB", str(Path.home()/".eagleai"/"knowledge.sqlite3")))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(str(path), timeout=1)) as db, db:
+            db.execute("CREATE TABLE IF NOT EXISTS country_knowledge (key TEXT PRIMARY KEY, saved REAL, payload TEXT)")
+            if kayit is not None:
+                if valid(kayit):
+                    now = time.time()
+                    old = db.execute("SELECT saved,payload FROM country_knowledge WHERE key=?", (key,)).fetchone()
+                    # A partial refresh must not erase a still-valid richer record.
+                    if old and 0 <= now-old[0] <= 30*86400:
+                        previous = json.loads(old[1])
+                        if valid(previous) and previous["url"] == kayit["url"]:
+                            fields = ("Kıta:", "Wikidata dil kayıtları:", "Nüfus:", "Yüzölçümü:", "Dünya Mirası kayıtlarından örnekler:")
+                            if any(f in previous["text"] and f not in kayit["text"] for f in fields):
+                                return kayit
+                    db.execute("INSERT OR REPLACE INTO country_knowledge VALUES (?,?,?)", (key,now,json.dumps(kayit,ensure_ascii=False)))
+                return kayit
+            row = db.execute("SELECT saved,payload FROM country_knowledge WHERE key=?", (key,)).fetchone()
+            if row and 0 <= time.time()-row[0] <= 30*86400:
+                data = json.loads(row[1])
+                if valid(data):
+                    from datetime import datetime, timezone
+                    stamp = datetime.fromtimestamp(row[0], timezone.utc).date().isoformat()
+                    data["text"] += " Kaynak: " + data["url"] + ". Hafıza kaydı: " + stamp + " (canlı veri alınamadı)."
+                    data["snippet"] = data["text"]
+                    return data
+    except (OSError, ValueError, TypeError, sqlite3.Error):
+        pass
+    return kayit
+
+
+def _eagle_kaynakli_bilgi_hafizasi(konu, kayit=None):
+    """Tarihsel ansiklopedi metinleri: kaynaklı önbellek, doğrulanmış gerçek deposu değil."""
+    import sqlite3, json, time, hashlib, os, re
+    from pathlib import Path
+    from contextlib import closing
+    from datetime import datetime, timezone
+    key = " ".join(str(konu).casefold().split())
+    if not key or len(key) > 250:
+        return None
+    def valid(r):
+        return (isinstance(r, dict) and r.get("_eagle_encyclopedia_extract") is True
+                and isinstance(r.get("text"), str) and 300 <= len(r["text"]) <= 16000
+                and isinstance(r.get("title"), str) and bool(r["title"].strip())
+                and re.fullmatch(r"https://tr\.wikipedia\.org/wiki/[^?#\s]+", r.get("url", "")))
+    try:
+        path = Path(os.getenv("EAGLE_KNOWLEDGE_DB", str(Path.home()/".eagleai"/"knowledge.sqlite3")))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(str(path), timeout=1)) as db, db:
+            db.execute("CREATE TABLE IF NOT EXISTS encyclopedia_knowledge (topic TEXT, digest TEXT, saved REAL, payload TEXT, PRIMARY KEY(topic,digest))")
+            now = time.time()
+            db.execute("DELETE FROM encyclopedia_knowledge WHERE saved < ?", (now-30*86400,))
+            if kayit is not None:
+                if not valid(kayit):
+                    return None
+                digest = hashlib.sha256((kayit["url"]+"\n"+kayit["text"]).encode()).hexdigest()
+                db.execute("INSERT OR REPLACE INTO encyclopedia_knowledge VALUES (?,?,?,?)", (key,digest,now,json.dumps(kayit,ensure_ascii=False)))
+                db.execute("DELETE FROM encyclopedia_knowledge WHERE rowid IN (SELECT rowid FROM encyclopedia_knowledge ORDER BY saved DESC LIMIT -1 OFFSET 500)")
+                return kayit
+            rows = db.execute("SELECT saved,payload FROM encyclopedia_knowledge WHERE topic=? AND saved BETWEEN ? AND ? ORDER BY saved DESC LIMIT 2", (key,now-30*86400,now)).fetchall()
+            # Farklı metin sürümleri varsa otomatik olarak birini gerçek sayma.
+            if len(rows) != 1:
+                return None
+            saved, payload = rows[0]
+            data = json.loads(payload)
+            if valid(data):
+                data["_eagle_cached_source"] = True
+                data["title"] += " (hafıza kaydı)"
+                data["text"] = "Canlı kaynak alınamadı. Tek kaynaklı ansiklopedi kaydı: " + datetime.fromtimestamp(saved,timezone.utc).date().isoformat() + ". " + data["text"]
+                data["snippet"] = data["text"][:1000]
+                return data
+    except (OSError, ValueError, TypeError, sqlite3.Error):
+        pass
+    return None
+
+
+def _eagle_tarihsel_paragraflar(text):
+    import re
+    out = []
+    for line in str(text or "").splitlines():
+        line = line.strip()
+        if line.startswith("="):
+            if re.search(r"kaynakça|dış bağlantılar|ayrıca bakınız|notlar|bibliyografya", line, re.I):
+                break
+            continue
+        if len(line) < 100 or not line.endswith((".", "!", "?")):
+            continue
+        if re.search(r"kontrol listesi|aşağıdaki adımları takip|çerez politikası|abone olun", line, re.I):
+            continue
+        if sum(map(len, out)) + len(line) > 3500:
+            continue
+        out.append(line)
+        if len(out) >= 5:
+            break
+    return out if sum(map(len, out)) >= 300 else []
+
+
+def _eagle_anlati_video_mu(url):
+    from urllib.parse import urlsplit
+    try:
+        host = (urlsplit(str(url)).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return True
+    return any(host == d or host.endswith("." + d) for d in
+               ("youtube.com", "youtu.be", "tiktok.com", "vimeo.com", "dailymotion.com"))
+
+
+def _eagle_tarihsel_web_kanit(konu, adaylar, okuyucu):
+    """Arama özetini kanıt sayma; sınırlı, kaynak bazlı metin çıkarımı."""
+    import re
+    from urllib.parse import urlsplit
+    from concurrent.futures import ThreadPoolExecutor
+    from difflib import SequenceMatcher
+    varyantlar = [konu] + _eagle_cok_dilli_anlati_sorgulari(konu + " anlat")
+    # Generic event words are not required in the original language.
+    sade = [re.sub(r"\b(?:olay\w*|incident|incidente|vorfall|anlat)\b", " ", q, flags=re.I).strip() for q in varyantlar]
+    varyantlar = list(dict.fromkeys(varyantlar + [q for q in sade if len(q.split()) >= 2]))
+    yillar = set(re.findall(r"\b(?:1[0-9]{3}|20[0-9]{2})\b", konu))
+    def konu_uyumu(blok, makale=""):
+        from eagle_derin_arastirma import _terms
+        words = _terms(blok)
+        all_words = _terms(makale or blok)
+        stop = {'olay','olayi','olayini','incident','incidente','vorfall','anlat','faciasi','disaster'}
+        ufo = {'ufo', 'ufos', 'ovni', 'ovnis', 'uap'}
+        def matches(w, tokens):
+            return w in tokens or any(w + suffix in tokens for suffix in ('n', 'na', 'no', 'ns', 'nas', 'nos', 'an', 'ans'))
+        for q in varyantlar:
+            core = {w for w in _terms(q)-stop if not w.isdigit()}
+            if core and core <= words:
+                return True
+            # A dated observation may use a descriptive phrase instead of an acronym.
+            # Require explicit topic and all other anchors in the actual article,
+            # not in the search snippet or title. Never equate arbitrary objects with UFOs.
+            if core & ufo and core - ufo and all_words & ufo:
+                if not all(matches(w, all_words) for w in core - ufo):
+                    continue
+                if words & ufo or re.search(r"\b(?:extrano objeto|objeto desconocido|objeto no identificado|unidentified flying object|strange object|tanimlanamayan ucan cisim)\b", ' '.join(__import__('unicodedata').normalize('NFKD', blok.casefold()).encode('ascii', 'ignore').decode().split())):
+                    if words & {'cielo','sky','aire','air','ucan','gokyuzu','avistamiento','observation','observacion','flying'}:
+                        return True
+        return False
+    secilen, adresler, alanlar = [], set(), {}
+    for a in adaylar or []:
+        if not isinstance(a, dict) or a.get("_eagle_encyclopedia_extract"):
+            continue
+        url = str(a.get("url") or "")
+        if _eagle_anlati_video_mu(url):
+            continue
+        try:
+            u = urlsplit(url)
+            host = (u.hostname or "").removeprefix("www.")
+            if host in {"eksisozluk.com", "reddit.com", "old.reddit.com", "quora.com"}:
+                continue
+            if u.scheme != "https" or u.username or u.password or u.port not in (None, 443) or not host or url in adresler or alanlar.get(host, 0) >= 2:
+                continue
+        except ValueError:
+            continue
+        if not any(_web_sonucu_sorguyla_ilgili_mi(q, a) for q in varyantlar):
+            if not a.get("_eagle_deep_candidate"):
+                print(f"ANLATI ADAY RED: {url} — başlık/özet uyumu", flush=True)
+                continue
+            # Discovery metadata is not evidence. Read bounded deep candidates.
+            print(f"ANLATI ADAY OKUNACAK: {url} — tam metin kontrolü", flush=True)
+        adresler.add(url)
+        alanlar[host] = alanlar.get(host, 0) + 1
+        secilen.append(a)
+        if len(secilen) == 12:
+            break
+
+    def oku(a):
+        try:
+            metin = ""
+            if urlsplit(a["url"]).hostname == "archive.org":
+                from eagle_derin_arastirma import archive_text
+                metin = archive_text(a["url"])
+            if not metin:
+                metin = okuyucu(a["url"], limit=12000, metaveri_dahil=False, timeout=5)
+        except Exception as exc:
+            print(f"ANLATI OKUMA HATA: {a['url']} — {type(exc).__name__}", flush=True)
+            return None
+        if not isinstance(metin, str) or len(metin) < 300:
+            print(f"ANLATI KAYNAK YETERSIZ: {a['url']} ({len(metin) if isinstance(metin, str) else 0} karakter)", flush=True)
+            return None
+        if yillar and not yillar.issubset(set(re.findall(r"\b\d{4}\b", metin))):
+            print(f"ANLATI RED: {a['url']} — yıl bulunamadı", flush=True)
+            return None
+        # Yakın cümleleri birlikte değerlendir; başlık veya arama özeti kanıt değildir.
+        cumleler = [c.strip() for c in re.findall(r"[^.!?\n]+[.!?](?=\s|$)", metin)]
+        parcalar = []
+        for i in range(len(cumleler)):
+            pencere = []
+            for c in cumleler[i:i+4]:
+                if not 35 <= len(c) <= 900 or re.search(r"cookie|çerez|subscribe|abone olun|kontrol listesi|privacy policy|access denied|captcha", c, re.I):
+                    break
+                pencere.append(c)
+                blok = " ".join(pencere)
+                if len(blok) > 1600:
+                    break
+                if len(blok) < 180 or not yillar.issubset(set(re.findall(r"\b\d{4}\b", blok))):
+                    continue
+                if konu_uyumu(blok, metin):
+                    parcalar = pencere[:]
+                    from eagle_anlati_sentez import narrative_extract
+                    parcalar = narrative_extract(cumleler, i, len(pencere))
+                    break
+            if parcalar:
+                break
+        if not parcalar:
+            print(f"ANLATI RED: {a['url']} — yakın metinde konu/yıl uyumu yok ({len(metin)} karakter)", flush=True)
+            return None
+        title = str(a.get("title") or a["url"])
+        if " › " in title:
+            title = title.rsplit(" › ", 1)[-1]
+            title = re.sub(r"^\S+\s+", "", title)
+        return {"title": title, "url": a["url"], "text": " ".join(parcalar), "_full_text": metin}
+
+    print(f"ANLATI OKUMA ADAYI: {len(secilen)}", flush=True)
+    if not secilen:
+        return None
+    temiz = []
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        for baslangic in range(0, len(secilen), 4):
+            for k in pool.map(oku, secilen[baslangic:baslangic+4]):
+                if not k:
+                    continue
+                def shingles(text):
+                    words = re.findall(r"\w+", text.casefold())
+                    return set(zip(*(words[i:] for i in range(5))))
+                ks = shingles(k["_full_text"])
+                if any(SequenceMatcher(None, k["text"].casefold(), t["text"].casefold()).ratio() >= .85 or (ks and (ts := shingles(t["_full_text"])) and len(ks & ts) / min(len(ks), len(ts)) >= .75) for t in temiz):
+                    continue
+                temiz.append(k)
+            if len(temiz) >= 3:
+                break
+    temiz = temiz[:3]
+    if not temiz:
+        return None
+    from eagle_anlati_sentez import translate_sources, format_narrative
+    translated = translate_sources(temiz)
+    durum = ("partial_machine_translation_unverified" if any(a != b for rows in translated for a, b in rows) else "original_or_unavailable")
+    return {"ok": True, "eagle_direct": True, "web_search": True,
+            "research_status": "unverified_source_extract", "event_verified": False,
+            "translation_status": durum,
+            "translation_originals": [{"id": i, "text": " ".join(a for a, b in rows)} for i, rows in enumerate(translated, 1) if rows],
+            "answer": format_narrative(temiz, translated),
+            "research_sources": [{"id": i, "title": k["title"], "url": k["url"], "independently_verified": False} for i, k in enumerate(temiz, 1)]}
+
+
+def _eagle_tarihsel_wiki(konu):
+    import re
+    from urllib.parse import quote
+    def fetch(**params):
+        r = requests.get("https://tr.wikipedia.org/w/api.php", params={
+            "action": "query", "prop": "extracts|pageprops", "explaintext": 1,
+            "format": "json", **params}, headers={"User-Agent": _wikimedia_user_agent()}, timeout=(3, 6))
+        r.raise_for_status()
+        return r.json().get("query", {}).get("pages", {})
+    # Olay türü eklerini arama teriminden ayır, fakat doğrulamada özgün konuyu koru.
+    short = re.sub(r"\s+(?:facia|felaket|kaza|olay|vaka|trajedi)\w*$", "", konu, flags=re.I).strip()
+    years = re.findall(r"\b(?:18|19|20)\d{2}\b", konu)
+    seen = set()
+    for query in dict.fromkeys([konu, short]):
+        if not query:
+            continue
+        pages = fetch(generator="search", gsrsearch=query, gsrnamespace=0, gsrlimit=3, exintro=1, exlimit=3)
+        for page in sorted(pages.values(), key=lambda p: p.get("index", 999)):
+            title = str(page.get("title", ""))
+            text = str(page.get("extract", "")).strip()
+            pid = page.get("pageid")
+            if not title or not pid or pid in seen or "disambiguation" in page.get("pageprops", {}):
+                continue
+            seen.add(pid)
+            if not _web_sonucu_sorguyla_ilgili_mi(short or konu, {"title": title, "snippet": text[:1500]}):
+                continue
+            # Prefer the full article, but preserve a usable introduction on failure.
+            try:
+                full = fetch(pageids=pid).get(str(pid), {})
+                full_text = str(full.get("extract", "")).strip()
+                if _eagle_tarihsel_paragraflar(full_text):
+                    text = full_text
+            except Exception as hata:
+                print(f"Tarihsel tam metin alınamadı: {type(hata).__name__}", flush=True)
+            paragraphs = _eagle_tarihsel_paragraflar(text)
+            if not paragraphs or not _web_sonucu_sorguyla_ilgili_mi(konu, {"title": title, "snippet": " ".join(paragraphs)}):
+                continue
+            if any(not re.search(r"\b" + y + r"\b", title + " " + " ".join(paragraphs)) for y in years):
+                continue
+            confirmed = "\n\n".join(paragraphs)
+            return {"title": title, "text": confirmed, "snippet": confirmed[:1000], "url": "https://tr.wikipedia.org/wiki/" + quote(title.replace(" ", "_")), "_eagle_encyclopedia_extract": True}
+    return None
 
 
 def web_arastir(sorgu, limit=6):
@@ -6905,7 +7598,10 @@ def web_arastir(sorgu, limit=6):
                 if kayit:
                     break
             if kayit:
-                return [_eagle_ulke_miras(kayit)]
+                return [_eagle_ulke_bilgi_hafizasi(ulke, _eagle_ulke_miras(kayit))]
+            cached = _eagle_ulke_bilgi_hafizasi(ulke)
+            if cached:
+                return [cached]
         except Exception as hata:
             print(f"Yapılandırılmış ülke verisi alınamadı: {hata}", flush=True)
         try:
@@ -6926,22 +7622,24 @@ def web_arastir(sorgu, limit=6):
             print(f"Ülke maddesi alınamadı: {hata}", flush=True)
 
     tarihsel = _eagle_tarihsel_konu(sorgu)
-    if tarihsel and tarihsel != sorgu:
+    if tarihsel:
+        record = None
         try:
-            r = requests.get("https://tr.wikipedia.org/w/api.php", params={
-                "action": "query", "generator": "search", "gsrsearch": tarihsel,
-                "gsrnamespace": 0, "gsrlimit": 3, "prop": "extracts|pageprops",
-                "explaintext": 1, "format": "json"},
-                headers={"User-Agent": _wikimedia_user_agent()}, timeout=10)
-            r.raise_for_status()
-            adaylar = sorted(r.json().get("query", {}).get("pages", {}).values(), key=lambda p: p.get("index", 999))
-            for page in adaylar:
-                title = str(page.get("title", ""))
-                text = str(page.get("extract", "")).strip()
-                if len(text) >= 500 and "disambiguation" not in page.get("pageprops", {}) and _web_sonucu_sorguyla_ilgili_mi(tarihsel, {"title": title, "snippet": text[:1500]}):
-                    return [{"title": title, "text": text[:16000], "snippet": text[:1000], "url": "https://tr.wikipedia.org/wiki/" + quote(title.replace(" ", "_"))}]
+            record = _eagle_tarihsel_wiki(tarihsel)
+            if record:
+                _eagle_kaynakli_bilgi_hafizasi(tarihsel, record)
         except Exception as hata:
             print(f"Tarihsel kaynak alınamadı: {hata}", flush=True)
+        if not record:
+            record = _eagle_kaynakli_bilgi_hafizasi(tarihsel)
+        from eagle_derin_arastirma import search_web
+        try:
+            rows = [a for a in search_web(tarihsel, _eagle_cok_dilli_anlati_sorgulari(sorgu))
+                    if not _eagle_anlati_video_mu(a['url'])]
+        except Exception as exc:
+            print(f"ANLATI WEB HATA: {type(exc).__name__}", flush=True)
+            rows = []
+        return ([record] if record else []) + rows
 
     # TROPICAL_COUNTRY_QUERY_NORMALIZATION
     # EN KALABALIK ÜLKE SORGUSUNU DOĞRUDAN KONUYA YÖNLENDİR
@@ -7046,6 +7744,9 @@ def web_arastir(sorgu, limit=6):
                 # Bing sonuç bağlantısı h2 etiketini saran a etiketindedir.
                 link = baslik.find_parent("a", href=True)
                 kapsayici = baslik.find_parent("li")
+
+                if not link:
+                    link = baslik.select_one("a[href]")
 
                 if not link and kapsayici:
                     link = kapsayici.select_one(".b_algoheader a[href]")
@@ -7498,6 +8199,8 @@ def web_arastir(sorgu, limit=6):
                     f"🌍 ÇOK DİLLİ ANLATI ARAMASI: {yabanci_sorgu!r}",
                     flush=True,
                 )
+                dil = "es" if re.search(r"\b(?:OVNI|incidente|historia|ataque|leyenda|abducción|misterio)\b", yabanci_sorgu, re.I) else "de" if re.search(r"\b(?:Vorfall|Angriff|Geschichte|Legende|Entführung|Rätsel)\b", yabanci_sorgu, re.I) else "en"
+                pazar = {"es": "es-MX", "de": "de-DE", "en": "en-US"}[dil]
                 for arama_motoru in ("duckduckgo", "bing"):
                     try:
                         if arama_motoru == "duckduckgo":
@@ -7509,11 +8212,11 @@ def web_arastir(sorgu, limit=6):
                             yabanci_url = (
                                 "https://www.bing.com/search?q="
                                 + quote(yabanci_sorgu)
-                                + "&mkt=en-US&setLang=en&count=10&first=0"
+                                + f"&mkt={pazar}&setLang={dil}&count=10&first=0"
                             )
                         yabanci_cevap = requests.get(
                             yabanci_url,
-                            headers={**headers, "Accept-Language": "en-US,en;q=0.9,de;q=0.8"},
+                            headers={**headers, "Accept-Language": f"{pazar},{dil};q=0.9"},
                             timeout=15,
                         )
                         if yabanci_cevap.status_code != 200:
@@ -7537,6 +8240,54 @@ def web_arastir(sorgu, limit=6):
                             f"⚠️ Çok dilli {arama_motoru} araması başarısız: {e}",
                             flush=True,
                         )
+
+        if _eagle_anlati_sorgusu_mu(sorgu):
+            # Video sonuçları yazılı kanıt değildir. İlk turda uygun yazılı
+            # aday yoksa konu eşleşmesini bozmadan yeni arama terimleri dene.
+            def yazili_adaylar():
+                return [a for a in tum_sonuclar if not _eagle_anlati_video_mu(a.get("url"))
+                        and _web_sonucu_sorguyla_ilgili_mi(a.get("_eagle_query") or sorgu, a)]
+            if len(yazili_adaylar()) < 3:
+                from concurrent.futures import ThreadPoolExecutor
+                varyantlar = _eagle_cok_dilli_anlati_sorgulari(sorgu)
+                plan = [(arama_sorgusu, "haber arşiv", "tr-TR")]
+                for q in varyantlar:
+                    if re.search(r"\b(?:OVNI|incidente|historia|ataque|leyenda|abducción|misterio)\b", q, re.I):
+                        plan.append((q, "archivo periódico", "es-MX"))
+                    else:
+                        plan.append((q, "historical newspaper report", "en-US"))
+                def yazili_ara(item):
+                    q, ek, pazar = item
+                    arama = q + " " + ek + " -site:youtube.com -site:youtu.be -site:tiktok.com"
+                    print(f"ANLATI YAZILI KAYNAK ARAMA: {arama}", flush=True)
+                    try:
+                        r = requests.get("https://search.yahoo.com/search", params={"p": arama},
+                                         headers={**headers, "Accept-Language": pazar}, timeout=(3, 6))
+                        rows = sonuclari_ayikla(BeautifulSoup(r.text, "html.parser"), "yahoo") if r.status_code == 200 else []
+                        if tarihsel:
+                            short = re.sub(r"\b(?:olay\w*|incident|incidente|vorfall|anlat)\b", " ", q, flags=re.I).strip()
+                            try:
+                                b = requests.get("https://www.bing.com/search", params={"q": short + " -site:youtube.com -site:tiktok.com", "mkt": pazar, "count": 10}, headers={**headers, "Accept-Language": pazar}, timeout=(3, 6))
+                                if b.status_code == 200:
+                                    rows.extend(sonuclari_ayikla(BeautifulSoup(b.text, "html.parser"), "bing"))
+                            except requests.RequestException:
+                                pass
+                        return [dict(a, _eagle_query=q) for a in rows if not _eagle_anlati_video_mu(a.get("url"))]
+                    except Exception:
+                        return []
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    for grup in pool.map(yazili_ara, plan[:4]):
+                        tum_sonuclar.extend(grup)
+            tum_sonuclar = [a for a in tum_sonuclar if not _eagle_anlati_video_mu(a.get("url"))]
+            if tarihsel:
+                # Historical discovery must not pass through generic answer filters.
+                from eagle_derin_arastirma import discovery_candidates
+                queries = [tarihsel] + _eagle_cok_dilli_anlati_sorgulari(sorgu)
+                adaylar = [a for a in discovery_candidates(tum_sonuclar, queries, limit=12)
+                            if not _eagle_anlati_video_mu(a["url"])]
+                for a in adaylar:
+                    print(f"ANLATI KESIF ADAYI: {a.get('title', '')[:180]} — {a['url']}", flush=True)
+                return adaylar
 
         # Türkiye ekonomi sorularında genel aramaya ek olarak
         # doğrulanmış TCMB sorgularını ayrı ayrı dene.
@@ -8151,6 +8902,7 @@ def web_arastir(sorgu, limit=6):
                 kısa_sorgu
                 and kısa_sorgu != soru
                 and len(kelimeler) >= 2
+                and not tarihsel
                 and (
                     not ekonomi_arama
                     or taylor_arama
@@ -8185,7 +8937,7 @@ def web_arastir(sorgu, limit=6):
                     if ikinci:
                         ikinci_ilgili = [
                             sonuc for sonuc in ikinci
-                            if _web_sonucu_sorguyla_ilgili_mi(kısa_sorgu, sonuc)
+                            if _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc)
                         ]
                         print(
                             f"🧠 Kısa sorgu: {len(ikinci)} sonuç, "
@@ -8283,6 +9035,7 @@ def web_sayfa_oku(url, limit=7000, metaveri_dahil=True, timeout=12):
         # Sayfa metnine karışan teknik/navigasyon bölümlerini temizle.
         yapilandirilmis_bilgiler = []
         gorulen_bilgiler = set()
+        makale_govdeleri = []
 
         def json_ld_deger(deger):
             if isinstance(deger, dict):
@@ -8320,6 +9073,11 @@ def web_sayfa_oku(url, limit=7000, metaveri_dahil=True, timeout=12):
                 "tvepisode", "episode", "article", "newsarticle",
                 "reportagenewsarticle", "videoobject", "event"
             }
+
+            if any(t in {"article", "newsarticle", "reportagenewsarticle", "blogposting"} for t in turler):
+                govde = veri.get("articleBody")
+                if isinstance(govde, str) and len(govde.strip()) >= 300:
+                    makale_govdeleri.append(BeautifulSoup(govde, "html.parser").get_text(" ", strip=True))
 
             if any(t in desteklenen for t in turler):
                 alanlar = (
@@ -8391,6 +9149,9 @@ def web_sayfa_oku(url, limit=7000, metaveri_dahil=True, timeout=12):
         else:
             metin = " ".join(kaynak.stripped_strings)
         metin = re.sub(r"\s+", " ", metin).strip()
+
+        if makale_govdeleri and len(metin) < 300:
+            metin = re.sub(r"\s+", " ", max(makale_govdeleri, key=len)).strip()
 
         if metaveri_dahil and yapilandirilmis_bilgiler:
             ek_bilgi = " | ".join(yapilandirilmis_bilgiler)
@@ -11222,7 +11983,7 @@ def eagle_genel_baglam_coz(mesaj, gecmis=None):
     ]
 
     # Mesaj kendi başına açık bir konu taşıyorsa geçmişi zorla ekleme.
-    if any(x in m for x in acik_yeni_konu):
+    if any(re.search(r"(?<!\w)" + re.escape(x) + r"(?!\w)", m) for x in acik_yeni_konu):
         return metin
 
     # Devam/belirsizlik ifadeleri.
@@ -11250,49 +12011,19 @@ def eagle_genel_baglam_coz(mesaj, gecmis=None):
     ):
         return metin
 
-    # En yakın anlamlı kullanıcı mesajını bul.
-    adaylar = []
-    for item in reversed(gecmis):
-        if not isinstance(item, dict):
+    # Asistan metnini yeni kullanıcı isteği gibi yorumlama; boş onayları atla.
+    konu = None
+    for item in reversed(gecmis[-20:]):
+        if not isinstance(item, dict) or str(item.get("role", "")).lower() != "user":
             continue
-
-        role = str(item.get("role", "")).strip().lower()
-        if role not in {"user", "assistant"}:
+        icerik = str(item.get("text", item.get("content", "")) or "").strip()
+        norm = icerik.casefold().replace("\u0307", "")
+        if not icerik or norm == m or re.fullmatch(r"(?:evet|hayır|hayir|tamam|olur|peki|devam(?: et| edelim)?|teşekkürler)[.!? ]*", norm):
             continue
-
-        icerik = str(
-            item.get("text", item.get("content", ""))
-        ).strip()
-
-        if not icerik:
-            continue
-
-        adaylar.append(icerik)
-
-        # En yakın iki mesaj yeterli; bağlamı gereksiz büyütme.
-        if len(adaylar) >= 2:
-            break
-
-    if not adaylar:
+        konu = icerik
+        break
+    if not konu:
         return metin
-
-    # En yakın kullanıcı mesajını önceliklendir.
-    onceki_kullanici = None
-    for item in reversed(gecmis):
-        if not isinstance(item, dict):
-            continue
-        if str(item.get("role", "")).strip().lower() != "user":
-            continue
-
-        icerik = str(
-            item.get("text", item.get("content", ""))
-        ).strip()
-
-        if icerik:
-            onceki_kullanici = icerik
-            break
-
-    konu = onceki_kullanici or adaylar[0]
 
     # Aynı mesajın kendisini tekrar ekleme.
     if konu.casefold().strip() == metin.casefold().strip():
@@ -11427,7 +12158,7 @@ def _eagle_ulke_gorsel_cesitlendir(items, normla):
         # Park adının önündeki fotoğraf açıklamasını ayırmak için ortak son ek.
         if park:
             key = " ".join(normla(park.group(1)).split()[-3:])
-        gruplar.setdefault(category, {}).setdefault(key, item)
+        gruplar.setdefault(category, {}).setdefault(key, {**item, "category": category})
     result = []
     queues = [list(g.values()) for g in gruplar.values()]
     while any(queues):
@@ -12102,6 +12833,8 @@ def _eagle_yer_gorsellerini_guvenli_getir(soru, cevap=""):
 
 @app.post("/api/sohbet")
 def sohbet():
+    import os
+    import requests
 
     data = request.get_json(silent=True) or {}
 
@@ -12116,6 +12849,16 @@ def sohbet():
     file_mime = str(
         data.get("file_mime", "image/jpeg")
     ).strip()
+
+    if not file_base64 and mesaj:
+        from eagle_bilim_hesap import bilim_hesapla
+        bilim_cevap = eagle_yerel_matematik(mesaj) or bilim_hesapla(mesaj) or eagle_yerel_kavram(mesaj)
+        if bilim_cevap:
+            return jsonify({"ok": True, "answer": bilim_cevap,
+                            "eagle_direct": True, "web_search": False})
+
+    if not file_base64 and _eagle_gundem_sorgusu(mesaj):
+        return jsonify(_eagle_bagimsiz_olay_arastirma(mesaj, web_sayfa_oku))
 
     # EAGLEAI_NATURAL_LANGUAGE_SAVINGS_V1: web gerektirmeyen birikim hesabı.
     if not file_base64 and mesaj:
@@ -12630,6 +13373,9 @@ def sohbet():
             flush=True
         )
 
+    if _eagle_gundem_sorgusu(mesaj):
+        karar = {**karar, "intent": "guncel_bilgi", "arac": "web_arastirma",
+                 "islem": "cevapla", "neden": "Genel haber gündemi."}
     print(f"🧠 EAGLE KARAR: {karar}", flush=True)
 
     # Medya önerileri: son kararın ardından, web araştırmasından önce TMDb'ye yönlendir.
@@ -13359,15 +14105,11 @@ def sohbet():
         })
 
     # Resmi olay verisini genel aramadan önce dene; başarısızsa normal zincir.
-    if karar.get("intent") != "spor" and _eagle_guncel_olay_sorgusu(mesaj):
+    if _eagle_gundem_sorgusu(mesaj) or (karar.get("intent") != "spor" and _eagle_guncel_olay_sorgusu(mesaj)):
         resmi_olay = _eagle_son_deprem(mesaj)
         if resmi_olay:
             return jsonify(resmi_olay)
-        grounded = _eagle_grounded_arastirma(mesaj)
-        if grounded:
-            return jsonify(grounded)
-        haberler = _eagle_haber_kaynaklari(mesaj)
-        return jsonify(_eagle_olay_haber_ozeti(mesaj, haberler, web_sayfa_oku))
+        return jsonify(_eagle_bagimsiz_olay_arastirma(mesaj, web_sayfa_oku))
 
     hava_verisi = hava_durumu_getir(mesaj)
 
@@ -13516,6 +14258,17 @@ def sohbet():
 
     # 🏟️ İki takım + skor/canlı sonuç: önce doğrudan SofaScore.
     # Genel web aramasına düşmeden gerçek maç verisini kullan.
+    if karar.get("intent") == "spor":
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        lig_simdi = datetime.now(ZoneInfo("Europe/Istanbul"))
+        lig_kapsami = eagle_lig_fikstur_kapsami(mesaj, lig_simdi)
+        if lig_kapsami:
+            lig_ok, lig_cevap = eagle_lig_fikstur_cevabi(lig_kapsami, lig_simdi)
+            return jsonify({"ok": lig_ok, "answer": lig_cevap,
+                            "eagle_direct": True, "web_search": True,
+                            "memory_count": len(hafiza_yukle())})
+
     if karar.get("intent") == "spor" and not super_lig_oncesi:
         live_sports_debug = True
         print(
@@ -14628,6 +15381,13 @@ def sohbet():
                 flush=True
             )
 
+        if re.fullmatch(r"\s*(?:[0-9][0-9.,]*\s*)?(?:usd|dolar|eur|euro|gbp|sterlin|pounds?)\s+kaç\s+(?:tl|lira)\s*[?!.]?\s*", mesaj.casefold()):
+            try:
+                _kur_cevap, _kur_guven = merkez_motor.genel_doviz_cevabi(mesaj, [])
+                if _kur_cevap and _kur_guven >= .95 and "TCMB" in _kur_cevap:
+                    return jsonify({"ok": True, "answer": _kur_cevap, "web_search": True, "eagle_direct": True, "merkez_motor": True, "memory_count": len(hafiza_yukle())})
+            except Exception as hata:
+                print(f"Doğrudan döviz sorgusu atlandı: {type(hata).__name__}", flush=True)
         arama_sorgusu = doviz_arama_sorgusu(mesaj)
         print(f"🌐 WEB SORGU: {arama_sorgusu!r}", flush=True)
         web_verisi = _eagle_web_arastir_bir_kere(arama_sorgusu)
@@ -14937,6 +15697,46 @@ def sohbet():
         print("🌍 ANLATI İSTEĞİ — KAYNAK ARAŞTIRMASINA YÖNLENDİRİLİYOR", flush=True)
         web_verisi = _eagle_web_arastir_bir_kere(mesaj)
         print(f"🌍 ANLATI WEB SONUÇ: {len(web_verisi)}", flush=True)
+    if anlati_istegi and _eagle_tarihsel_konu(mesaj):
+        kanit = _eagle_tarihsel_web_kanit(_eagle_tarihsel_konu(mesaj), web_verisi, web_sayfa_oku)
+        if kanit:
+            for kaynak in web_verisi or []:
+                if not isinstance(kaynak, dict) or not kaynak.get("_eagle_encyclopedia_extract"):
+                    continue
+                parcalar = _eagle_tarihsel_paragraflar(kaynak.get("text"))
+                sources = kanit.get("research_sources", [])
+                if parcalar and not any(k.get("url") == kaynak.get("url") for k in sources):
+                    sid = max((k["id"] for k in sources), default=0) + 1
+                    sources.append({"id": sid, "title": kaynak["title"], "url": kaynak["url"], "independently_verified": False})
+                    kanit["answer"] = f"Ansiklopedi özeti [{sid}] (bağımsız doğrulanmadı):\n\n" + "\n\n".join(parcalar) + "\n\n" + kanit["answer"]
+                break
+            from eagle_derin_arastirma import remember_sources
+            remember_sources(_eagle_tarihsel_konu(mesaj), kanit.get("research_sources", []))
+            return jsonify(kanit)
+
+        try:
+            from eagle_derin_arastirma import research
+            konu = _eagle_tarihsel_konu(mesaj)
+            kanit = research(konu, _eagle_cok_dilli_anlati_sorgulari(konu + " anlat"),
+                             _eagle_tarihsel_web_kanit, web_sayfa_oku)
+            if kanit:
+                return jsonify(kanit)
+        except Exception as exc:
+            print(f"DERIN ARASTIRMA HATA: {type(exc).__name__}", flush=True)
+
+        # Yalnızca tam ansiklopedi kaydından, kesilmemiş paragraflar.
+        for kaynak in web_verisi or []:
+            if not isinstance(kaynak, dict) or kaynak.get("_eagle_encyclopedia_extract") is not True:
+                continue
+            parcalar = _eagle_tarihsel_paragraflar(kaynak.get("text"))
+            if sum(map(len, parcalar)) >= 300:
+                return jsonify({"ok": True, "answer": "Ansiklopedi kaynağından (bağımsız doğrulama yapılmadı):\n\n" + "\n\n".join(parcalar), "eagle_direct": True, "web_search": not kaynak.get("_eagle_cached_source", False), "research_status": "single_source_extract", "research_sources": [{"id": 1, "title": kaynak["title"], "url": kaynak["url"], "independently_verified": False}]})
+
+        # Unvalidated discovery rows must never enter the generic answer path.
+        web_verisi = []
+        if not os.getenv("GEMINI_API_KEY"):
+            return jsonify({"ok": False, "answer": "🦅 Tarihsel anlatım için yeterli, bütünlüklü kaynak metni bulunamadı.", "eagle_direct": True, "web_search": True, "research_status": "unverified"})
+
 
     mesaj_yonlendirme = str(mesaj or "").casefold().strip().rstrip(" ?!.")
     kimlik_sorusu = mesaj_yonlendirme in {
@@ -15736,7 +16536,7 @@ def sohbet():
 
     # 🦅 Hiçbir özel araç veya web sonucu yoksa Eagle doğrudan cevap verir
     return jsonify({
-        "ok": True,
+        "ok": False,
         "answer": (
             "🦅 Bu isteği kendi araçlarımla işleyemedim. "
             "Sorunu biraz daha açık yazarsan tekrar deneyebilirim."
