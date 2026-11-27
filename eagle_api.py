@@ -7786,6 +7786,23 @@ def web_arastir(sorgu, limit=6):
     dogrudan_kaynaklar = ansiklopedi_kaynaklari(sorgu)
     if dogrudan_kaynaklar:
         return dogrudan_kaynaklar
+    from eagle_arastirma_v2 import konu_ayir
+    genel_konu = konu_ayir(sorgu)
+    if genel_konu:
+        from eagle_derin_arastirma import search_web
+        try:
+            adaylar = search_web(genel_konu, [], limit=limit)
+            dogrulanan = []
+            for aday in adaylar[:limit]:
+                metin = web_sayfa_oku(aday["url"], metaveri_dahil=False, timeout=(3,5))
+                if isinstance(metin, str) and len(metin.strip()) >= 100:
+                    kayit = {"title": aday["title"], "url": aday["url"], "snippet": metin[:6000]}
+                    if _web_sonucu_sorguyla_ilgili_mi(genel_konu, kayit):
+                        dogrulanan.append(kayit)
+            if dogrulanan:
+                return dogrulanan
+        except Exception as hata:
+            print(f"Genel bağımsız araştırma: {type(hata).__name__}", flush=True)
 
     # TROPICAL_COUNTRY_QUERY_NORMALIZATION
     # EN KALABALIK ÜLKE SORGUSUNU DOĞRUDAN KONUYA YÖNLENDİR
