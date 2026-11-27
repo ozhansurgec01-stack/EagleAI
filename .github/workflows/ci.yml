@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - fix/general-research-quality-v5
 
 permissions:
   contents: read
@@ -33,6 +34,7 @@ jobs:
         run: |
           python -m py_compile \
             eagle_api.py \
+            eagle_merkez_motoru.py \
             eagle_regresyon_test.py
 
       - name: Run regression tests
