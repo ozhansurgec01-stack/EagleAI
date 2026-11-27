@@ -23,6 +23,8 @@ _DATE = re.compile(r"\b(?:18|19|20)\d{2}\b|\b\d{1,2}:\d{2}\b")
 # Strip flattened publisher headers only when a clear body delimiter exists.
 _CAPTION = re.compile(r"(?:çekilmiş fotoğraf|fotoğrafı çekildi|photograph taken|photo taken|pictured here|^al[aı]na kurulan çadırlardan biri)", re.I)
 
+_SITE_NOISE = re.compile(r"haberleri sayfasında|son dakika haberleri|haber başlıkları|web.de devam et|uygulamayı aç|köşe yazarlarına dikkat|sayfamızdan takip|toplam \d+ .{0,100}haberi|^peki,|^.{0,100}kimlerden oluşuyor\?|\b(?:duruşmasında|çarptıran|serisinin).{0,100}\d+\.$", re.I)
+
 def clean_sentence(text):
     if '|' in text:
         parts = text.split('|')
@@ -40,6 +42,10 @@ _TR_OBJECT = re.compile(r'kalıntı|enkaz|parça|kutu|paket|cisim|nesne|çelikte
 _TR_DATE = re.compile(r'\b\d{1,2}\s+(?:ocak|şubat|mart|nisan|mayıs|haziran|temmuz|ağustos|eylül|ekim|kasım|aralık)\s+\d{4}\b', re.I)
 
 
+def narrative_key(text):
+    return re.sub(r'[^\w]+', ' ', text.casefold().replace('\u0307', '')).strip()
+
+
 def format_narrative(sources, translated):
     """Organize attributed extracts without inventing links or resolving claims."""
     groups = {k: [] for k in ('Olayın başlangıcı ve gözlemler', 'Araştırma çalışmaları', 'Bulgular ve sonuçlar', 'Diğer aktarımlar')}
@@ -53,13 +59,22 @@ def format_narrative(sources, translated):
             continue
         for original, target in rows:
             target = target.strip()
-            if _METADATA.search(original) or _METADATA.search(target) or _CAPTION.search(original) or _CAPTION.search(target):
+            if target.endswith("?") or re.match(r"^[A-ZİŞĞÜÇÖ0-9 ]{18,} [A-ZİŞĞÜÇÖ][a-zçğıöşü]", target):
                 continue
-            key = re.sub(r'[^\w]+', ' ', target.casefold()).strip()
-            if not key or not re.search(r'[.!?][”"’)]*$', target):
+            if _SITE_NOISE.search(original) or _SITE_NOISE.search(target) or _METADATA.search(original) or _METADATA.search(target) or _CAPTION.search(original) or _CAPTION.search(target):
+                continue
+            key = narrative_key(target)
+            if not key or re.search(r"\b\d+\.$", target) or (target.isupper() and len(target) > 15) or not re.search(r'[.!?][”"’)]*$', target):
                 continue
             if key in seen:
                 seen[key][1].add(i)
+                continue
+            # Only merge punctuation/spacing variants, never approximate claims.
+            compact = key.replace(' ', '')
+            equivalent = next((entry for old, entry in seen.items()
+                               if len(compact) >= 30 and old.replace(' ', '') == compact), None)
+            if equivalent is not None:
+                equivalent[1].add(i)
                 continue
             outcome = bool(_TR_OUTCOME.search(target))
             recovered = bool(_TR_RECOVERY.search(target) and _TR_OBJECT.search(target))
@@ -67,9 +82,9 @@ def format_narrative(sources, translated):
                 negative.add(i)
             if recovered and not outcome:
                 recovery.add(i)
-            group = ('Bulgular ve sonuçlar' if outcome or recovered else
+            group = ('Bulgular ve sonuçlar' if outcome or recovered or re.search(r'\b(?:mahkeme|hapis cezası|hüküm giy|beraat|tahliye)', target, re.I) else
                      'Araştırma çalışmaları' if _TR_ACTION.search(target) else
-                     'Olayın başlangıcı ve gözlemler' if _TR_EVENT.search(target) or _TR_DATE.search(target) else 'Diğer aktarımlar')
+                     'Olayın başlangıcı ve gözlemler' if _TR_EVENT.search(target) or _TR_DATE.search(target) or re.search(r'\b(?:kaybol|gündemine geldi|başladı)', target, re.I) else 'Diğer aktarımlar')
             entry = [target, {i}]
             seen[key] = entry
             groups[group].append(entry)
@@ -80,8 +95,11 @@ def format_narrative(sources, translated):
         if not entries:
             continue
         if heading == 'Olayın başlangıcı ve gözlemler':
-            entries.sort(key=lambda e: not bool(_TR_DATE.search(e[0])))
-        paragraphs.append(heading + ':\n' + '\n\n'.join(
+            def date_key(entry):
+                years = re.findall(r'\b(?:18|19|20)\d{2}\b', entry[0])
+                return int(years[0]) if years else 9999
+            entries.sort(key=date_key)
+        paragraphs.append(heading + ':\n' + ' '.join(
             ' '.join(f'[{i}]' for i in sorted(ids)) + ' ' + target for target, ids in entries))
     if any(a != b for a in negative for b in recovery):
         paragraphs.append('Kaynaklar arasındaki olası farklılık:\nBazı aktarımlarda sonuçsuz arama, diğerlerinde nesne veya malzeme bulunduğu, taşındığı ya da fiziksel özelliklerinin belirlendiği yönünde ifadeler var. Bunların aynı araştırmaya ilişkin olup olmadığı ve iddiaların doğruluğu belirlenmedi.')
@@ -90,7 +108,7 @@ def format_narrative(sources, translated):
 
 def evidence_indices(rows, limit):
     eligible = [i for i,c in enumerate(rows) if 25 <= len(c) and len(c.encode('utf-8')) <= 500
-                and not _METADATA.search(c) and not _CAPTION.search(c) and re.match(r'[“"¿¡(]*[A-ZÀ-ÖØ-ÞА-ЯЁİŞĞÜÇÖ]', c)
+                and not _SITE_NOISE.search(c) and not _METADATA.search(c) and not _CAPTION.search(c) and re.match(r'[“"¿¡(]*[A-ZÀ-ÖØ-ÞА-ЯЁİŞĞÜÇÖ]', c)
                 and re.search(r'[.!?][”"’)]*$', c)]
     chosen = []
     # Reserve distinct slots for the event, date, investigation and outcome.
@@ -284,7 +302,7 @@ def translate_sources(sources, budget=45):
     import time
     deadline = time.monotonic() + budget
     selections = []
-    online = os.getenv('EAGLE_ONLINE_TRANSLATION') == '1'
+    online = os.getenv('EAGLE_ONLINE_TRANSLATION', '1') == '1'
     for source in sources:
         sentences = [clean_sentence(x) for x in re.split(r'(?<=[.!?])\s+|\s*\[…\]\s*', source['text']) if 25 <= len(clean_sentence(x)) <= (500 if online else 400)]
         indices = evidence_indices(sentences, 6) if online else (sorted(set([0, len(sentences)//2, len(sentences)-1])) if sentences else [])
@@ -297,11 +315,18 @@ def translate_sources(sources, budget=45):
             lang = detected[0].lang if detected and detected[0].prob >= .90 else None
         except Exception:
             lang = None
+        # If optional language detection is absent or uncertain, recognize only
+        # strongly Turkish prose; a Turkish URL alone is not evidence of language.
+        if lang is None:
+            words = re.findall(r"[^\W\d_]+", source['text'].casefold(), re.UNICODE)
+            markers = {'bir','ve','ile','olarak','için','sonra','önce','ancak','tarafından','olan','bu','olduğu','göre'}
+            if len(set(words) & markers) >= 4 and sum(bool(re.search(r'[çğıöşü]', w)) for w in words) >= 5:
+                lang = 'tr'
         langs.append(lang)
         if lang == 'tr':
             results[i] = [(c, c) for c in selections[i]]
             selections[i] = []
-    if os.getenv('EAGLE_ONLINE_TRANSLATION') == '1':
+    if os.getenv('EAGLE_ONLINE_TRANSLATION', '1') == '1':
         from concurrent.futures import ThreadPoolExecutor, wait
         deadline = min(deadline, time.monotonic()+8)
         jobs = [(i, sentences[j]) for j in range(6) for i, sentences in enumerate(selections) if j < len(sentences) and langs[i] in {'en','es','de','fr','ru'}]
@@ -324,7 +349,10 @@ def translate_sources(sources, budget=45):
             done, _ = wait(futures, timeout=max(0,deadline-time.monotonic()))
             for (i, original), future in zip(jobs, futures):
                 if future in done:
-                    translated, ok = future.result()
+                    try:
+                        translated, ok = future.result()
+                    except Exception:
+                        continue  # A failed provider must not discard other sources.
                     if ok:
                         results[i].append((original, translated))
         finally:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 import types
+from unittest.mock import patch
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -29,9 +30,6 @@ class FakeResponse:
 
 
 requests.get = lambda *args, **kwargs: FakeResponse()
-sys.modules["eagle_afet_koordinasyon"] = afet
-sys.modules["eagle_finansal_analiz"] = finans
-sys.modules["requests"] = requests
 
 sanal = types.ModuleType("eagle_sanalkuyumculuk")
 sanal.API_URL = "https://test.invalid/sanal"
@@ -39,15 +37,20 @@ sanal.parse_payload = lambda payload: []
 altin = types.ModuleType("eagle_altinkaynak")
 altin.API_URL = "https://test.invalid/altin"
 altin.parse_payload = lambda payload: []
-sys.modules["eagle_sanalkuyumculuk"] = sanal
-sys.modules["eagle_altinkaynak"] = altin
 
 spec = importlib.util.spec_from_file_location("eagle_motor_regresyon", SOURCE)
 if spec is None or spec.loader is None:
     raise RuntimeError(f"Motor dosyası yüklenemedi: {SOURCE}")
 motor_mod = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = motor_mod
-spec.loader.exec_module(motor_mod)
+with patch.dict(sys.modules, {
+    "eagle_afet_koordinasyon": afet,
+    "eagle_finansal_analiz": finans,
+    "requests": requests,
+    "eagle_sanalkuyumculuk": sanal,
+    "eagle_altinkaynak": altin,
+    spec.name: motor_mod,
+}):
+    spec.loader.exec_module(motor_mod)
 
 motor = motor_mod.EagleMerkezMotoru()
 BUGUN = datetime.now(ZoneInfo("Europe/Istanbul")).date().isoformat()
@@ -75,7 +78,8 @@ def test_html_tablo_guncel_tarih_olmadan_kullanilmaz():
         "<td>Satış 5.200,00 TL</td></tr></table>"
     )
     requests.get = lambda *args, **kwargs: HtmlResponse(html_guncel)
-    guncel = gercek_okuyucu("https://altinveri.com/altin")
+    with patch.dict(sys.modules, {"requests": requests}):
+        guncel = gercek_okuyucu("https://altinveri.com/altin")
     assert guncel and guncel[0].get("tarih") == BUGUN, guncel
 
     html_tarihsiz = (
@@ -84,7 +88,8 @@ def test_html_tablo_guncel_tarih_olmadan_kullanilmaz():
         "<td>Satış 5.200,00 TL</td></tr></table>"
     )
     requests.get = lambda *args, **kwargs: HtmlResponse(html_tarihsiz)
-    tarihsiz = gercek_okuyucu("https://altinveri.com/altin")
+    with patch.dict(sys.modules, {"requests": requests}):
+        tarihsiz = gercek_okuyucu("https://altinveri.com/altin")
     assert not tarihsiz, tarihsiz
 
     html_eski = (
@@ -93,7 +98,8 @@ def test_html_tablo_guncel_tarih_olmadan_kullanilmaz():
         "<td>Satış 5.200,00 TL</td></tr></table>"
     )
     requests.get = lambda *args, **kwargs: HtmlResponse(html_eski)
-    eski = gercek_okuyucu("https://altinveri.com/altin")
+    with patch.dict(sys.modules, {"requests": requests}):
+        eski = gercek_okuyucu("https://altinveri.com/altin")
     assert not eski, eski
 
     motor_mod.altin_tablo_oku = gercek_okuyucu
@@ -206,7 +212,12 @@ def main():
     failed = 0
     for test in tests:
         try:
-            test()
+            with patch.dict(sys.modules, {
+                "requests": requests,
+                "eagle_sanalkuyumculuk": sanal,
+                "eagle_altinkaynak": altin,
+            }):
+                test()
             print(f"[OK] {test.__name__}")
         except Exception as exc:
             failed += 1

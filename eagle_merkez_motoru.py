@@ -1999,7 +1999,7 @@ class EagleMerkezMotoru:
 
     @classmethod
     def ulke_tanitim_konusu(cls, mesaj):
-        konu = re.sub(r"\s+(?:hakkında|hakkinda)(?:\s+(?:detaylı|detayli|ayrıntılı|ayrintili|genel|kapsamlı|kapsamli))?(?:\s+bilgi)?(?:\s+ver(?:ir)?(?:\s+m[ıi]s[ıi]n)?)?$", "", cls.normalize(mesaj).strip(" ?!."))
+        konu = re.sub(r"\s+(?:hakkında|hakkinda|ile ilgili)(?:\s+(?:detaylı|detayli|ayrıntılı|ayrintili|genel|kapsamlı|kapsamli))?(?:\s+bilgi(?:ler)?)?(?:\s+ver(?:ir)?(?:\s*m[ıi]s[ıi]n)?)?$", "", cls.normalize(mesaj).strip(" ?!."))
         return konu if cls.genel_web_ulke_token_eslesiyor(konu, konu) else ""
 
     @classmethod
@@ -2371,6 +2371,17 @@ class EagleMerkezMotoru:
                     continue
                 metin = str(kaynak.get("text", "") or "").strip()
                 if kaynak.get("_eagle_country_structured") is True and cls.domain(kaynak.get("url", "")) in {"wikidata.org", "www.wikidata.org"} and metin:
+                    for ek in veriler:
+                        if not isinstance(ek, dict) or not ek.get("_eagle_country_extract"):
+                            continue
+                        if cls.domain(ek.get("url", "")) != "tr.wikipedia.org" or not cls.ulke_tanitim_basligi_mi(ulke, ek.get("title", "")):
+                            continue
+                        ek_metin = re.sub(r"\s*\([^()]*:\s*(?:;\s*[^():;]+:\s*)*\)", "", str(ek.get("text", "")))
+                        cumleler = re.split(r"(?<=[.!?])\s+(?=[A-ZÇĞİÖŞÜ])", ek_metin.strip())
+                        secilen = [c for c in cumleler if 45 <= len(c) <= 700 and c.endswith((".", "!", "?")) and not re.search(r"\b(?:mevcut kral|mevcut başbakan|GSYİH|NAFTA|en zengin|dünyanın en)\b", c, re.I)]
+                        if secilen:
+                            metin += "\n\nAnsiklopedi özeti (bağımsız doğrulanmadı): " + " ".join(secilen[:6]) + "\nKaynak: " + ek["url"]
+                            break
                     return metin, 0.78
                 if kaynak.get("_eagle_country_extract") and len(metin) >= 180:
                     metin = re.sub(r"^([^\s]+)\s+\1(?=\s|[, (])", r"\1", metin, flags=re.I)
