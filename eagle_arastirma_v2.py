@@ -4,7 +4,14 @@ import requests
 
 def konu_ayir(soru):
     match = re.fullmatch(r"\s*(.+?)\s+(?:(?:hakk[ıi]nda|ile ilgili)\s+bilgi(?:\s+ver(?:ir)?\s*(?:m[ıi]s[ıi]n(?:[ıi]z)?)?)?|nedir|kimdir)\s*[?! .]*", str(soru), re.I)
-    return match.group(1).strip() if match else ""
+    if match:
+        return match.group(1).strip()
+    anlat = re.fullmatch(r"\s*(.+?)\s+anlat\s*[?! .]*", str(soru), re.I)
+    if anlat:
+        konu = anlat.group(1).strip()
+        konu = re.sub(r"(lerini|larını)$", lambda m: "leri" if m.group(0) == "lerini" else "ları", konu, flags=re.I)
+        return konu
+    return ""
 
 def ansiklopedi_kaynaklari(soru, get=None):
     konu = konu_ayir(soru)
