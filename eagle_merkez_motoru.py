@@ -4908,8 +4908,6 @@ class EagleMerkezMotoru:
 
         if not secilen:
             return "", 0.0
-        if genel_bilgi_sorusu and (len(secilen) < 2 or len(" ".join(secilen)) < 100):
-            return "", 0.0
 
         # Genel ekonomi sorularında web kaynaklarından seçilen ham
         # cümleleri doğrudan kullanıcıya verme. Bilinen mekanizma
