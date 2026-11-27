@@ -7781,6 +7781,12 @@ def web_arastir(sorgu, limit=6):
             rows = []
         return ([record] if record else []) + rows
 
+    # Independent exact-topic provider; retain existing specialised routes.
+    from eagle_arastirma_v2 import ansiklopedi_kaynaklari
+    dogrudan_kaynaklar = ansiklopedi_kaynaklari(sorgu)
+    if dogrudan_kaynaklar:
+        return dogrudan_kaynaklar
+
     # TROPICAL_COUNTRY_QUERY_NORMALIZATION
     # EN KALABALIK ÜLKE SORGUSUNU DOĞRUDAN KONUYA YÖNLENDİR
     if (
