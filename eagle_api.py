@@ -12764,7 +12764,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                 desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
                 if _commons_eser_mi(info):
                     continue
-                ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikidata P18 / Wikimedia Commons", desc)
+                ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikidata P18 / Wikimedia Commons", desc, guvenilir_sorgu=True)
         except Exception as hata:
             if "429" in str(hata):
                 commons_429 = True
@@ -12784,7 +12784,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             for row in r.json().get("results", {}).get("bindings", []):
                 img = row.get("image", {}).get("value", "").replace("http://", "https://", 1)
                 title = unquote(img.rsplit("/", 1)[-1]).replace("_", " ")
-                ekle(img, title, "https://www.wikidata.org/wiki/" + qid, "Wikidata SPARQL")
+                ekle(img, title, "https://www.wikidata.org/wiki/" + qid, "Wikidata SPARQL", guvenilir_sorgu=True)
         except Exception as hata:
             print(f"ℹ️ Wikidata görsel sorgusu atlandı: {hata}", flush=True)
 
@@ -12892,7 +12892,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                     source = str(meta.get("purl", "")).strip()
                     # Android yalnızca Bing'in güvenilir küçük resim alan adını kabul eder.
                     if thumb.startswith("https://") and (urlparse(thumb).hostname or "").endswith(".mm.bing.net"):
-                        ekle(thumb, title, source, "Bing Görseller", desc, guvenilir_sorgu=True)
+                        ekle(thumb, title, source, "Bing Görseller", desc)
                     if tur != "country" and len(bulunan) >= limit * 2:
                         break
                 if tur != "country" and len(bulunan) >= limit:
