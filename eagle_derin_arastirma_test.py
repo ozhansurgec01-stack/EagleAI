@@ -22,7 +22,8 @@ class DeepTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, patch.dict(os.environ,{'EAGLE_KNOWLEDGE_DB':d+'/test.sqlite'}):
             self.assertIsNone(research('topic',[],lambda *a:None,None,lambda *a:[{'url':'https://example.org/story','title':'topic'}]))
 
-    def test_deep_metadata_does_not_block_reading(self):
+    @patch("eagle_anlati_sentez.translate_sources", return_value=[[]])
+    def test_deep_metadata_does_not_block_reading(self, translation):
         import ast
         from pathlib import Path
         tree = ast.parse(Path(__file__).with_name('eagle_api.py').read_text())
@@ -34,7 +35,7 @@ class DeepTests(unittest.TestCase):
         a = {'title':'Regional archive','url':'https://example.org/story','_eagle_deep_candidate':True}
         body = ('En 1978 Bolivia registró un relato sobre un OVNI observado por varios habitantes de la región. '
                 'El documento describe las declaraciones de los testigos sin confirmar el origen del objeto. ') * 3
-        self.assertTrue(run('1978 Bolivya UFO',[a],lambda *args,**kw:body)['ok'])
+        self.assertFalse(run('1978 Bolivya UFO',[a],lambda *args,**kw:body)['ok'])
         self.assertIsNone(run('1978 Bolivya UFO',[a],lambda *args,**kw:body.replace('1978','1979')))
         self.assertIsNone(run('1978 Bolivya UFO',[a],lambda *args,**kw:body.replace('OVNI','lluvia')))
 

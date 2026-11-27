@@ -17,7 +17,8 @@ class QualityTests(unittest.TestCase):
         self.assertEqual(scope['web_sayfa_oku']('https://example.org', metaveri_dahil=False), body.strip())
         self.assertIn('1978 Bolivia OVNI incidente', scope['_eagle_cok_dilli_anlati_sorgulari']('1978 Bolivya UFO olayını anlat'))
 
-    def test_historical_external_evidence(self):
+    @__import__("unittest.mock", fromlist=["patch"]).patch("eagle_anlati_sentez.translate_sources", return_value=[[]])
+    def test_historical_external_evidence(self, translation):
         import ast
         from pathlib import Path
         from unittest.mock import Mock
@@ -38,7 +39,8 @@ class QualityTests(unittest.TestCase):
         self.assertIsNone(run('1978 Bolivya UFO', [a], reader))
         reader.return_value = text
         r = run('1978 Bolivya UFO', [a, dict(a, url='https://other.org/story')], reader)
-        self.assertEqual(r['research_status'], 'unverified_source_extract')
+        self.assertEqual(r['research_status'], 'unverified')
+        self.assertFalse(r['ok'])
         self.assertFalse(r['event_verified'])
         self.assertEqual(len(r['research_sources']), 1)
         candidates = [dict(a, url=f'https://source{i}.org/story') for i in range(6)]
@@ -46,7 +48,8 @@ class QualityTests(unittest.TestCase):
         r = run('1978 Bolivya UFO', candidates, reader)
         self.assertEqual(r['research_sources'][0]['url'], candidates[5]['url'])
 
-    def test_historical_context_window(self):
+    @__import__("unittest.mock", fromlist=["patch"]).patch("eagle_anlati_sentez.translate_sources", return_value=[[]])
+    def test_historical_context_window(self, translation):
         import ast
         from pathlib import Path
         tree = ast.parse(Path(__file__).with_name('eagle_api.py').read_text())
@@ -59,11 +62,12 @@ class QualityTests(unittest.TestCase):
         text = ('The historical report dates the observation to May 1978. '
                 'Witnesses in Bolivia described an unusual object in the sky. '
                 'The UFO account records their statements without confirming the nature of the object. ')
-        self.assertTrue(run('1978 Bolivya UFO', [a], lambda *args, **kw: text * 2)['ok'])
+        self.assertFalse(run('1978 Bolivya UFO', [a], lambda *args, **kw: text * 2)['ok'])
         self.assertIsNone(run('1978 Bolivya UFO', [a], lambda *args, **kw: text.replace('1978', '1979') * 2))
         self.assertIsNone(run('1978 Bolivya UFO', [a], lambda *args, **kw: text.replace('UFO', 'weather') * 2))
 
-    def test_historical_spanish_article_anchors(self):
+    @__import__("unittest.mock", fromlist=["patch"]).patch("eagle_anlati_sentez.translate_sources", return_value=[[]])
+    def test_historical_spanish_article_anchors(self, translation):
         import ast
         from pathlib import Path
         tree = ast.parse(Path(__file__).with_name('eagle_api.py').read_text())
@@ -76,9 +80,9 @@ class QualityTests(unittest.TestCase):
         text = ('Un hecho que aún permanece en la memoria colectiva de quienes habitaban Tarija en 1978 nos trae al presente un extraño objeto en el cielo o una especie de llamarada que se creía había explosionado en la zona de Padcaya, pero cuando los expertos y la prensa llegaron al lugar no encontraron nada. El misterio hasta la fecha se mantiene. '
                 + 'Los investigadores realizaron una expedición por las montañas y no encontraron restos del aparato. ' * 8
                 + 'Sobrevolamos toda la parte boliviana. La prensa publicó titulares sobre el OVNI.')
-        self.assertTrue(run('1978 Bolivya UFO olayını', [a], lambda *args, **kw: text)['ok'])
+        self.assertFalse(run('1978 Bolivya UFO olayını', [a], lambda *args, **kw: text)['ok'])
         result = run('1978 Bolivya UFO olayını', [a, dict(a, url="https://other.org/story")], lambda *args, **kw: text)
-        self.assertIn("Türkçe çeviri alınamadı", result["answer"])
+        self.assertIn("yeterli kaynak metni alınamadı", result["answer"])
         self.assertNotIn("Los investigadores realizaron una expedición", result["answer"])
         self.assertEqual(len(result["research_sources"]), 1)
         for bad in (text.replace('1978', '1979'), text.replace('boliviana', 'argentina'), text.replace('OVNI', 'clima'), text.replace('extraño objeto', 'avión comercial')):

@@ -55,6 +55,33 @@ from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
+@app.after_request
+def eagle_sohbet_hata_sozlesmesi(response):
+    # Existing APK reads error, while research failures historically return answer.
+    if request.path == "/api/sohbet" and response.is_json:
+        data = response.get_json(silent=True)
+        if isinstance(data, dict):
+            # Old APK starts a generic Commons search unless the server owns the gallery.
+            if data.get("ok") is False or data.get("research_status") == "headlines":
+                data["place_gallery"] = True
+                data["media_images"] = {"images": []}
+                response.set_data(app.json.dumps(data))
+        if isinstance(data, dict) and data.get("ok") is True and data.get("web_search") and "media_images" not in data:
+            # Country responses can return through several early routes.
+            payload = request.get_json(silent=True) or {}
+            question = payload.get("message", "") if isinstance(payload, dict) else ""
+            if isinstance(question, str) and (merkez_motor.ulke_tanitim_konusu(question) or data.get("research_status") in {"unverified_source_extract", "single_source_extract"}):
+                data["media_images"] = {"images": _eagle_yer_gorsellerini_guvenli_getir(question, data.get("answer", "")) or []}
+                data["place_gallery"] = True
+                response.set_data(app.json.dumps(data))
+        if isinstance(data, dict) and data.get("ok") is False and not data.get("error"):
+            answer = data.get("answer")
+            if isinstance(answer, str) and answer.strip():
+                data["error"] = answer
+                response.set_data(app.json.dumps(data))
+    return response
+
+
 # 🦅 Eagle otomatik kod düzeltme motoru
 autofix_engine = EagleAutoFixEngine(Path(__file__).resolve().parent)
 
@@ -737,7 +764,7 @@ def finans_fiyat_sorgusu_mu(mesaj):
 
 def _eagle_gorsel_galerisi_uygun_mu(mesaj, finans_verisi=None):
     """Finans/fiyat sorgularına konu dışı görsel galerisi eklenmesini önler."""
-    return not finans_verisi and not finans_fiyat_sorgusu_mu(mesaj)
+    return not finans_verisi and not finans_fiyat_sorgusu_mu(mesaj) and not _eagle_guncel_olay_sorgusu(mesaj)
 
 
 def eagle_yerel_kavram(mesaj):
@@ -5279,13 +5306,31 @@ def eagle_lig_fikstur_cevabi(kapsam, simdi):
     baslik = f"🏆 {lig} — {bas:%d.%m.%Y} / {bit:%d.%m.%Y}"
     kaynak = "ESPN"
     try:
-        r = requests.get(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{kod}/scoreboard", params={"dates": f"{bas:%Y%m%d}-{bit:%Y%m%d}", "limit": 500}, timeout=5)
-        r.raise_for_status()
-        events = r.json()["events"]
+        url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{kod}/scoreboard"
+        params = {"dates": f"{bas:%Y%m%d}-{bit:%Y%m%d}"}
+        r = requests.get(url, params={**params, "limit": 500}, timeout=5)
+        if r.status_code in (400, 422):
+            print("ESPN parametre reddi:", r.status_code, url, flush=True)
+            # Some providers reject range syntax but accept individual dates.
+            from datetime import timedelta
+            from concurrent.futures import ThreadPoolExecutor
+            def espn_day(day):
+                response = requests.get(url, params={"dates": day.strftime("%Y%m%d")}, timeout=5)
+                response.raise_for_status()
+                rows = response.json()["events"]
+                if not isinstance(rows, list):
+                    raise ValueError("events")
+                return rows
+            days = [bas + timedelta(days=i-1) for i in range((bit-bas).days+2)]
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                events = [event for rows in pool.map(espn_day, days) for event in rows]
+        else:
+            r.raise_for_status()
+            events = r.json()["events"]
         if not isinstance(events, list):
             raise ValueError("events")
     except Exception as exc:
-        print("ESPN fikstür erişimi:", type(exc).__name__)
+        print("ESPN fikstür erişimi:", type(exc).__name__, str(exc))
         kaynak = "SofaScore"
         ids = {"uefa.champions": 7, "uefa.europa": 679, "uefa.europa.conf": 17015,
                "eng.1": 17, "esp.1": 8, "ger.1": 35, "ita.1": 23, "fra.1": 34}
@@ -5321,7 +5366,7 @@ def eagle_lig_fikstur_cevabi(kapsam, simdi):
             with ThreadPoolExecutor(max_workers=4) as pool:
                 events = [e for rows in pool.map(oku, days) for e in rows]
         except Exception as exc:
-            print("SofaScore fikstür erişimi:", type(exc).__name__)
+            print("SofaScore fikstür erişimi:", type(exc).__name__, str(exc))
             return False, baslik + "\nMaç kaynaklarına şu anda ulaşılamadı."
     satirlar = []
     for e in events:
@@ -6141,8 +6186,8 @@ def _eagle_cok_dilli_anlati_sorgulari(sorgu):
         "kacirildi": "was abducted", "öldürülme": "murder", "oldurulme": "murder",
         "tarih": "history", "tarihi": "historical", "gerçek": "true",
         "gercek": "true", "gerçekten": "actually", "gercekten": "actually",
-        "ve": "and", "ile": "and", "hakkında": "about", "hakkinda": "about",
-        "bilgi": "information", "ver": "", "verir": "", "misin": "",
+        "ilgili": "", "dosyası": "", "dosyasi": "", "ve": "and", "ile": "", "hakkında": "about", "hakkinda": "about",
+        "bilgi": "", "bilgiler": "", "ver": "", "verir": "", "misin": "",
         "mısın": "", "misiniz": "", "mısınız": "", "bana": "",
         "lütfen": "", "lutfen": "", "nedir": "", "ne": "", "kim": "",
         "hangi": "", "bir": "", "bu": "", "şu": "", "su": "",
@@ -6151,7 +6196,7 @@ def _eagle_cok_dilli_anlati_sorgulari(sorgu):
         "mi": "", "mı": "", "mu": "", "mü": "",
         "daki": "", "deki": "", "nin": "", "nın": "", "nun": "", "nün": "",
         "dan": "", "den": "", "in": "", "ın": "", "un": "", "ün": "",
-        "de": "", "da": "", "ile": "and", "yıl": "year", "yil": "year",
+        "de": "", "da": "", "ile": "", "yıl": "year", "yil": "year",
         "yılında": "in", "yilinda": "in", "yılı": "year", "yili": "year",
     }
 
@@ -6509,7 +6554,9 @@ def _eagle_tarihsel_konu(sorgu):
         return ""
     if re.search(r"\b(?:en son|bugün|güncel|son dakika)\b", str(sorgu).casefold()):
         return ""
-    return re.sub(r"\s+(?:başından sonuna|ayrıntılı|detaylı)?\s*anlat(?:ır mısın)?[?!.]*$", "", str(sorgu), flags=re.I).strip()
+    konu = re.sub(r"\s+(?:başından sonuna|ayrıntılı|detaylı)?\s*anlat(?:ır mısın)?(?:\s+bana)?[?!.]*$", "", str(sorgu), flags=re.I).strip()
+    konu = re.sub(r"\s+(?:nedir|ne oldu|(?:ile ilgili|hakkında) bilgi(?:ler)? ver(?:ir\s*misin)?)[?!.]*$", "", konu, flags=re.I).strip()
+    return re.sub(r"\s+dosyas[ıi]$", "", konu, flags=re.I) or konu
 
 
 def _eagle_yapilandirilmis_ulke(ulke):
@@ -6551,7 +6598,8 @@ def _eagle_yapilandirilmis_ulke(ulke):
     if not ids("P297") and not claims("P297"):
         return None
     capitals, languages, continents = ids("P36"), ids("P37"), ids("P30")
-    linked = list(dict.fromkeys(capitals + languages + continents))
+    extra = [("Para birimi", ids("P38")), ("Wikidata komşuluk kayıtları", ids("P47")), ("Yönetim biçimi", ids("P122"))]
+    linked = list(dict.fromkeys(capitals + languages + continents + [i for _, group in extra for i in group]))[:50]
     if not capitals or len(linked) > 50:
         return None
     labels = api(action="wbgetentities", ids="|".join(linked), props="labels|sitelinks", languages="tr|en", sitefilter="trwiki|enwiki").get("entities", {})
@@ -6568,6 +6616,9 @@ def _eagle_yapilandirilmis_ulke(ulke):
         parts.append("Kıta: " + names(continents) + ".")
     if names(languages):
         parts.append("Wikidata dil kayıtları: " + names(languages) + ".")
+    for field, group in extra:
+        if names(group):
+            parts.append(field + ": " + names(group) + ".")
     populations = []
     for c in claims("P1082"):
         v = value(c)
@@ -6692,10 +6743,18 @@ def _eagle_yayinci_haberleri(sorgu, limit=6):
                         continue
                     from html import unescape
                     description = unescape(re.sub(r"<[^>]*>", " ", unescape(item.findtext("description", ""))))
-                    description = " ".join(description.split())[:450]
+                    description = " ".join(description.split())
+                    description = re.split(r"(?i)\b(?:Get our breaking news email|Continue reading)\b", description, maxsplit=1)[0].strip()
+                    if len(description) > 450:
+                        ends = list(re.finditer(r"[.!?](?=\s|$)", description[:450]))
+                        description = description[:ends[-1].end()] if ends else ""
                     category = "/".join(item.findall("category")[i].text or "" for i in range(len(item.findall("category"))))
                     domestic_section = bool(re.search(r"/(?:turkiye|türkiye|gundem|gündem)/", u.path.casefold()))
                     domestic_title = bool(re.search(r"\b(?:türkiye|türk|ankara|istanbul|izmir|adana|tbmm)\b", title.casefold().replace("\u0307", "")))
+                    world = broad and bool(re.search(r"\bdünya", sorgu.casefold().replace("\u0307", "")))
+                    international_section = bool(re.search(r"/(?:dunya|dünya|world)/", u.path.casefold()))
+                    if world and not international_section:
+                        continue
                     if domestic and not (domestic_section or domestic_title):
                         continue
                     rows.append({"title": title, "url": url, "publisher": "https://"+host,
@@ -6713,16 +6772,26 @@ def _eagle_yayinci_haberleri(sorgu, limit=6):
         return ordered[:limit]
     from difflib import SequenceMatcher
     selected, deferred, counts = [], [], {}
+    topics = {}
     for row in ordered:
         title = row["title"].casefold()
         if any(SequenceMatcher(None, title, old["title"].casefold()).ratio() >= .80 for old in selected + deferred):
             continue
         host = (urlsplit(row["publisher"]).hostname or "").removeprefix("www.")
-        if counts.get(host, 0) >= 2:
+        text = title + " " + row.get("category", "").casefold()
+        topic = next((name for name, pattern in (
+            ("adli", r"soruşturma|tutukla|gözaltı|cinayet|iddianame"),
+            ("ekonomi", r"ekonomi|piyasa|enflasyon|borsa|faiz"),
+            ("hava", r"soğuk|yağış|fırtına|hava durumu"),
+            ("teknoloji", r"teknoloji|bilim|yapay zek|datacentre"),
+            ("diplomasi", r"anlaşma|diplomasi|bakan|parlamento"),
+        ) if re.search(pattern, text)), "diger")
+        if counts.get(host, 0) >= 2 or (topic != "diger" and topics.get(topic, 0) >= 2):
             deferred.append(row)
             continue
         selected.append(row)
         counts[host] = counts.get(host, 0) + 1
+        topics[topic] = topics.get(topic, 0) + 1
     return (selected + deferred)[:limit]
 
 
@@ -7205,9 +7274,43 @@ def _eagle_bagimsiz_olay_arastirma(sorgu, okuyucu):
     broad = globals().get("_eagle_gundem_sorgusu", lambda q: False)(sorgu)
     if broad:
         rows = _eagle_yayinci_haberleri(sorgu)
-        sources = [{"id": i, "title": h["title"], "url": h["url"], "published": h["published"],
-                    "source_type": "publisher_feed", "independently_verified": False, "description": h.get("description", "")} for i, h in enumerate(rows, 1)]
-        answer = "Bugün yayıncıların yayımladığı haberler ve varsa RSS özetleri (olay tarihleri ve tam metinler doğrulanmadı):\n" + "\n".join(f"[{k['id']}] {k['title']}" + (" — Yayıncı özeti: " + k["description"] if k["description"] and k["description"].casefold() != k["title"].casefold() else "") for k in sources) if sources else "Bugünün yayıncı haberlerine erişemedim."
+        world_scope = bool(re.search(r"\bdünya", str(sorgu).casefold().replace("\u0307", "")))
+        if world_scope:
+            rows = [h for h in rows if re.search(r"/(?:dunya|dünya|world)/", urlparse(h["url"]).path.casefold())]
+        # Foreign feeds are known English-language public excerpts. Never display
+        # untranslated fragments as Turkish news. Share the existing translation quota.
+        import time
+        from concurrent.futures import ThreadPoolExecutor, wait
+        from eagle_anlati_sentez import translate_online
+        deadline = time.monotonic() + 6
+        foreign = [i for i, h in enumerate(rows) if (urlparse(h["url"]).hostname or "").removeprefix("www.") in {"bbc.co.uk", "bbc.com", "theguardian.com"}]
+        translations = {}
+        if foreign and os.getenv("EAGLE_ONLINE_TRANSLATION", "1") == "1":
+            pool = ThreadPoolExecutor(max_workers=4)
+            jobs = {pool.submit(translate_online, rows[i][field], deadline, "en"): (i, field)
+                    for i in foreign for field in ("title", "description") if rows[i].get(field) and len(rows[i][field].encode("utf-8")) <= 500}
+            try:
+                done, _ = wait(jobs, timeout=max(0, deadline-time.monotonic()))
+                for job in done:
+                    try:
+                        text, ok = job.result()
+                        if ok: translations[jobs[job]] = text
+                    except Exception:
+                        pass
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
+        sources = []
+        omitted = 0
+        for i, h in enumerate(rows):
+            if i in foreign and (i, "title") not in translations:
+                omitted += 1
+                continue
+            sources.append({"id": len(sources)+1, "title": translations.get((i,"title"), h["title"]), "url": h["url"], "published": h["published"],
+                    "source_type": "publisher_feed", "independently_verified": False, "description": translations.get((i,"description"), "" if i in foreign else h.get("description", "")),
+                    **({"original_title": h["title"], "machine_translated": True} if i in foreign else {})})
+        answer = ("Dünya gündemi — " if world_scope else "") + "Bugün yayıncıların yayımladığı haberler ve varsa RSS özetleri (olay tarihleri ve tam metinler doğrulanmadı; yabancı haberler otomatik çevrilmiş olabilir):\n" + "\n".join(f"[{k['id']}] {k['title']}" + (" — Yayıncı özeti: " + k["description"] if k["description"] and k["description"].casefold() != k["title"].casefold() else "") for k in sources) if sources else "Bugünün Türkçe sunulabilecek yayıncı haberlerine erişemedim."
+        if omitted:
+            answer += f"\n\n{omitted} yabancı haber, Türkçe çeviri alınamadığı için gösterilmedi."
         return {"ok": bool(sources), "answer": answer, "research_sources": sources, "research_status": "headlines" if sources else "unverified", "event_verified": False, "verification_status": "unverified_claim", "web_search": True, "eagle_direct": True}
     result = _eagle_olay_haber_ozeti(sorgu, _eagle_haber_kaynaklari(sorgu), okuyucu)
     if not result.get("research_sources"):
@@ -7298,7 +7401,7 @@ def _eagle_ulke_bilgi_hafizasi(ulke, kayit=None):
                     if old and 0 <= now-old[0] <= 30*86400:
                         previous = json.loads(old[1])
                         if valid(previous) and previous["url"] == kayit["url"]:
-                            fields = ("Kıta:", "Wikidata dil kayıtları:", "Nüfus:", "Yüzölçümü:", "Dünya Mirası kayıtlarından örnekler:")
+                            fields = ("Kıta:", "Wikidata dil kayıtları:", "Nüfus:", "Yüzölçümü:", "Dünya Mirası kayıtlarından örnekler:", "Para birimi:", "Komşu ülkeler:", "Wikidata komşuluk kayıtları:", "Yönetim biçimi:")
                             if any(f in previous["text"] and f not in kayit["text"] for f in fields):
                                 return kayit
                     db.execute("INSERT OR REPLACE INTO country_knowledge VALUES (?,?,?)", (key,now,json.dumps(kayit,ensure_ascii=False)))
@@ -7390,7 +7493,7 @@ def _eagle_anlati_video_mu(url):
     except ValueError:
         return True
     return any(host == d or host.endswith("." + d) for d in
-               ("youtube.com", "youtu.be", "tiktok.com", "vimeo.com", "dailymotion.com"))
+               ("youtube.com", "youtu.be", "tiktok.com", "vimeo.com", "dailymotion.com", "dmax.com.tr", "tlctv.com.tr"))
 
 
 def _eagle_tarihsel_web_kanit(konu, adaylar, okuyucu):
@@ -7403,18 +7506,25 @@ def _eagle_tarihsel_web_kanit(konu, adaylar, okuyucu):
     # Generic event words are not required in the original language.
     sade = [re.sub(r"\b(?:olay\w*|incident|incidente|vorfall|anlat)\b", " ", q, flags=re.I).strip() for q in varyantlar]
     varyantlar = list(dict.fromkeys(varyantlar + [q for q in sade if len(q.split()) >= 2]))
+    from eagle_derin_arastirma import _terms
+    event_request = bool(_terms(konu) & {"olay", "olayi", "olayini", "vaka", "vakasi", "facia", "faciasi"})
+    event_terms = {"olay", "olayi", "olayinda", "vaka", "vakasi", "incident", "event", "pass", "gecidi", "patlama", "explosion", "disaster", "facia", "kazasi", "accident", "tragedy", "vorfall", "incidente"}
     yillar = set(re.findall(r"\b(?:1[0-9]{3}|20[0-9]{2})\b", konu))
     def konu_uyumu(blok, makale=""):
         from eagle_derin_arastirma import _terms
         words = _terms(blok)
         all_words = _terms(makale or blok)
-        stop = {'olay','olayi','olayini','incident','incidente','vorfall','anlat','faciasi','disaster'}
+        stop = {'olay','olayi','olayini','incident','incidente','vorfall','anlat','faciasi','disaster','dosyasi','dosya','nedir'}
         ufo = {'ufo', 'ufos', 'ovni', 'ovnis', 'uap'}
         def matches(w, tokens):
             return w in tokens or any(w + suffix in tokens for suffix in ('n', 'na', 'no', 'ns', 'nas', 'nos', 'an', 'ans'))
         for q in varyantlar:
             core = {w for w in _terms(q)-stop if not w.isdigit()}
             if core and core <= words:
+                if len(core) == 1 and event_request:
+                    event_terms = {'olay', 'olayi', 'olayinda', 'vaka', 'vakasi', 'incident', 'event', 'pass', 'gecidi', 'patlama', 'explosion', 'disaster', 'facia', 'kazasi', 'accident', 'tragedy', 'trajedi'}
+                    if not words & event_terms:
+                        continue
                 return True
             # A dated observation may use a descriptive phrase instead of an acronym.
             # Require explicit topic and all other anchors in the actual article,
@@ -7427,7 +7537,16 @@ def _eagle_tarihsel_web_kanit(konu, adaylar, okuyucu):
                         return True
         return False
     secilen, adresler, alanlar = [], set(), {}
-    for a in adaylar or []:
+    # Prefer Turkish discovery candidates, without treating language as proof.
+    def turkce_aday(a):
+        if not isinstance(a, dict):
+            return False
+        try:
+            host = urlsplit(str(a.get("url") or "")).hostname or ""
+        except ValueError:
+            return False
+        return host.endswith(".tr") or host == "tr.wikipedia.org" or bool(_terms(a.get("title", "")) & {"olayi", "vakasi", "gecidi", "faciasi", "arastirmasi"})
+    for a in sorted(adaylar or [], key=lambda a: not turkce_aday(a)):
         if not isinstance(a, dict) or a.get("_eagle_encyclopedia_extract"):
             continue
         url = str(a.get("url") or "")
@@ -7438,7 +7557,7 @@ def _eagle_tarihsel_web_kanit(konu, adaylar, okuyucu):
             host = (u.hostname or "").removeprefix("www.")
             if host in {"eksisozluk.com", "reddit.com", "old.reddit.com", "quora.com"}:
                 continue
-            if u.scheme != "https" or u.username or u.password or u.port not in (None, 443) or not host or url in adresler or alanlar.get(host, 0) >= 2:
+            if u.scheme != "https" or u.username or u.password or u.port not in (None, 443) or not host or url in adresler or alanlar.get(host, 0) >= 2 or re.search(r"/(?:haberleri|etiket|tag|tags|category|kategori|arama|search)(?:/|$)", u.path, re.I):
                 continue
         except ValueError:
             continue
@@ -7496,6 +7615,13 @@ def _eagle_tarihsel_web_kanit(konu, adaylar, okuyucu):
             print(f"ANLATI RED: {a['url']} — yakın metinde konu/yıl uyumu yok ({len(metin)} karakter)", flush=True)
             return None
         title = str(a.get("title") or a["url"])
+        from eagle_derin_arastirma import _terms
+        if event_request:
+            anchors = _terms(konu) - {'olay', 'olayi', 'olayini', 'vaka', 'vakasi', 'facia', 'faciasi'}
+            if len(anchors) == 1 and (urlsplit(a["url"]).hostname or "").endswith(".wikipedia.org"):
+                event_title = {'olay', 'olayi', 'vaka', 'vakasi', 'incident', 'event', 'pass', 'gecidi', 'patlama', 'explosion', 'disaster', 'facia', 'kazasi', 'accident', 'tragedy'}
+                if not _terms(title) & event_title:
+                    return None
         if " › " in title:
             title = title.rsplit(" › ", 1)[-1]
             title = re.sub(r"^\S+\s+", "", title)
@@ -7525,11 +7651,13 @@ def _eagle_tarihsel_web_kanit(konu, adaylar, okuyucu):
     from eagle_anlati_sentez import translate_sources, format_narrative
     translated = translate_sources(temiz)
     durum = ("partial_machine_translation_unverified" if any(a != b for rows in translated for a, b in rows) else "original_or_unavailable")
-    return {"ok": True, "eagle_direct": True, "web_search": True,
-            "research_status": "unverified_source_extract", "event_verified": False,
+    answer = format_narrative(temiz, translated)
+    usable = bool(re.search(r"(?m)^(?:Olayın başlangıcı ve gözlemler|Araştırma çalışmaları|Bulgular ve sonuçlar|Diğer aktarımlar):$", answer))
+    return {"ok": usable, "eagle_direct": True, "web_search": True,
+            "research_status": "unverified_source_extract" if usable else "unverified", "event_verified": False,
             "translation_status": durum,
             "translation_originals": [{"id": i, "text": " ".join(a for a, b in rows)} for i, rows in enumerate(translated, 1) if rows],
-            "answer": format_narrative(temiz, translated),
+            "answer": answer if usable else "Türkçe olarak sunulabilecek yeterli kaynak metni alınamadı. Kaynak bağlantıları aşağıdadır.",
             "research_sources": [{"id": i, "title": k["title"], "url": k["url"], "independently_verified": False} for i, k in enumerate(temiz, 1)]}
 
 
@@ -7543,7 +7671,7 @@ def _eagle_tarihsel_wiki(konu):
         r.raise_for_status()
         return r.json().get("query", {}).get("pages", {})
     # Olay türü eklerini arama teriminden ayır, fakat doğrulamada özgün konuyu koru.
-    short = re.sub(r"\s+(?:facia|felaket|kaza|olay|vaka|trajedi)\w*$", "", konu, flags=re.I).strip()
+    short = re.sub(r"\s+(?:facia|felaket|kaza|olay|vaka|trajedi|dosya)\w*$", "", konu, flags=re.I).strip()
     years = re.findall(r"\b(?:18|19|20)\d{2}\b", konu)
     seen = set()
     for query in dict.fromkeys([konu, short]):
@@ -7577,6 +7705,26 @@ def _eagle_tarihsel_wiki(konu):
     return None
 
 
+def _eagle_ulke_ansiklopedi(ulke):
+    try:
+        r = requests.get("https://tr.wikipedia.org/w/api.php", params={
+            "action": "query", "titles": ulke, "redirects": 1,
+            "prop": "extracts|pageprops", "exintro": 1, "explaintext": 1,
+            "format": "json"}, headers={"User-Agent": "EagleAI/1.0 (country research)"}, timeout=10)
+        r.raise_for_status()
+        for page in r.json().get("query", {}).get("pages", {}).values():
+            title = page.get("title", "")
+            text = str(page.get("extract", "")).strip()
+            if (merkez_motor.genel_web_ulke_token_eslesiyor(ulke, title)
+                    and "disambiguation" not in page.get("pageprops", {}) and len(text) >= 180):
+                return {"title": title, "text": text[:4500], "snippet": text[:4500],
+                         "url": "https://tr.wikipedia.org/wiki/" + quote(title.replace(" ", "_")),
+                         "_eagle_country_extract": True}
+    except Exception as hata:
+        print(f"Ülke maddesi alınamadı: {hata}", flush=True)
+    return None
+
+
 def web_arastir(sorgu, limit=6):
     """Güncel web araması: DuckDuckGo -> Google -> Bing."""
 
@@ -7598,28 +7746,18 @@ def web_arastir(sorgu, limit=6):
                 if kayit:
                     break
             if kayit:
-                return [_eagle_ulke_bilgi_hafizasi(ulke, _eagle_ulke_miras(kayit))]
+                kayit = _eagle_ulke_bilgi_hafizasi(ulke, _eagle_ulke_miras(kayit))
+                intro = _eagle_ulke_ansiklopedi(ulke)
+                return [kayit, intro] if intro else [kayit]
             cached = _eagle_ulke_bilgi_hafizasi(ulke)
             if cached:
-                return [cached]
+                intro = _eagle_ulke_ansiklopedi(ulke)
+                return [cached, intro] if intro else [cached]
         except Exception as hata:
             print(f"Yapılandırılmış ülke verisi alınamadı: {hata}", flush=True)
-        try:
-            r = requests.get("https://tr.wikipedia.org/w/api.php", params={
-                "action": "query", "titles": ulke, "redirects": 1,
-                "prop": "extracts|pageprops", "exintro": 1, "explaintext": 1,
-                "format": "json"}, headers={"User-Agent": "EagleAI/1.0 (country research)"}, timeout=10)
-            r.raise_for_status()
-            for page in r.json().get("query", {}).get("pages", {}).values():
-                title = page.get("title", "")
-                text = str(page.get("extract", "")).strip()
-                if (merkez_motor.genel_web_ulke_token_eslesiyor(ulke, title)
-                        and "disambiguation" not in page.get("pageprops", {}) and len(text) >= 180):
-                    return [{"title": title, "text": text[:4500], "snippet": text[:4500],
-                             "url": "https://tr.wikipedia.org/wiki/" + quote(title.replace(" ", "_")),
-                             "_eagle_country_extract": True}]
-        except Exception as hata:
-            print(f"Ülke maddesi alınamadı: {hata}", flush=True)
+        intro = _eagle_ulke_ansiklopedi(ulke)
+        if intro:
+            return [intro]
 
     tarihsel = _eagle_tarihsel_konu(sorgu)
     if tarihsel:
@@ -12180,10 +12318,12 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     norm = ham.casefold().replace("ı", "i")
     tanitim = re.search(r"\b(hakkinda|hakkında|bilgi ver|tanit|tanıt|anlat|goster|göster|gezilecek|turistik|nereleri|yerleri)\b", norm)
     yalın_ulke = merkez_motor.genel_web_ulke_token_eslesiyor(ham, ham)
-    if not ham or not (tanitim or yalın_ulke):
+    tarihsel = _eagle_tarihsel_konu(ham)
+    if not ham or not (tanitim or yalın_ulke or tarihsel):
         return None
 
     konu = re.sub(r"(?i)\b(hakkında|hakkinda|bilgi|verir|ver|misin|misiniz|tanıtır|tanitir|tanıt|tanit|anlatır|anlatir|anlat|gösterir|gosterir|göster|goster|bana|lütfen|lutfen|gezilecek|turistik|yerleri|nereleri|nedir|ne|kimdir)\b", " ", ham)
+    konu = merkez_motor.ulke_tanitim_konusu(ham) or tarihsel or konu
     konu = re.sub(r"[^\w\s'-]", " ", konu, flags=re.UNICODE)
     konu = re.sub(r"\s+", " ", konu).strip(" -'")
     konu = re.sub(r"\s+(?:yi|yı|yu|yü|nin|nın|nun|nün|den|dan|de|da|ye|ya|i|ı|u|ü|e|a)$", "", konu, flags=re.IGNORECASE).strip()
@@ -12263,7 +12403,9 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     # Önce kullanıcının sorduğu ifadenin türünü belirle. Wikidata'nın
     # yanlış/üst düzey eşleşmesi (ör. "Mısır" ülkesi) konu türünü ezmemeli.
     konu_sozcukleri = set(konu_norm.split())
-    if any(x in konu_sozcukleri for x in ("okyanus", "okyanusu", "deniz", "denizi", "ocean", "sea")):
+    if tarihsel:
+        tur = "event"
+    elif any(x in konu_sozcukleri for x in ("okyanus", "okyanusu", "deniz", "denizi", "ocean", "sea")):
         tur = "water"
     elif any(x in konu_sozcukleri for x in ("piramit", "piramitleri", "pyramids", "pyramid", "tapinak", "temple", "castle", "kale", "monument", "anit", "heykel")):
         tur = "landmark"
@@ -12334,6 +12476,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         "sehir": {"city"}, "kent": {"city"}, "baskent": {"capital"},
         # Yaygın Türkçe ülke adları ve uluslararası yazımları.
         "kanada": {"canada"}, "avusturya": {"austria"},
+        "danimarka": {"denmark", "danish"},
         "norvec": {"norway"}, "isvec": {"sweden"},
         "finlandiya": {"finland"}, "almanya": {"germany"},
         "fransa": {"france"}, "italya": {"italy"},
@@ -12357,6 +12500,9 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     # "Atlas Okyanusu"nun İngilizce karşılığı özel ad olarak da eşleştirilir.
     if {"atlas", "okyanusu"} <= konu_sozcukleri:
         konu_ankorlari.update({"atlantic", "ocean"})
+    if tur == "event":
+        konu_ankorlari -= {"olay", "olayi", "olayini", "vaka", "vakasi", "ailesi", "dosyasi", "seytan", "ucgeni"}
+        sahne.update({"archive", "historical", "photograph", "photo", "arşiv", "fotograf", "expedition", "memorial"})
     olumlu = tokens(" ".join(sahne))
     # Çok sözcüklü yasak ifadeleri tek tek kelimelere bölme:
     # aksi halde "coat of arms" içindeki "of", her İngilizce başlığı eler.
@@ -12455,6 +12601,8 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         if baslik_tokens & tokens(" ".join(uyumsuz.get(tur, set()))):
             return -100
 
+        if tur == "event" and not (baslik_tokens & tokens("archive historical photograph photo arsiv fotograf expedition memorial")):
+            return -100
         if tur == "water":
             # Atlas Okyanusu için yalnızca okyanus/Atlantik veya deniz
             # yüzeyini açıkça belirten başlıkları kabul et; uzak kıyı
@@ -12496,6 +12644,12 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         # galerisinde gösterilmemeli.
         url_path = urlparse(url).path.casefold()
         title_path = title.casefold()
+        if re.search(r"\b(?:premium photo|stock photo|watermark|logo|screenshot|ai generated)\b", normla(title)):
+            return
+        stock_domains = {"alamy.com", "shutterstock.com", "gettyimages.com", "istockphoto.com", "freepik.com", "dreamstime.com", "depositphotos.com", "adobestock.com", "stock.adobe.com", "123rf.com", "fineartamerica.com", "pixels.com"}
+        host = (urlparse(str(source or "")).hostname or "").casefold()
+        if any(host == d or host.endswith("." + d) for d in stock_domains):
+            return
         if url_path.endswith((".svg", ".pdf", ".gif")) or title_path.endswith((".svg", ".pdf", ".gif")):
             return
 
@@ -12528,14 +12682,14 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                 "wallpaperfusion.com",
                 "wallpaperup.com",
                 "wallpapers.com",
-                "wallpaperhub.com"
+                "wallpaperhub.com", "1zoom.me", "uidownload.com"
             }
 
             galeri_disi_kaynaklar = sosyal_aglar | duvar_kagidi_kaynaklari
             if (
                 any(source_host == domain or source_host.endswith("." + domain)
                     for domain in galeri_disi_kaynaklar)
-                or source_host.split(".", 1)[0] in {"news", "blog", "blogs", "press", "magazine"}
+                or source_host.split(".", 1)[0] in {"news", "blog", "blogs", "press", "magazine", "ahtest", "staging", "dev"}
             ):
                 return
 
@@ -12692,15 +12846,17 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     # Wikimedia yeterli (>=3) sonuç verdiyse alakasız olma riski taşıyan
     # arama motoru görsellerine hiç başvurulmaz.
     if len(bulunan) < min(limit, 3) or (tur == "country" and len(_eagle_ulke_gorsel_cesitlendir(bulunan, normla)) < limit):
-        sorgu_adi = ingilizce_ad or konu
-        if tur == "water":
+        sorgu_adi = ingilizce_ad or ({"danimarka": "Denmark", "kanada": "Canada", "japonya": "Japan"}.get(konu_norm, konu))
+        if tur == "event":
+            sorgular = [f"{sorgu_adi} historical archive photograph", f"{sorgu_adi} fotoğraf arşiv"]
+        elif tur == "water":
             sorgular = [f"{sorgu_adi} ocean sea waves coast photography",
                         f"{sorgu_adi} aerial ocean water seascape photo",
                         f"{sorgu_adi} marine landscape shoreline"]
         elif tur == "country":
             sorgular = [f"{sorgu_adi} famous landmarks capital city photography",
                         f"{sorgu_adi} historic architecture tourist attractions photo",
-                        f"{sorgu_adi} mountains lakes national parks landscape photography"]
+                        f"{sorgu_adi} natural scenery national parks landscape photography"]
         elif tur == "landmark":
             sorgular = [f"{sorgu_adi} pyramids monument historic site photography",
                         f"{sorgu_adi} landmark architecture exterior photo",
@@ -12733,7 +12889,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                     thumb = str(meta.get("turl", "")).strip()
                     source = str(meta.get("purl", "")).strip()
                     # Android yalnızca Bing'in güvenilir küçük resim alan adını kabul eder.
-                    if thumb.startswith("https://") and ".mm.bing.net" in thumb.split("/", 3)[2]:
+                    if thumb.startswith("https://") and (urlparse(thumb).hostname or "").endswith(".mm.bing.net"):
                         ekle(thumb, title, source, "Bing Görseller", desc, guvenilir_sorgu=True)
                     if tur != "country" and len(bulunan) >= limit * 2:
                         break
@@ -12751,9 +12907,8 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     for item in bulunan:
         item.pop("_score", None)
         baslik_key = normla(item.get("name", ""))
-        if tur == "country":
-            baslik_key = re.sub(r"\b\d+\b|\b(?:jpg|jpeg|png|tiff?|webp)\b", "", baslik_key)
-            baslik_key = re.sub(r"\s+", " ", baslik_key).strip()
+        baslik_key = re.sub(r"\b\d+\b|\b(?:jpg|jpeg|png|tiff?|webp)\b", "", baslik_key)
+        baslik_key = re.sub(r"\s+", " ", baslik_key).strip()
         # Aynı dosya farklı URL ile, aynı başlık ise farklı sağlayıcıdan
         # gelmiş olsa da ikinci kez gösterilmesin.
         if item["url"] in {x["url"] for x in sonuc} or baslik_key in gorulen_basliklar:
@@ -15705,22 +15860,35 @@ def sohbet():
                     continue
                 parcalar = _eagle_tarihsel_paragraflar(kaynak.get("text"))
                 sources = kanit.get("research_sources", [])
-                if parcalar and not any(k.get("url") == kaynak.get("url") for k in sources):
-                    sid = max((k["id"] for k in sources), default=0) + 1
-                    sources.append({"id": sid, "title": kaynak["title"], "url": kaynak["url"], "independently_verified": False})
-                    kanit["answer"] = f"Ansiklopedi özeti [{sid}] (bağımsız doğrulanmadı):\n\n" + "\n\n".join(parcalar) + "\n\n" + kanit["answer"]
+                if parcalar:
+                    existing = next((k for k in sources if k.get("url") == kaynak.get("url")), None)
+                    sid = existing["id"] if existing else max((k["id"] for k in sources), default=0) + 1
+                    if not existing:
+                        sources.append({"id": sid, "title": kaynak["title"], "url": kaynak["url"], "independently_verified": False})
+                    kanit["ok"] = True
+                    kanit["research_status"] = "unverified_source_extract"
+                    from eagle_anlati_sentez import narrative_key
+                    parcalar = parcalar[:2]
+                    keys = narrative_key(" ".join(parcalar))
+                    lines = kanit["answer"].splitlines()
+                    lines = [line for line in lines if not (re.match(r"^\[\d+\]", line) and (key := narrative_key(re.sub(r"^(?:\[\d+\]\s*)+", "", line))) and key in keys)]
+                    kanit["answer"] = f"Ansiklopedi özeti [{sid}] (bağımsız doğrulanmadı):\n\n" + "\n\n".join(parcalar) + "\n\n" + re.sub(r"\n{3,}", "\n\n", "\n".join(lines))
                 break
             from eagle_derin_arastirma import remember_sources
-            remember_sources(_eagle_tarihsel_konu(mesaj), kanit.get("research_sources", []))
-            return jsonify(kanit)
+            if kanit.get("ok"):
+                remember_sources(_eagle_tarihsel_konu(mesaj), kanit.get("research_sources", []))
+                return jsonify(kanit)
+        eksik_kanit = kanit
 
         try:
             from eagle_derin_arastirma import research
             konu = _eagle_tarihsel_konu(mesaj)
             kanit = research(konu, _eagle_cok_dilli_anlati_sorgulari(konu + " anlat"),
                              _eagle_tarihsel_web_kanit, web_sayfa_oku)
-            if kanit:
+            if kanit and kanit.get("ok"):
                 return jsonify(kanit)
+            if kanit and not eksik_kanit:
+                eksik_kanit = kanit
         except Exception as exc:
             print(f"DERIN ARASTIRMA HATA: {type(exc).__name__}", flush=True)
 
@@ -15732,6 +15900,8 @@ def sohbet():
             if sum(map(len, parcalar)) >= 300:
                 return jsonify({"ok": True, "answer": "Ansiklopedi kaynağından (bağımsız doğrulama yapılmadı):\n\n" + "\n\n".join(parcalar), "eagle_direct": True, "web_search": not kaynak.get("_eagle_cached_source", False), "research_status": "single_source_extract", "research_sources": [{"id": 1, "title": kaynak["title"], "url": kaynak["url"], "independently_verified": False}]})
 
+        if eksik_kanit:
+            return jsonify(eksik_kanit)
         # Unvalidated discovery rows must never enter the generic answer path.
         web_verisi = []
         if not os.getenv("GEMINI_API_KEY"):

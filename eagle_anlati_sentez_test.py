@@ -190,3 +190,27 @@ class NarrativeRegressionTests(__import__('unittest').TestCase):
         out = format_narrative([{'text':'a'},{'text':'original '*500}], [[('a','Ormanın 1938 yılında çekilmiş fotoğraf.')],[]])
         self.assertNotIn('1938',out)
         self.assertLess(len(out),700)
+
+
+class V4NarrativeTests(unittest.TestCase):
+    def test_punctuation_variants_preserve_sources(self):
+        from eagle_anlati_sentez import format_narrative
+        out = format_narrative([{}, {}], [[('a', 'Araştırma 1978 yılında sona erdi.')], [('b', 'Araştırma, 1978 yılında sona erdi.')]])
+        self.assertIn('[1] [2] Araştırma 1978 yılında sona erdi.', out)
+    def test_different_years_and_negation_not_merged(self):
+        from eagle_anlati_sentez import format_narrative
+        out = format_narrative([{}, {}], [[('a', 'Araştırmacılar 1978 yılında kalıntı buldu.')], [('b', 'Araştırmacılar 1979 yılında kalıntı bulamadı.')]])
+        self.assertIn('1978 yılında kalıntı buldu', out)
+        self.assertIn('1979 yılında kalıntı bulamadı', out)
+
+class ProviderIsolationTests(unittest.TestCase):
+    def test_one_translation_exception_preserves_other_sentences(self):
+        from eagle_anlati_sentez import translate_sources
+        from types import SimpleNamespace
+        text = 'The first witness described an unusual object. The investigators searched the surrounding region. The final report did not establish its origin.'
+        def translate(t, deadline, lang):
+            if t.startswith('The investigators'):
+                raise TimeoutError('provider')
+            return 'Araştırma hakkında bir açıklama yapıldı.', True
+        with patch.dict('os.environ', {'EAGLE_ONLINE_TRANSLATION':'1'}), patch('eagle_anlati_sentez._detect_languages', return_value=[SimpleNamespace(lang='en',prob=.99)]), patch('eagle_anlati_sentez.translate_online', side_effect=translate):
+            self.assertEqual(len(translate_sources([{'text':text}])[0]), 2)

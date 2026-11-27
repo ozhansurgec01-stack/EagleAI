@@ -1292,8 +1292,12 @@ public class MainActivity extends Activity {
                 hataCevap.answer = cevapJson.optString("answer");
                 return hataCevap;
             }
-            hataCevap.answer = "API hatası: " +
-                    cevapJson.optString("error", "Bilinmeyen hata.");
+            String hataMetni = cevapJson.optString("error", "").trim();
+            if (hataMetni.isEmpty() || "null".equals(hataMetni)) {
+                hataMetni = cevapJson.optString("answer", "").trim();
+            }
+            hataCevap.answer = hataMetni.isEmpty() || "null".equals(hataMetni)
+                    ? "API geçerli bir cevap döndürmedi." : hataMetni;
             return hataCevap;
 
         } catch (Exception e) {

@@ -3,3 +3,4 @@ requests
 beautifulsoup4
 gunicorn
 sympy
+langdetect==1.0.9
