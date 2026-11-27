@@ -5559,6 +5559,27 @@ class EagleMerkezMotoru:
                 neden="Finansal analiz modülü yerel analiz üretti."
             )
 
+        # Genel tanıtım için konu odaklı, sınırlı ikinci araştırma.
+        tanitim_konu = re.sub(
+            r"\s+(?:hakk[ıi]nda|ile ilgili)\s+bilgi(?:\s+ver(?:ir)?(?:\s*m[ıi]s[ıi]n(?:[ıi]z)?)?)?\s*[?.!]*$",
+            "", str(mesaj).strip(), flags=re.I,
+        ).strip()
+        def tanitim_ek_arama():
+            if not web_arayici or not tanitim_konu or tanitim_konu == str(mesaj).strip():
+                return []
+            if self.finans_fiyat_sorgusu_mu(mesaj):
+                return []
+            try:
+                return self.temizle_web_verisi(web_arayici(tanitim_konu, limit=6))
+            except Exception:
+                return []
+
+        ek_arama_yapildi = False
+        if not veriler:
+            ek_arama_yapildi = True
+            veriler = tanitim_ek_arama()
+            kaynak_ozet = self.kaynak_ozeti(veriler)
+
         # Finans sorguları kendi ek web aramalarını yapabilmelidir.
         # Diğer sorgularda mevcut boş veri davranışını koru.
         if not veriler and not self.finans_fiyat_sorgusu_mu(mesaj):
@@ -5752,6 +5773,17 @@ class EagleMerkezMotoru:
             sayfa_okuyucu=sayfa_okuyucu,
             genel_sayfa_okuyucu=genel_sayfa_okuyucu
         )
+
+        if (not genel_cevap or genel_guven < 0.75) and not ek_arama_yapildi:
+            ek_veriler = tanitim_ek_arama()
+            if ek_veriler:
+                mevcut_urller = {v.get("url") for v in veriler if v.get("url")}
+                veriler = veriler + [v for v in ek_veriler if not v.get("url") or v.get("url") not in mevcut_urller]
+                kaynak_ozet = self.kaynak_ozeti(veriler)
+                genel_cevap, genel_guven = self.genel_web_cevabi(
+                    mesaj, veriler, sayfa_okuyucu=sayfa_okuyucu,
+                    genel_sayfa_okuyucu=genel_sayfa_okuyucu,
+                )
 
         if genel_cevap and genel_guven >= 0.75:
             return EagleMerkezSonuc(
