@@ -2337,6 +2337,9 @@ class EagleMerkezMotoru:
         if not mesaj:
             return "", 0.0
 
+        mesaj = re.sub(r"(?i)\bverir(?=m[ıi]s[ıi]n(?:[ıi]z)?\b)", "verir ", mesaj)
+        mesaj = re.sub(r"(?i)\bile\s+ilgili\s+bilgi\b", "hakkında bilgi", mesaj)
+
         # EAGLEAI_BILIMSEL_MODEL_KATMANI_V1
         bilimsel_cevap = cls.bilimsel_model_cevabi(mesaj)
         if bilimsel_cevap:
