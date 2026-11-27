@@ -3023,7 +3023,11 @@ class EagleMerkezMotoru:
 
                 # Birkaç rastgele cümle yerine, yeterli içerik yoksa
                 # mevcut ana analiz zincirine devam et.
-                if len(secilen) >= 2 and len(cevap) >= 100:
+                if (len(secilen) >= 2 and len(cevap) >= 100) or (
+                    len(secilen) == 1 and len(cevap) >= 40
+                    and any(cls.normalize(b).strip() == konu_norm for _, b, _ in kaynaklar_hizli)
+                    and aday_cumleler[0][0] >= 120
+                ):
                     secilen_puanlar = [puan for puan, _ in aday_cumleler[:len(secilen)]]
                     ortalama_puan = sum(secilen_puanlar) / len(secilen_puanlar) if secilen_puanlar else 0
                     konu_kalitesi = min(1.0, ortalama_puan / 140.0)
