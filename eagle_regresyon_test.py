@@ -3234,6 +3234,22 @@ test("Gerçek Flask afet API uçtan uca", api_gercek_afet_uçtan_uça_test)
 test("Afet koordinasyon modülü", afet_koordinasyon_regresyon_test)
 test("Afet koordinasyon merkez motoru entegrasyonu", afet_merkez_motoru_cagri_test)
 
+def genel_arastirma_yazim_varyantlari_test():
+    from eagle_merkez_motoru import EagleMerkezMotoru
+    for soru, konu, metin in [
+        ("Venüs hakkında bilgi verirmisin", "Venüs", "Venüs, Güneş Sistemi'nin ikinci gezegenidir. Yoğun atmosferi büyük ölçüde karbondioksitten oluşur."),
+        ("Plüton ile ilgili bilgi verirmisin", "Plüton", "Plüton, Kuiper Kuşağı'nda bulunan bir cüce gezegendir. Plüton'un yüzeyinde donmuş azot bulunur."),
+    ]:
+        cevap, guven = EagleMerkezMotoru.genel_web_cevabi(soru, [
+            {"title": konu, "url": "https://example.org/konu", "snippet": metin},
+            {"title": konu, "url": "https://example.org/eksik", "snippet": "sebeple " + konu + " ile ilgili birçok detay bilinmiyordu."},
+        ])
+        assert cevap and guven >= 0.75, (soru, cevap, guven)
+        assert konu.casefold() in cevap.casefold(), cevap
+        assert not cevap.casefold().startswith("sebeple"), cevap
+
+test("Genel araştırma yazım varyantları ve kopuk cümle", genel_arastirma_yazim_varyantlari_test)
+
 print()
 print("===== SONUÇ =====")
 print(f"TOPLAM: {BASARILI + HATALI}")
