@@ -3025,6 +3025,7 @@ class EagleMerkezMotoru:
                 # mevcut ana analiz zincirine devam et.
                 if (len(secilen) >= 2 and len(cevap) >= 100) or (
                     len(secilen) == 1 and len(cevap) >= 40
+                    and not cls.genel_web_ulke_token_eslesiyor(konu_norm, konu_norm)
                     and any(cls.normalize(b).strip() == konu_norm for _, b, _ in kaynaklar_hizli)
                     and aday_cumleler[0][0] >= 120
                 ):
