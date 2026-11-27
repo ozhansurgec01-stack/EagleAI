@@ -2536,6 +2536,9 @@ class EagleMerkezMotoru:
             print("⚠️ Yapılandırılmış web bilgisi çıkarılamadı:", e, flush=True)
 
         soru = cls.normalize(mesaj)
+        # Genel bilgi isteklerinin bitişik ve alternatif yazımlarını eşitle.
+        soru = re.sub(r"\bverir(?=misin\b|misiniz\b|mısın\b|mısınız\b)", "verir ", soru)
+        soru = re.sub(r"\bile\s+ilgili\s+bilgi\b", "hakkında bilgi", soru)
 
         # Selamlama, asıl konu adının parçası değildir.
         soru = re.sub(
@@ -2553,7 +2556,7 @@ class EagleMerkezMotoru:
             "hakkında", "hakkinda", "bilgi", "anlat", "anlatır",
             "anlatir", "açıkla", "acikla",
             "hangisi", "hangisidir", "hangileri", "hangileridir",
-            "verir", "misin", "mısın", "musun", "müsün",
+            "ver", "verir", "verirmisin", "verirmisiniz", "ilgili", "misin", "mısın", "musun", "müsün",
             "misiniz", "mısınız", "musunuz", "müsünüz",
             "lütfen", "lutfen", "biri", "nerede", "neresidir", "neredir",
             "nerededir", "hangi", "hangisi", "hangisidir",
@@ -2648,6 +2651,9 @@ class EagleMerkezMotoru:
                 "ç": "c", "ğ": "g", "ı": "i",
                 "ö": "o", "ş": "s", "ü": "u",
             }))
+
+            if re.match(r"^(?:sebeple|nedenle|dolayisiyla|bu sebeple|bu nedenle|bunun sonucunda|bundan dolayi)\b", norm):
+                return False
 
             # Arama motorunun liste/ansiklopedi açıklaması ve sayfa
             # gezinme artıkları bilgi cümlesi değildir.
@@ -4591,6 +4597,8 @@ class EagleMerkezMotoru:
         def genel_bilgi_adayi_uygun_mu(baslik, cumle):
             if not genel_cevap_sorusu:
                 return True
+            if not genel_web_cumle_kalite_kontrol(cumle):
+                return False
             metin = cls.normalize(str(cumle or '')).strip()
             baslik_metin = cls.normalize(str(baslik or '')).strip()
             if (
@@ -4899,6 +4907,8 @@ class EagleMerkezMotoru:
                 kullanilan_kaynaklar.add(kaynak_no)
 
         if not secilen:
+            return "", 0.0
+        if genel_bilgi_sorusu and (len(secilen) < 2 or len(" ".join(secilen)) < 100):
             return "", 0.0
 
         # Genel ekonomi sorularında web kaynaklarından seçilen ham
