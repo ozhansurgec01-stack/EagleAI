@@ -207,7 +207,69 @@ def research(topic, variants, validate, reader, discover=_discover):
             return result
     return None
 
+from threading import Lock
+from eagle_saglayici_kontrol import (
+    SaglayiciKontrol,
+    hata_bekleme
+)
+
+_SAGLAYICI_KONTROL = SaglayiciKontrol()
+
+_SAGLAYICI_KILITLER = {
+    name: Lock()
+    for name in (
+        "bing-rss",
+        "ddg-lite",
+        "google",
+        "mojeek"
+    )
+}
+
+
 def _search_rows(provider, query, locale):
+    lock = _SAGLAYICI_KILITLER[provider]
+
+    with lock:
+        if not _SAGLAYICI_KONTROL.baslat(provider):
+            print(
+                "SAGLAYICI BEKLEME:",
+                provider,
+                round(
+                    _SAGLAYICI_KONTROL.kalan(provider)
+                ),
+                "saniye",
+                flush=True
+            )
+            return []
+
+        delay = 0
+
+        try:
+            return _search_rows_raw(
+                provider, query, locale
+            )
+
+        except Exception as exc:
+            delay = hata_bekleme(exc)
+
+            if delay:
+                print(
+                    "SAGLAYICI KORUMA:",
+                    provider,
+                    round(delay),
+                    "saniye",
+                    flush=True
+                )
+
+            raise
+
+        finally:
+            _SAGLAYICI_KONTROL.bitir(
+                provider, delay
+            )
+
+
+def _search_rows_raw(provider, query, locale):
     """Independent search adapters; no generic web parser or query suffixes."""
     from bs4 import BeautifulSoup
     from urllib.parse import urljoin, parse_qs
@@ -262,12 +324,12 @@ def _metadata_relevant(row, queries):
     return False
 
 
-def search_web(topic, variants, limit=12):
+def search_web(topic, variants, limit=12, locale_override=None):
     queries = list(dict.fromkeys([topic]+list(variants)))[:4]
     jobs = []
     for q in queries:
         short = ' '.join(re.sub(r'\b(?:olay\w*|incident|incidente|vorfall|anlat|facias[ıi]|disaster|accident)\b',' ',q,flags=re.I).split())
-        locale = 'es-ES' if re.search(r'\bOVNI\b',q,re.I) else 'de-DE' if 'Vorfall' in q else 'tr-TR' if q==topic else 'en-US'
+        locale = locale_override or ('es-ES' if re.search(r'\bOVNI\b',q,re.I) else 'de-DE' if 'Vorfall' in q else 'tr-TR' if q==topic else 'en-US')
         jobs.extend((p,short,locale) for p in ('bing-rss','ddg-lite','google','mojeek'))
     jobs = list(dict.fromkeys(jobs))
     def run(job):

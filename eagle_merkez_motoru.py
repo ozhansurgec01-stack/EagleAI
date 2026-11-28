@@ -428,6 +428,11 @@ class EagleMerkezMotoru:
                 "url": url,
                 "domain": cls.domain(url),
                 "text": metin,
+                "content_loaded": sonuc.get("content_loaded") is True,
+                "english_title": str(
+                    sonuc.get("english_title") or ""
+                ).strip(),
+                "topic_aliases": [x for x in (sonuc.get("topic_aliases") or []) if isinstance(x, str)] if isinstance(sonuc.get("topic_aliases"), list) else [],
                 **({"_eagle_country_extract": True} if sonuc.get("_eagle_country_extract") is True else {}),
                 **({"_eagle_country_structured": True} if sonuc.get("_eagle_country_structured") is True else {}),
             })
@@ -2337,6 +2342,9 @@ class EagleMerkezMotoru:
         if not mesaj:
             return "", 0.0
 
+        mesaj = re.sub(r"(?i)\bverir(?=m[ıi]s[ıi]n(?:[ıi]z)?\b)", "verir ", mesaj)
+        mesaj = re.sub(r"(?i)\bile\s+ilgili\s+bilgi\b", "hakkında bilgi", mesaj)
+
         # EAGLEAI_BILIMSEL_MODEL_KATMANI_V1
         bilimsel_cevap = cls.bilimsel_model_cevabi(mesaj)
         if bilimsel_cevap:
@@ -2455,7 +2463,7 @@ class EagleMerkezMotoru:
                     ).strip()
 
                     # Arama özeti yetersizse gerçek kaynak sayfasını oku.
-                    if sayfa_okuyucu and url:
+                    if sayfa_okuyucu and url and not v.get("content_loaded"):
                         try:
                             sayfa_metni = str(sayfa_okuyucu(url) or "").strip()
                             if sayfa_metni:
@@ -2536,6 +2544,9 @@ class EagleMerkezMotoru:
             print("⚠️ Yapılandırılmış web bilgisi çıkarılamadı:", e, flush=True)
 
         soru = cls.normalize(mesaj)
+        # Genel bilgi isteklerinin bitişik ve alternatif yazımlarını eşitle.
+        soru = re.sub(r"\bverir(?=misin\b|misiniz\b|mısın\b|mısınız\b)", "verir ", soru)
+        soru = re.sub(r"\bile\s+ilgili\s+bilgi\b", "hakkında bilgi", soru)
 
         # Selamlama, asıl konu adının parçası değildir.
         soru = re.sub(
@@ -2553,7 +2564,7 @@ class EagleMerkezMotoru:
             "hakkında", "hakkinda", "bilgi", "anlat", "anlatır",
             "anlatir", "açıkla", "acikla",
             "hangisi", "hangisidir", "hangileri", "hangileridir",
-            "verir", "misin", "mısın", "musun", "müsün",
+            "ver", "verir", "verirmisin", "verirmisiniz", "ilgili", "misin", "mısın", "musun", "müsün",
             "misiniz", "mısınız", "musunuz", "müsünüz",
             "lütfen", "lutfen", "biri", "nerede", "neresidir", "neredir",
             "nerededir", "hangi", "hangisi", "hangisidir",
@@ -2571,6 +2582,21 @@ class EagleMerkezMotoru:
             )
             if len(kelime) >= 3 and kelime not in etkisiz
         ]
+
+        from eagle_arastirma_v2 import konu_ayir
+
+        acik_konu = konu_ayir(mesaj)
+
+        if acik_konu and re.search(
+            r"\b(nedir|ne demek|ne anlama gelir)\b",
+            soru
+        ):
+            konu_tokenlari = re.findall(
+                r"[a-z0-9çğıöşü]+",
+                cls.normalize(acik_konu)
+            )
+            if konu_tokenlari:
+                soru_kelime = konu_tokenlari
 
         if not soru_kelime:
             return "", 0.0
@@ -2619,15 +2645,36 @@ class EagleMerkezMotoru:
         if soru in {"merhaba", "selam", "selamlar", "hey", "nasilsiniz", "nasılsınız"}:
             yalin_konu_istegi = False
 
+        from eagle_arastirma_v2 import konu_ayir
+        ortak_konu = konu_ayir(mesaj)
+
         genel_bilgi_sorusu = (
             genel_bilgi_sorusu
             or tanitim_kim_sorusu
             or yalin_konu_istegi
+            or bool(ortak_konu and not tanim_sorusu)
         )
 
         # Tanım soruları da genel bilgi cevaplarının kalite filtrelerinden
         # geçmeli; aksi halde yalnızca kavramın geçtiği örnek cümlesi seçilebilir.
         genel_cevap_sorusu = genel_bilgi_sorusu or tanim_sorusu
+
+        # Yalnizca dogrulanmis ansiklopedi yonlendirmelerinden gelen adlar.
+        def tanim_konu_adlari(kaynak):
+            adlar = [acik_konu] if acik_konu else []
+            if isinstance(kaynak, dict):
+                adlar.extend(kaynak.get("topic_aliases") or [])
+            return [cls.normalize(a) for a in adlar if isinstance(a, str) and a.strip()]
+
+        def tanim_konu_baslangici(cumle, kaynak):
+            metin = cls.normalize(cumle)
+            for ad in tanim_konu_adlari(kaynak):
+                parcalar = ad.split()
+                kalip = r"\s*".join(re.escape(x) for x in parcalar)
+                if re.match(r"^" + kalip + r"(?:\b|[ıiuü]n?\b)", metin):
+                    return True
+            return False
+
 
         def genel_web_cumle_kalite_kontrol(cumle):
             """Genel bilgi cevabına yalnızca tamamlanmış, içerik niteliğinde cümle al."""
@@ -2649,12 +2696,16 @@ class EagleMerkezMotoru:
                 "ö": "o", "ş": "s", "ü": "u",
             }))
 
+            if re.match(r"^(?:sebeple|nedenle|dolayisiyla|bu sebeple|bu nedenle|bunun sonucunda|bundan dolayi)\b", norm):
+                return False
+
             # Arama motorunun liste/ansiklopedi açıklaması ve sayfa
             # gezinme artıkları bilgi cümlesi değildir.
             if re.search(
                 r"\b(vikimedya liste maddesi|wikimedia list article|"
                 r"liste maddesi|bu liste(?:,| mevcut|de |deki )|"
-                r"list article|table of contents|contents list)\b",
+                r"list article|table of contents|contents list|"
+                r"listesi .{0,100}(?:istatistiklerini|bilgilerini|verilerini) sunmaktadir)\b",
                 norm,
             ):
                 return False
@@ -2743,6 +2794,7 @@ class EagleMerkezMotoru:
                     flags=re.IGNORECASE,
                 ).strip()
 
+                konu = ortak_konu or konu
                 konu_norm = cls.normalize(konu)
                 konu_kelime = [
                     k for k in re.findall(r"[a-z0-9çğıöşü]+", konu_norm)
@@ -2839,6 +2891,7 @@ class EagleMerkezMotoru:
                     if (
                         (tam_baslik or baslik_eslesme > 0)
                         and (genel_sayfa_okuyucu or sayfa_okuyucu)
+                        and not v.get("content_loaded")
                         and okunan_sayfa_sayisi < 2
                     ):
                         if url:
@@ -2853,12 +2906,11 @@ class EagleMerkezMotoru:
                                     e, flush=True
                                 )
 
-                    # Sayfa metni varsa arama özetini tekrar ekleme.
-                    if not icerikler:
-                        if metin:
-                            icerikler.append(metin)
-                        if ozet:
-                            icerikler.append(ozet)
+                    # Sayfa içeriği öncelikli; kısa veya eksik sayfalarda
+                    # kaynak özeti de kalite ve tekrar filtrelerinden geçsin.
+                    for ek_metin in (metin, ozet):
+                        if ek_metin and ek_metin not in icerikler:
+                            icerikler.append(ek_metin)
                     for icerik in icerikler:
                         kaynaklar_hizli.append(
                             (baslik_puani, baslik, icerik)
@@ -2987,6 +3039,9 @@ class EagleMerkezMotoru:
                     ]
 
                 cevap = " ".join(secilen).strip()
+                # Kaynak başlığının paragraf başına iki kez eklenmesini temizle.
+                if konu:
+                    cevap = re.sub(r"^(" + re.escape(konu) + r")\s+\1(?=[\s,])", r"\1", cevap, flags=re.I)
 
                 # Genel web cevaplarında Türkçe yazım temizliği.
                 cevap = cevap.replace("ⓘ", "")
@@ -3015,7 +3070,12 @@ class EagleMerkezMotoru:
 
                 # Birkaç rastgele cümle yerine, yeterli içerik yoksa
                 # mevcut ana analiz zincirine devam et.
-                if len(secilen) >= 2 and len(cevap) >= 100:
+                if (len(secilen) >= 2 and len(cevap) >= 100) or (
+                    len(secilen) == 1 and len(cevap) >= 40
+                    and not cls.genel_web_ulke_token_eslesiyor(konu_norm, konu_norm)
+                    and any(cls.normalize(b).strip() == konu_norm for _, b, _ in kaynaklar_hizli)
+                    and aday_cumleler[0][0] >= 120
+                ):
                     secilen_puanlar = [puan for puan, _ in aday_cumleler[:len(secilen)]]
                     ortalama_puan = sum(secilen_puanlar) / len(secilen_puanlar) if secilen_puanlar else 0
                     konu_kalitesi = min(1.0, ortalama_puan / 140.0)
@@ -3255,7 +3315,7 @@ class EagleMerkezMotoru:
             ozet = str(veri.get("snippet", "")).strip()
             sayfa = ""
 
-            if sayfa_okuyucu:
+            if sayfa_okuyucu and not veri.get("content_loaded"):
                 url = str(veri.get("url", "")).strip()
                 if url:
                     try:
@@ -3536,6 +3596,9 @@ class EagleMerkezMotoru:
                     for kelime in soru_kelime
                     if kelime in metin_kelime
                 ]
+
+                if tanim_sorusu and not eslesen and tanim_konu_baslangici(cumle, veri):
+                    eslesen = list(soru_kelime)
 
                 konum_tamamlayici = False
                 if not eslesen:
@@ -4337,7 +4400,33 @@ class EagleMerkezMotoru:
                 return puan
 
             def genel_bilgi_siralama(aday):
+                from urllib.parse import urlsplit
+
                 puan, kaynak_no, baslik, cumle = aday
+
+                kaynak_guven_puani = 0
+
+                if 0 <= kaynak_no < len(veriler):
+                    kaynak = veriler[kaynak_no]
+
+                    if isinstance(kaynak, dict):
+                        host = (
+                            urlsplit(str(kaynak.get("url") or ""))
+                            .hostname or ""
+                        ).lower()
+
+                        if host.endswith((
+                            ".edu.tr", ".edu",
+                            ".ac.uk", ".gov.tr",
+                            ".gov"
+                        )):
+                            kaynak_guven_puani = 300
+
+                        elif (
+                            host == "wikipedia.org"
+                            or host.endswith(".wikipedia.org")
+                        ):
+                            kaynak_guven_puani = 50
                 cumle_kelime = set(re.findall(
                     r"[a-z0-9çğıöşü]+",
                     cls.normalize(cumle)
@@ -4416,7 +4505,7 @@ class EagleMerkezMotoru:
                 )
 
                 return (
-                    -baslik_konu_puani,
+                    -(baslik_konu_puani + kaynak_guven_puani),
                     -konu_baslangic_puani,
                     -genel_bilgi_cumle_skoru(cumle),
                     -cumle_konu_eslesmesi,
@@ -4540,7 +4629,7 @@ class EagleMerkezMotoru:
                 norm_cumle
             ))
 
-        def tanim_cumlesi_mi(cumle):
+        def tanim_cumlesi_mi(cumle, kaynak=None):
             """Tanım sorusunda örnek/yan bilgiyi tanım diye sunmayı engeller."""
             if not tanim_sorusu:
                 return True
@@ -4552,6 +4641,8 @@ class EagleMerkezMotoru:
             # kelimede geçen konu, hücre ayrıntısını tanım yapmamalı.
             ilk_kelimeler = kelimeler[:2]
             def konu_kok_eslesiyor(a, b):
+                a = genel_bilgi_skor_metni(a)
+                b = genel_bilgi_skor_metni(b)
                 if a == b or a.startswith(b) or b.startswith(a):
                     return True
                 ortak = 0
@@ -4566,7 +4657,7 @@ class EagleMerkezMotoru:
                 for konu in soru_kelime
                 for kelime in ilk_kelimeler
             )
-            if not konu_baslangicta:
+            if not konu_baslangicta and not tanim_konu_baslangici(cumle, kaynak):
                 return False
             # Bir tanım, yalnızca konu kelimesini ve genel bir bilimsel
             # terimi (enerji/oksijen gibi) içermekle yetinmemeli. Özellikle
@@ -4574,7 +4665,7 @@ class EagleMerkezMotoru:
             # veya yan bilgi cümleleri tanım diye seçilmemeli.
             return bool(re.search(
                 r"\b("
-                r"surec(tir|idir)|mekanizmadir|yontemidir|islemidir|"
+                r"[a-z]+(?:masidir|mesidir|ilmasidir|ilmesidir)|surec(tir|idir)|mekanizmadir|yontemidir|islemidir|islemdir|yontemdir|olaydir|sistemdir|kavramdir|"
                 r"olayidir|sistemidir|kavramidir|cesididir|bicimidir|"
                 r"olarak tanimlanir|olarak tanimlanabilir|"
                 r"anlamina gelir|ifade eder|olarak bilinir|"
@@ -4583,14 +4674,17 @@ class EagleMerkezMotoru:
                 r"donusturdugu surectir|donusturen surectir|"
                 r"donusturur|donusturur ve|"
                 r"uretimidir|uretilmesidir|"
+                r"[a-z]{3,}(?:dir|dur|tir|tur)(?=[.!?…]\s*$)|"
                 r"denir"
                 r")\b",
                 metin,
             ))
 
-        def genel_bilgi_adayi_uygun_mu(baslik, cumle):
+        def genel_bilgi_adayi_uygun_mu(baslik, cumle, kaynak_no=None):
             if not genel_cevap_sorusu:
                 return True
+            if not genel_web_cumle_kalite_kontrol(cumle):
+                return False
             metin = cls.normalize(str(cumle or '')).strip()
             baslik_metin = cls.normalize(str(baslik or '')).strip()
             if (
@@ -4668,7 +4762,10 @@ class EagleMerkezMotoru:
             # Hızlı ve genel analiz yolları aynı konu doğrulamasını kullanır.
             konu_uyumu = cls._genel_web_konu_uyumu(list(konu), baslik, metin)
             if not konu_uyumu["uygun"]:
-                return False
+                if not (tanim_sorusu and kaynak_no is not None and tanim_konu_baslangici(cumle, veriler[kaynak_no])
+                        and any(re.sub(r"\s+", "", cls.normalize(baslik)) == re.sub(r"\s+", "", ad)
+                                for ad in tanim_konu_adlari(veriler[kaynak_no]))):
+                    return False
 
             return True
 
@@ -4684,9 +4781,15 @@ class EagleMerkezMotoru:
                 if ilk_harf and cumle_temiz[ilk_harf.start()].islower():
                     continue
 
-            if tanim_sorusu and not tanim_cumlesi_mi(cumle):
-                continue
-            if genel_cevap_sorusu and not genel_bilgi_adayi_uygun_mu(baslik, cumle):
+            if tanim_sorusu:
+                tanim_adayi = tanim_cumlesi_mi(cumle, veriler[kaynak_no])
+
+                if not secilen and not tanim_adayi:
+                    continue
+
+                if secilen and tanim_adayi:
+                    continue
+            if genel_cevap_sorusu and not genel_bilgi_adayi_uygun_mu(baslik, cumle, kaynak_no):
                 continue
 
             # Genel tanıtım sorularına güncel haber/olay cümlelerini katma.
@@ -5549,6 +5652,27 @@ class EagleMerkezMotoru:
                 neden="Finansal analiz modülü yerel analiz üretti."
             )
 
+        # Genel tanıtım için konu odaklı, sınırlı ikinci araştırma.
+        tanitim_konu = re.sub(
+            r"\s+(?:hakk[ıi]nda|ile ilgili)\s+bilgi(?:\s+ver(?:ir)?(?:\s*m[ıi]s[ıi]n(?:[ıi]z)?)?)?\s*[?.!]*$",
+            "", str(mesaj).strip(), flags=re.I,
+        ).strip()
+        def tanitim_ek_arama():
+            if not web_arayici or not tanitim_konu or tanitim_konu == str(mesaj).strip():
+                return []
+            if self.finans_fiyat_sorgusu_mu(mesaj):
+                return []
+            try:
+                return self.temizle_web_verisi(web_arayici(tanitim_konu, limit=6))
+            except Exception:
+                return []
+
+        ek_arama_yapildi = False
+        if not veriler:
+            ek_arama_yapildi = True
+            veriler = tanitim_ek_arama()
+            kaynak_ozet = self.kaynak_ozeti(veriler)
+
         # Finans sorguları kendi ek web aramalarını yapabilmelidir.
         # Diğer sorgularda mevcut boş veri davranışını koru.
         if not veriler and not self.finans_fiyat_sorgusu_mu(mesaj):
@@ -5627,6 +5751,15 @@ class EagleMerkezMotoru:
                 neden="Birden fazla web kaynağından toplu altın fiyatları çıkarıldı."
             )
 
+        # Preserve verified introductory definitions before numeric extraction.
+        from eagle_arastirma_v2 import ansiklopedi_tanimi
+        if karar.get("intent") in {"guncel_bilgi", "sohbet", None}:
+            tanim = ansiklopedi_tanimi(mesaj, veriler)
+            if tanim:
+                return EagleMerkezSonuc(ok=True, cevap=tanim, guven=0.75,
+                    kaynak_sayisi=1, gemini_gerekli=False, kaynak_goster=False,
+                    neden="Tek kaynaklı ansiklopedi tanımı; bağımsız doğrulama yapılmadı.")
+
         # 6. Kısa sayısal/güncel cevap adayı.
         if karar.get("intent") != "spor" and self.deger_sorusu_mu(mesaj):
             sayisal_veriler = veriler
@@ -5658,6 +5791,9 @@ class EagleMerkezMotoru:
                 okunmus_veriler = []
 
                 for veri in veriler[:12]:
+                    if veri.get("content_loaded"):
+                        okunmus_veriler.append(veri)
+                        continue
                     url = str(
                         veri.get("url", "")
                     ).strip()
@@ -5670,6 +5806,7 @@ class EagleMerkezMotoru:
 
                         if sayfa_metni:
                             yeni_veri = dict(veri)
+                            yeni_veri["content_loaded"] = True
                             yeni_veri["text"] = " ".join(
                                 x for x in (
                                     veri.get("title", ""),
@@ -5742,6 +5879,17 @@ class EagleMerkezMotoru:
             sayfa_okuyucu=sayfa_okuyucu,
             genel_sayfa_okuyucu=genel_sayfa_okuyucu
         )
+
+        if (not genel_cevap or genel_guven < 0.75) and not ek_arama_yapildi:
+            ek_veriler = tanitim_ek_arama()
+            if ek_veriler:
+                mevcut_urller = {v.get("url") for v in veriler if v.get("url")}
+                veriler = veriler + [v for v in ek_veriler if not v.get("url") or v.get("url") not in mevcut_urller]
+                kaynak_ozet = self.kaynak_ozeti(veriler)
+                genel_cevap, genel_guven = self.genel_web_cevabi(
+                    mesaj, veriler, sayfa_okuyucu=sayfa_okuyucu,
+                    genel_sayfa_okuyucu=genel_sayfa_okuyucu,
+                )
 
         if genel_cevap and genel_guven >= 0.75:
             return EagleMerkezSonuc(
