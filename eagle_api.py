@@ -17031,6 +17031,10 @@ def sohbet():
         and not karar.get("komut")
         and not anlati_istegi
         and not _eagle_guncel_olay_sorgusu(mesaj)
+        and not any(k in mesaj.casefold() for k in (
+            "enflasyon", "alım gücü", "satın alma gücü",
+            "para politikası", "politika faizi", "reel ücret", "reel gelir"
+        ))
         and not merkez_motor.genel_web_ulke_token_eslesiyor(
             arastirma_konusu, arastirma_konusu
         )
