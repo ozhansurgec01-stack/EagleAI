@@ -12,6 +12,10 @@ class QualityTests(unittest.TestCase):
         body = 'Historical article with documented observations and context. ' * 12
         response = Mock(status_code=200, text='<script type="application/ld+json">' + json.dumps({'@type':'NewsArticle', 'articleBody':body}) + '</script><p>Short page</p>')
         scope = dict(re=re, json=json, BeautifulSoup=BeautifulSoup, requests=Mock(), web_kaynak_url=lambda u:u, _eagle_anlati_sorgusu_mu=lambda q:True)
+        response.content = response.text.encode("utf-8")
+        response.headers = {
+            "Content-Type": "text/html; charset=utf-8"
+        }
         scope['requests'].get.return_value = response
         exec(compile(ast.Module(body=[n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in names], type_ignores=[]), 'reader', 'exec'), scope)
         self.assertEqual(scope['web_sayfa_oku']('https://example.org', metaveri_dahil=False), body.strip())

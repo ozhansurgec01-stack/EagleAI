@@ -606,6 +606,7 @@ public class MainActivity extends Activity {
             final JSONArray kodBulgulari = apiCevap.codeFindings;
             final JSONArray medyaGorselleri = apiCevap.mediaImages;
             final boolean yerGalerisi = apiCevap.placeGallery;
+            final boolean gorsellerBekliyor = apiCevap.imagesPending;
             final boolean medyaSorusu = apiCevap.mediaQuery;
             final boolean bitcoinFiyati = apiCevap.bitcoinPrice;
             final String bitcoinUsd = apiCevap.bitcoinUsd;
@@ -662,6 +663,10 @@ public class MainActivity extends Activity {
                         tmdbOneriKartlariEkle(cevapKarti, medyaOnerileri);
                     } else if (medyaGorselleri != null && medyaGorselleri.length() > 0) {
                         tmdbGorselleriEkle(cevapKarti, medyaGorselleri);
+                    } else if (gorsellerBekliyor) {
+                        sunucuGalerisiniGetir(
+                                cevapKarti, mesaj, cevapFinal,
+                                sohbetId, mesajId);
                     } else if (yerGalerisi) {
                         gorselDurumunuGoster(cevapKarti,
                                 "Bu konu için doğrulanmış görsel bulunamadı; alakasız fotoğraf gösterilmiyor.");
@@ -1044,6 +1049,7 @@ public class MainActivity extends Activity {
         JSONArray codeFindings;
         JSONArray mediaImages;
         boolean placeGallery;
+        boolean imagesPending;
         boolean mediaQuery;
         boolean bitcoinPrice;
         String bitcoinUsd = "";
@@ -1098,6 +1104,9 @@ public class MainActivity extends Activity {
             JSONObject body = new JSONObject();
 
             body.put("message", mesaj);
+            if (resimUri == null) {
+                body.put("defer_images", true);
+            }
             body.put("history", history);
 
             // 📎 Seçilen dosyayı API'ye gönder
@@ -1204,6 +1213,7 @@ public class MainActivity extends Activity {
                 apiCevap.mediaItems = cevapJson.optJSONArray("media_items");
                 apiCevap.codeFindings = cevapJson.optJSONArray("findings");
                 apiCevap.placeGallery = cevapJson.optBoolean("place_gallery", false);
+                apiCevap.imagesPending = cevapJson.optBoolean("images_pending", false);
                 apiCevap.mediaQuery = cevapJson.optBoolean("media_query", false);
                 apiCevap.bitcoinPrice = cevapJson.optBoolean("bitcoin_price", false);
                 apiCevap.bitcoinUsd = cevapJson.optString("bitcoin_usd", "");
@@ -1470,10 +1480,9 @@ public class MainActivity extends Activity {
 
                 if (galeriAlaniniMesajKaydinaEkle(
                         gecmisDizi, mesajId, galeriItems)) {
-                    gecmisSp.edit()
+                    gecmisKaydedildi = gecmisSp.edit()
                             .putString(GECMIS_KEY, gecmisDizi.toString())
                             .commit();
-                    gecmisKaydedildi = true;
                 }
             } catch (Exception e) {
                 android.util.Log.e(
@@ -1507,13 +1516,12 @@ public class MainActivity extends Activity {
                         if (galeriAlaniniMesajKaydinaEkle(
                                 mesajlar, mesajId, galeriItems)) {
                             sohbet.put("mesajlar", mesajlar);
-                            sohbetSp.edit()
+                            sohbetKaydedildi = sohbetSp.edit()
                                     .putString(
                                             SOHBET_KEY,
                                             sohbetler.toString()
                                     )
                                     .commit();
-                            sohbetKaydedildi = true;
                         }
 
                         break;
@@ -1598,7 +1606,11 @@ public class MainActivity extends Activity {
             galeri.addView(resim);
 
             TextView kaynakView = new TextView(this);
-            kaynakView.setText("Kaynak: Wikimedia Commons");
+            String kategori = item.optString("category", "");
+            kaynakView.setText("Kaynak: " +
+                    ("Bing".equalsIgnoreCase(kategori)
+                            ? "Bing"
+                            : "Wikimedia Commons"));
             kaynakView.setTextSize(11);
             kaynakView.setTextColor(Color.GRAY);
             kaynakView.setOnClickListener(v -> {
@@ -3064,6 +3076,173 @@ private void sohbetYukle(String id) {
         // Artık yalnızca belirli soru kalıplarına bağlı değil.
         // Konu içeren kısa ve doğal sorular da görsel aramasına gider.
         return true;
+    }
+
+    private void sunucuGalerisiniGetir(
+            LinearLayout kart, String soru, String cevap,
+            String sohbetId, String mesajId) {
+
+        TextView durum = new TextView(this);
+        durum.setText("Görseller araştırılıyor...");
+        durum.setTextSize(12);
+        durum.setTextColor(Color.GRAY);
+        kart.addView(durum);
+
+        gorselExecutor.execute(() -> {
+            HttpURLConnection baglanti = null;
+            JSONArray sonuc = new JSONArray();
+            JSONArray kayitlar = new JSONArray();
+            boolean basarili = false;
+
+            try {
+                URL url = new URL(
+                        new URL(API_URL), "/api/gorseller");
+
+                baglanti = (HttpURLConnection)
+                        url.openConnection();
+
+                baglanti.setRequestMethod("POST");
+                baglanti.setConnectTimeout(10000);
+                baglanti.setReadTimeout(30000);
+                baglanti.setDoOutput(true);
+                baglanti.setRequestProperty(
+                        "Content-Type",
+                        "application/json; charset=UTF-8");
+
+                JSONObject body = new JSONObject();
+                body.put("message", soru);
+                body.put("answer", cevap == null ? "" :
+                        cevap.substring(0, Math.min(
+                                cevap.length(), 20000)));
+
+                try (OutputStream out =
+                             baglanti.getOutputStream()) {
+                    out.write(body.toString().getBytes(
+                            StandardCharsets.UTF_8));
+                }
+
+                if (baglanti.getResponseCode() == 200) {
+                    StringBuilder metin = new StringBuilder();
+
+                    try (BufferedReader reader =
+                                 new BufferedReader(
+                                     new InputStreamReader(
+                                         baglanti.getInputStream(),
+                                         StandardCharsets.UTF_8))) {
+
+                        String satir;
+                        while ((satir = reader.readLine()) != null) {
+                            metin.append(satir);
+                        }
+                    }
+
+                    JSONObject json =
+                            new JSONObject(metin.toString());
+
+                    basarili = json.optBoolean("ok", false);
+
+                    JSONArray images =
+                            json.optJSONArray("images");
+
+                    java.util.Set<String> adresler =
+                            new java.util.HashSet<>();
+
+                    if (basarili && images != null) {
+                        for (int i = 0;
+                             i < images.length() && sonuc.length() < 4;
+                             i++) {
+
+                            JSONObject item =
+                                    images.optJSONObject(i);
+
+                            if (item == null) continue;
+
+                            String adres =
+                                    item.optString("url", "");
+
+                            Uri uri = Uri.parse(adres);
+
+                            String host = uri.getHost() == null
+                                    ? ""
+                                    : uri.getHost().toLowerCase(
+                                            Locale.ROOT);
+
+                            boolean wiki =
+                                    "upload.wikimedia.org".equals(host)
+                                    || "thumb.wikimedia.org".equals(host);
+
+                            boolean bing =
+                                    host.endsWith(".mm.bing.net");
+
+                            if (!"https".equalsIgnoreCase(uri.getScheme())
+                                    || (!wiki && !bing)
+                                    || !adresler.add(adres)) {
+                                continue;
+                            }
+
+                            JSONObject gorsel =
+                                    new JSONObject(item.toString());
+
+                            gorsel.put("type", "image");
+                            sonuc.put(gorsel);
+
+                            JSONObject kayit = new JSONObject();
+
+                            kayit.put("title", item.optString(
+                                    "name", item.optString(
+                                            "title", "Konu görseli")));
+
+                            kayit.put("thumb", adres);
+                            kayit.put("original", adres);
+                            kayit.put("source", adres);
+                            kayit.put("category",
+                                    wiki ? "Wikimedia" : "Bing");
+
+                            kayitlar.put(kayit);
+                        }
+                    }
+                }
+
+                if (kayitlar.length() > 0) {
+                    boolean kaydedildi = mesajaGaleriKaydet(
+                            sohbetId, mesajId, kayitlar);
+
+                    android.util.Log.i(
+                            "EagleGorsel",
+                            "Sunucu galerisi kaydedildi: "
+                            + kaydedildi);
+                }
+
+            } catch (Exception e) {
+                android.util.Log.e(
+                        "EagleGorsel",
+                        "Sunucu galerisi alinamadi", e);
+            } finally {
+                if (baglanti != null) {
+                    baglanti.disconnect();
+                }
+            }
+
+            final JSONArray gorseller = sonuc;
+            final boolean istekBasarili = basarili;
+
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()
+                        || kart.getParent() == null) return;
+
+                kart.removeView(durum);
+
+                if (gorseller.length() > 0) {
+                    tmdbGorselleriEkle(kart, gorseller);
+                } else {
+                    gorselDurumunuGoster(
+                            kart,
+                            istekBasarili
+                                ? "Uygun görsel bulunamadı."
+                                : "Görseller yüklenemedi.");
+                }
+            });
+        });
     }
 
     private void commonsGorselleriEkle(

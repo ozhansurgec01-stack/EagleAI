@@ -1,3 +1,4 @@
+from eagle_gorsel_hiz_siniri import kontrollu_get
 from eagle_arastirma_niyeti import anlati_istegi_mi as _eagle_anlati_sorgusu_mu, arastirma_karari
 from eagle_merkez_motoru import eagle_merkez_motorunu_kur
 from eagle_akil_motoru import eagle_akil_motorunu_kur
@@ -70,8 +71,20 @@ def eagle_sohbet_hata_sozlesmesi(response):
             # Country responses can return through several early routes.
             payload = request.get_json(silent=True) or {}
             question = payload.get("message", "") if isinstance(payload, dict) else ""
-            if isinstance(question, str) and (merkez_motor.ulke_tanitim_konusu(question) or data.get("research_status") in {"unverified_source_extract", "single_source_extract"}):
-                data["media_images"] = {"images": _eagle_yer_gorsellerini_guvenli_getir(question, data.get("answer", "")) or []}
+            from eagle_arastirma_v2 import konu_ayir
+            if isinstance(question, str) and (
+                merkez_motor.ulke_tanitim_konusu(question)
+                or data.get("research_status") in {
+                    "unverified_source_extract",
+                    "single_source_extract"
+                }
+                or bool(konu_ayir(question))
+            ):
+                if payload.get("defer_images") is True:
+                    data["images_pending"] = True
+                    data["media_images"] = {"images": []}
+                else:
+                    data["media_images"] = {"images": _eagle_yer_gorsellerini_guvenli_getir(question, data.get("answer", "")) or []}
                 data["place_gallery"] = True
                 response.set_data(app.json.dumps(data))
         if isinstance(data, dict) and data.get("ok") is False and not data.get("error"):
@@ -6118,6 +6131,8 @@ def tvf_voleybol_sonuclari_getir(limit=8):
 def _web_arama_sorgusunu_sadelestir(sorgu):
     """Doğal dildeki bilgi isteğini genel arama sorgusuna dönüştürür."""
     temiz = str(sorgu or "")[:400]
+    temiz = re.sub(r"(?i)\bverir(?=m[ıi]s[ıi]n(?:[ıi]z)?\b)", "verir ", temiz)
+    temiz = re.sub(r"(?i)\bile\s+ilgili\s+bilgi\b", "hakkında bilgi", temiz)
 
     # Nezaket ifadelerini ve yaygın soru kalıplarını kaldır;
     # konunun kendisini arama sorgusunda koru.
@@ -6322,24 +6337,34 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
         )
 
     kelimeler = {
-        k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
-        if (len(k) >= 4 or k == "ufo") and not durak_kelimesi_mi(k)
+        k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold().replace("\u0307", ""))
+        if (
+            len(k) >= 4
+            or (
+                2 <= len(k) <= 3
+                and k.isalpha()
+                and k not in {"ve", "ya", "da", "de",
+                              "bir", "bu", "şu", "o",
+                              "mi", "mı", "mu", "mü",
+                              "en", "çok", "az"}
+            )
+        ) and not durak_kelimesi_mi(k)
     }
     if not kelimeler:
         kelimeler = {
-            k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold())
+            k for k in re.findall(r"[a-z0-9çğıöşü]+", str(sorgu).casefold().replace("\u0307", ""))
             if len(k) >= 4
         }
 
-    if _eagle_anlati_sorgusu_mu(sorgu) or "ufo" in kelimeler or re.search(r"\b(?:en son|bugün|güncel|son dakika)\b", str(sorgu).casefold()):
+    if _eagle_anlati_sorgusu_mu(sorgu) or "ufo" in kelimeler or re.search(r"\b(?:en son|bugün|güncel|son dakika)\b", str(sorgu).casefold().replace("\u0307", "")):
         kelimeler = {k for k in kelimeler if not re.match(r"^(?:anlat|yaşan|yasan|ilginç|ilginc|ayrınt|ayrint|detay|başından|basindan|sonuna|hayatında|hayatinda|olayı|olayi|görüld|goruld|görülen|gorulen)", k)}
-    baslik = str(sonuc.get("title", "") or "").casefold()
-    metin = (baslik + " " + str(sonuc.get("snippet", "") or "")).casefold()
+    baslik = str(sonuc.get("title", "") or "").casefold().replace("\u0307", "")
+    metin = (baslik + " " + str(sonuc.get("snippet", "") or "")).casefold().replace("\u0307", "")
 
     genel_tanitim = bool(re.search(
         r"hakkında|hakkinda|genel bilgi|kısa bilgi|kisa bilgi|"
         r"tanıt|tanit|özet|ozet|bilgi verir misin|bilgi ver",
-        str(sorgu or "").casefold(),
+        str(sorgu or "").casefold().replace("\u0307", ""),
     ))
     if genel_tanitim and len(kelimeler) == 1:
         konu = next(iter(kelimeler))
@@ -6354,7 +6379,7 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
             r"festival|futbol|basketbol|voleybol|maç|mac|"
             r"üniversite|universite|seçim|secim|hava durumu|"
             r"deprem|konser|albüm|album|dizi",
-            str(sorgu or "").casefold(),
+            str(sorgu or "").casefold().replace("\u0307", ""),
         ))
         if konu in baslik and alt_konu and not sorguda_alt_konu:
             return False
@@ -6362,7 +6387,7 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
     # Başkent sorularında ülke ile başkent arasındaki ilişkiyi doğrula.
     bas_soru = re.search(
         r"\b(.+?)(?:['’])(?:nin|nın|nun|nün|in|ın|un|ün)\s+başkenti\b",
-        str(sorgu or "").casefold(),
+        str(sorgu or "").casefold().replace("\u0307", ""),
     )
     if bas_soru:
         ulke = bas_soru.group(1).strip()
@@ -6380,7 +6405,7 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
     if re.search(
         r"en\s+kalabalık\s+ülke(?:si)?|en\s+kalabalik\s+ulke(?:si)?|"
         r"en\s+çok\s+nüfuslu\s+ülke(?:si)?|en\s+cok\s+nufuslu\s+ulke(?:si)?",
-        str(sorgu).casefold(),
+        str(sorgu).casefold().replace("\u0307", ""),
     ):
         if re.search(r"\b(hindistan|india)\b", baslik):
             return True
@@ -6422,8 +6447,26 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
                 adaylar.update(grup)
                 break
         hedef_kelimeler = re.findall(r"[a-z0-9çğıöşü]+", hedef)
-        if any(aday in hedef_kelimeler for aday in adaylar):
-            return True
+        hedef_normal = " ".join(hedef_kelimeler)
+
+        for aday in adaylar:
+            aday_kelimeler = re.findall(
+                r"[a-z0-9çğıöşü]+", aday
+            )
+            if not aday_kelimeler:
+                continue
+
+            aday_normal = " ".join(aday_kelimeler)
+
+            if re.search(
+                r"(?<!\w)" + re.escape(aday_normal)
+                + r"(?!\w)", hedef_normal
+            ):
+                return True
+
+        # Kisa terimler kelime icinde eslesmemeli.
+        if len(kelime) <= 3:
+            return False
         # Merkez motorun ortak ülke adı sözlüğünü kullan.
         try:
             if any(
@@ -6448,7 +6491,7 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
     # Açık yıl içeren tarihsel sorgularda aynı yıl sonuçta doğrulanmalı.
     yil_eslesmesi = re.search(
         r"\b(?:1[0-9]{3}|20[0-9]{2})\b",
-        str(sorgu or "").casefold(),
+        str(sorgu or "").casefold().replace("\u0307", ""),
     )
     if yil_eslesmesi and not re.search(
         r"\b" + re.escape(yil_eslesmesi.group(0)) + r"\b",
@@ -6463,7 +6506,7 @@ def _web_sonucu_sorguyla_ilgili_mi(sorgu, sonuc):
         gerekli = max(2, gerekli)
 
     # Konum sorularında tek kelimelik yer adını doğrudan başlıkta doğrula.
-    sorgu_metni = str(sorgu).casefold()
+    sorgu_metni = str(sorgu).casefold().replace("\u0307", "")
     konum_sorusu = bool(
         re.search(r"\b(?:nerede|nerededir|nerelerde|nereye|nereden)\b", sorgu_metni)
     )
@@ -7778,6 +7821,74 @@ def web_arastir(sorgu, limit=6):
             print(f"ANLATI WEB HATA: {type(exc).__name__}", flush=True)
             rows = []
         return ([record] if record else []) + rows
+
+    # Independent exact-topic provider; retain existing specialised routes.
+    from eagle_arastirma_v2 import ansiklopedi_kaynaklari
+    dogrudan_kaynaklar = ansiklopedi_kaynaklari(sorgu)
+    from eagle_arastirma_v2 import konu_ayir
+    genel_konu = konu_ayir(sorgu)
+    if genel_konu:
+        from eagle_derin_arastirma import search_web
+        try:
+            arama_varyantlari = [str(sorgu).strip()]
+
+            for kaynak in dogrudan_kaynaklar:
+                baslik = str(kaynak.get("title") or "").strip()
+
+                if baslik and baslik.casefold() != genel_konu.casefold():
+                    arama_varyantlari.append(baslik)
+                    arama_varyantlari.append(
+                        baslik + " hakkında bilgi"
+                    )
+
+            arama_varyantlari = list(
+                dict.fromkeys(arama_varyantlari)
+            )
+
+            adaylar = search_web(
+                genel_konu,
+                arama_varyantlari,
+                limit=limit,
+                locale_override="tr-TR"
+            )
+            from urllib.parse import urlsplit
+
+            dogrulanan = list(dogrudan_kaynaklar)
+            alanlar = {
+                urlsplit(k.get("url", "")).hostname
+                for k in dogrulanan
+            }
+
+            for aday in adaylar[:limit]:
+                if len(dogrulanan) >= min(limit, 3):
+                    break
+
+                alan = urlsplit(aday["url"]).hostname
+                if not alan or alan in alanlar:
+                    continue
+
+                if alan.endswith((
+                    "wikipedia.org",
+                    "wikidata.org",
+                    "wikimedia.org"
+                )) and dogrudan_kaynaklar:
+                    continue
+                metin = web_sayfa_oku(aday["url"], metaveri_dahil=False, timeout=(3,5))
+                from eagle_arastirma_v2 import kaynak_metni_kaliteli_mi
+
+                if isinstance(metin, str) and kaynak_metni_kaliteli_mi(aday["title"], metin):
+                    kayit = {"title": aday["title"], "url": aday["url"], "snippet": metin[:6000]}
+                    if _web_sonucu_sorguyla_ilgili_mi(genel_konu, kayit):
+                        kayit["content_loaded"] = True
+                        dogrulanan.append(kayit)
+                        alanlar.add(alan)
+            if dogrulanan:
+                return dogrulanan
+        except Exception as hata:
+            print(f"Genel bağımsız araştırma: {type(hata).__name__}", flush=True)
+
+    if dogrudan_kaynaklar:
+        return dogrudan_kaynaklar
 
     # TROPICAL_COUNTRY_QUERY_NORMALIZATION
     # EN KALABALIK ÜLKE SORGUSUNU DOĞRUDAN KONUYA YÖNLENDİR
@@ -9152,11 +9263,41 @@ def web_sayfa_oku(url, limit=7000, metaveri_dahil=True, timeout=12):
             "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.7"
         }
 
+        import time
+        from urllib.parse import urlsplit
+        from email.utils import parsedate_to_datetime
+
+        host = urlsplit(url).hostname or ""
+        bekleme = getattr(web_sayfa_oku, "_retry_after", {})
+
+        if time.monotonic() < bekleme.get(host, 0):
+            return ""
+
         cevap = requests.get(
             url,
             headers=headers,
             timeout=timeout
         )
+
+        if cevap.status_code == 429:
+            retry = cevap.headers.get("Retry-After", "60")
+            try:
+                sure = float(retry)
+            except (ValueError, TypeError):
+                try:
+                    sure = parsedate_to_datetime(
+                        retry
+                    ).timestamp() - time.time()
+                except (ValueError, TypeError, OverflowError):
+                    sure = 60
+
+            bekleme[host] = time.monotonic() + max(1, sure)
+            web_sayfa_oku._retry_after = bekleme
+            print(
+                f"Web hiz siniri: {host}; gecici bekleme.",
+                flush=True
+            )
+            return ""
 
         if cevap.status_code != 200:
             print(
@@ -9165,8 +9306,34 @@ def web_sayfa_oku(url, limit=7000, metaveri_dahil=True, timeout=12):
             )
             return ""
 
+        # Yalnizca desteklenen metin iceriklerini isle.
+        icerik_turu = cevap.headers.get(
+            "Content-Type", ""
+        ).lower().split(";")[0].strip()
+
+        ham_icerik = cevap.content
+
+        if ham_icerik.lstrip().startswith(b"%PDF-"):
+            return ""
+
+        if icerik_turu and icerik_turu not in {
+            "text/html",
+            "application/xhtml+xml",
+            "text/plain"
+        }:
+            return ""
+
+        if b"\x00" in ham_icerik[:4096]:
+            return ""
+
+        # HTTP'nin hatali varsayilan kodlamasina guvenme.
+        try:
+            temiz_icerik = ham_icerik.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            temiz_icerik = ham_icerik
+
         soup = BeautifulSoup(
-            cevap.text,
+            temiz_icerik,
             "html.parser"
         )
 
@@ -12282,10 +12449,10 @@ def _eagle_ulke_gorsel_cesitlendir(items, normla):
         title = normla(item.get("name", ""))
         raw = str(item.get("name", ""))
         park = re.search(r"(?:^|[,;])\s*([^,;]+? national park)\b", raw, re.I)
-        city = re.search(r"\b([a-z]+ city)\b", title)
+        city = re.search(r"^([a-z0-9]+(?: [a-z0-9]+)*? city)\b", title)
         if park:
             key = normla(park.group(1))
-            key = " ".join(key.split()[-4:])
+            key = key.strip()
         elif city:
             key = city.group(1)
         else:
@@ -12295,7 +12462,7 @@ def _eagle_ulke_gorsel_cesitlendir(items, normla):
                     else "sehir" if re.search(r"\b(?:city|skyline|street|capital)\b", title) else "diger")
         # Park adının önündeki fotoğraf açıklamasını ayırmak için ortak son ek.
         if park:
-            key = " ".join(normla(park.group(1)).split()[-3:])
+            key = normla(park.group(1))
         gruplar.setdefault(category, {}).setdefault(key, {**item, "category": category})
     result = []
     queues = [list(g.values()) for g in gruplar.values()]
@@ -12306,8 +12473,10 @@ def _eagle_ulke_gorsel_cesitlendir(items, normla):
     return result
 
 
-def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
+def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8, partial=None, kaynaklar=None):
     """Yer tanıtımı galerisi: Wikidata/Commons ve bağımsız Bing Görseller yedeği."""
+    from eagle_gorsel_kalite import uygun_mu, bilim_cesitlendir
+    from eagle_openverse_arastirma import arastir, kavram_coz
     import html
     import json
     import time
@@ -12315,15 +12484,35 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     from urllib.parse import unquote
 
     ham = str(soru or "").strip()
+    ham = re.sub(r"(?i)\bverir(?=m[ıi]s[ıi]n(?:[ıi]z)?\b)", "verir ", ham)
+    ham = re.sub(r"(?i)\bile\s+ilgili\s+bilgi\b", "hakkında bilgi", ham)
     norm = ham.casefold().replace("ı", "i")
     tanitim = re.search(r"\b(hakkinda|hakkında|bilgi ver|tanit|tanıt|anlat|goster|göster|gezilecek|turistik|nereleri|yerleri)\b", norm)
     yalın_ulke = merkez_motor.genel_web_ulke_token_eslesiyor(ham, ham)
     tarihsel = _eagle_tarihsel_konu(ham)
-    if not ham or not (tanitim or yalın_ulke or tarihsel):
-        return None
+    from eagle_arastirma_v2 import konu_ayir
+    ortak_konu = konu_ayir(ham)
+
+    if not ham or len(ham) > 250:
+        return []
+
+    yalin_konu = (
+        len(ham) <= 90
+        and 1 <= len(ham.split()) <= 8
+        and any(c.isalpha() for c in ham)
+        and bool(re.fullmatch(
+            r"[\w\s'’-]+[?]?", ham
+        ))
+    )
+
+    if not (
+        tanitim or yalın_ulke or tarihsel
+        or ortak_konu or yalin_konu
+    ):
+        return []
 
     konu = re.sub(r"(?i)\b(hakkında|hakkinda|bilgi|verir|ver|misin|misiniz|tanıtır|tanitir|tanıt|tanit|anlatır|anlatir|anlat|gösterir|gosterir|göster|goster|bana|lütfen|lutfen|gezilecek|turistik|yerleri|nereleri|nedir|ne|kimdir)\b", " ", ham)
-    konu = merkez_motor.ulke_tanitim_konusu(ham) or tarihsel or konu
+    konu = merkez_motor.ulke_tanitim_konusu(ham) or tarihsel or ortak_konu or konu
     konu = re.sub(r"[^\w\s'-]", " ", konu, flags=re.UNICODE)
     konu = re.sub(r"\s+", " ", konu).strip(" -'")
     konu = re.sub(r"\s+(?:yi|yı|yu|yü|nin|nın|nun|nün|den|dan|de|da|ye|ya|i|ı|u|ü|e|a)$", "", konu, flags=re.IGNORECASE).strip()
@@ -12336,7 +12525,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         return re.sub(r"[^a-z0-9]+", " ", deger).strip()
 
     konu_norm = normla(konu)
-    limit = max(1, min(int(limit or 8), 10))
+    limit = max(1, min(int(limit or 8), 4))
     cache = getattr(_eagle_yer_gorsellerini_getir, "_cache", {})
     cache_key = (konu_norm, limit)
     now = time.time()
@@ -12349,6 +12538,46 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
         "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
     }
+    def galeri_get(url, **kwargs):
+        from urllib.parse import urlsplit
+        from email.utils import parsedate_to_datetime
+
+        host = urlsplit(url).hostname or ""
+        bekleme = getattr(
+            _eagle_yer_gorsellerini_getir,
+            "_retry_after", {}
+        )
+
+        if time.monotonic() < bekleme.get(host, 0):
+            raise requests.HTTPError(
+                f"429: {host} bekleme suresinde"
+            )
+
+        yanit = kontrollu_get(url, **kwargs)
+
+        if yanit.status_code == 429:
+            retry = yanit.headers.get("Retry-After", "60")
+
+            try:
+                sure = float(retry)
+            except (ValueError, TypeError):
+                try:
+                    sure = parsedate_to_datetime(
+                        retry
+                    ).timestamp() - time.time()
+                except (ValueError, TypeError, OverflowError):
+                    sure = 60
+
+            bekleme[host] = time.monotonic() + max(1, sure)
+            _eagle_yer_gorsellerini_getir._retry_after = bekleme
+
+            raise requests.HTTPError(
+                f"429: {host} gecici bekleme",
+                response=yanit
+            )
+
+        return yanit
+
     durak = {"the", "of", "and", "in", "on", "for", "de", "da", "ve", "ile", "la", "el"}
     konu_kelimeleri = [x for x in konu_norm.split() if len(x) > 2 and x not in durak]
 
@@ -12358,7 +12587,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     etiketler, aciklama, wikidata_ok = [konu], "", False
     try:
         for _deneme in range(2):
-            r = requests.get("https://www.wikidata.org/w/api.php",
+            r = galeri_get("https://www.wikidata.org/w/api.php",
                 params={"action": "wbsearchentities", "search": konu, "language": "tr", "uselang": "tr", "type": "item", "limit": 6, "format": "json"},
                 headers=headers, timeout=5)
             if r.status_code != 429 or _deneme == 1:
@@ -12385,16 +12614,9 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     for aday in adaylar:
         names = aday_adlari(aday)
         normalized = {normla(x) for x in names}
-        if konu_norm in normalized or any(normla(x) and normla(x) in konu_norm for x in names):
+        if konu_norm in normalized or any(x.replace(" ", "") == konu_norm.replace(" ", "") for x in normalized):
             eslesen = aday
             break
-    if eslesen is None:
-        for aday in adaylar:
-            names = aday_adlari(aday)
-            candidate_text = normla(" ".join(names) + " " + aday.get("description", ""))
-            if konu_kelimeleri and sum(k in candidate_text.split() for k in konu_kelimeleri) >= max(1, len(konu_kelimeleri) - 1):
-                eslesen = aday
-                break
     if eslesen:
         qid = str(eslesen.get("id", ""))
         aciklama = str(eslesen.get("description", ""))
@@ -12402,45 +12624,50 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
 
     # Önce kullanıcının sorduğu ifadenin türünü belirle. Wikidata'nın
     # yanlış/üst düzey eşleşmesi (ör. "Mısır" ülkesi) konu türünü ezmemeli.
+    from eagle_arastirma_v2 import kavram_profili
+
+    profil = kavram_profili(konu, kaynaklar)
+
+    if profil:
+        if not ingilizce_ad:
+            ingilizce_ad = profil.get("ingilizce_ad", "")
+
+        if not aciklama:
+            aciklama = profil.get("aciklama", "")
+
+        etiketler = list(dict.fromkeys(
+            etiketler + profil.get("etiketler", [])
+        ))
+
+        print(
+            "ORTAK KAVRAM PROFILI:",
+            konu, ingilizce_ad,
+            profil.get("tur"),
+            flush=True
+        )
+
     konu_sozcukleri = set(konu_norm.split())
-    if tarihsel:
-        tur = "event"
-    elif any(x in konu_sozcukleri for x in ("okyanus", "okyanusu", "deniz", "denizi", "ocean", "sea")):
-        tur = "water"
-    elif any(x in konu_sozcukleri for x in ("piramit", "piramitleri", "pyramids", "pyramid", "tapinak", "temple", "castle", "kale", "monument", "anit", "heykel")):
-        tur = "landmark"
-    elif any(x in konu_sozcukleri for x in ("dag", "daglari", "mountain", "gol", "golu", "lake", "nehir", "river", "ada", "island", "orman", "forest", "selale", "waterfall", "volkan", "volcano")):
-        tur = "nature"
-    elif any(x in konu_sozcukleri for x in ("sehir", "kent", "city", "town", "baskent", "capital")):
-        tur = "city"
-    else:
-        entity_text = normla(" ".join(etiketler) + " " + aciklama)
-        entity_tokens = set(entity_text.split())
-        bilinen_ulke_adlari = {
-            "kanada", "avusturya", "norvec", "isvec", "finlandiya",
-            "almanya", "fransa", "italya", "ispanya", "portekiz",
-            "yunanistan", "japonya", "cin", "abd", "amerika",
-            "ingiltere", "isvicre", "hollanda", "belcika", "brezilya",
-            "arjantin", "avustralya", "meksika", "hindistan", "rusya",
-            "ukrayna", "iran", "irak", "turkiye", "misir",
-        }
-        if (
-            merkez_motor.genel_web_ulke_token_eslesiyor(konu, konu)
-            or konu_sozcukleri & bilinen_ulke_adlari
-            or entity_tokens & {"country", "ulke", "devlet", "republic", "kingdom"}
-            or "sovereign state" in entity_text
-        ):
-            tur = "country"
-        elif entity_tokens & {"ocean", "sea", "okyanus", "deniz"} or "body of water" in entity_text:
-            tur = "water"
-        elif entity_tokens & {"pyramid", "pyramids", "monument", "archaeological", "temple", "palace", "castle", "piramit", "anit"} or "historic site" in entity_text or "tarihi eser" in entity_text:
-            tur = "landmark"
-        elif entity_tokens & {"mountain", "lake", "river", "island", "forest", "waterfall", "volcano", "glacier", "dag", "gol", "nehir", "ada", "selale"} or "national park" in entity_text or "natural feature" in entity_text:
-            tur = "nature"
-        elif entity_tokens & {"city", "town", "capital", "municipality", "sehir", "kent"}:
-            tur = "city"
-        else:
-            tur = "place"
+
+    from eagle_konu_siniflandirma import siniflandir
+
+    tur = siniflandir(
+        konu=konu,
+        cevap=cevap,
+        aciklama=aciklama,
+        etiketler=etiketler,
+        tarihsel=bool(tarihsel),
+        ulke_eslesmesi=bool(
+            merkez_motor.genel_web_ulke_token_eslesiyor(
+                konu, konu
+            )
+        )
+    )
+
+    print(
+        f"GORSEL SINIFLANDIRMA: {konu} -> {tur}",
+        flush=True
+    )
+
 
     olumsuz = {"map", "maps", "location", "locator", "cartography", "chart", "diagram", "banknote", "banknotes", "currency", "money", "coin", "coins", "stamp", "stamps", "ticket", "document", "agreement", "treaty", "conference", "meeting", "delegation", "signing", "summit", "diplomatic", "logo", "coat of arms", "flag", "seal", "poster", "harita", "para", "banknot", "sikke", "pul", "bilet", "belge", "anlasma", "konferans", "toplanti", "heyet", "imza", "afis", "arma", "bayrak", "rozet", "roadmap"}
     sahne = {"landscape", "scenery", "view", "panorama", "aerial", "nature", "ocean", "atlantic", "pacific", "sea", "seascape", "marine", "undersea", "mountain", "lake", "forest", "waterfall", "coast", "beach", "shore", "wave", "waves", "water", "underwater", "reef", "island", "river", "desert", "national park", "cityscape", "skyline", "street", "architecture", "building", "exterior", "temple", "pyramid", "pyramids", "monument", "ruins", "archaeological", "historic", "photograph", "photo", "sunset", "sunrise", "manzara", "dogal", "dag", "gol", "orman", "selale", "sahil", "plaj", "dalga", "kiyi", "col", "sehir", "mimari", "tapinak", "piramit", "anit", "kalinti", "misir",
@@ -12512,6 +12739,13 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     water_scene = tokens("wave waves coast beach shore water ocean sea atlantic pacific seascape marine underwater undersea reef")
     country_scene = tokens("landscape scenery nature mountain lake forest waterfall coast beach national park cityscape skyline river desert castle cathedral palace city street architecture building harbour harbor village bridge panorama")
     landmark_scene = tokens("pyramid pyramids temple monument ruins architecture building exterior archaeological historic")
+    ek_kavramlar = kavram_coz(konu, ingilizce_ad, etiketler)
+    for ek_kavram in ek_kavramlar:
+        konu_ankorlari.update(
+            t for t in tokens(ek_kavram)
+            if len(t) > 2 and t not in durak
+        )
+
     def puanla(baslik, aciklama_metni="", guvenilir_sorgu=False):
         baslik_norm = normla(baslik)
         aciklama_norm = normla(aciklama_metni)
@@ -12520,18 +12754,31 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         ts = baslik_tokens | aciklama_tokens
         if not baslik_tokens:
             return -100
+        from eagle_arastirma_v2 import gorsel_kavram_eslesiyor
+        if tur in {"science", "astronomy", "place", "person", "animal", "plant", "technology", "object", "unknown"}:
+            if not gorsel_kavram_eslesiyor(baslik, etiketler + [ingilizce_ad] + ek_kavramlar) and not (guvenilir_sorgu and qid and baslik in [x.replace("_", " ") for x in p18]):
+                return -100
+            if not guvenilir_sorgu and tur == "place":
+                return -100
+        if re.search(r"\b(?:stock video|video clip|guided tour|tour package|book now|tickets|hatchery|filter building)\b", baslik_norm):
+            return -100
 
         # Belge, harita, medya içeriği ve duvar kâğıdı sonuçları fotoğraf
         # galerisine alınmaz. Çok sözcüklü ifadeler bütün olarak denetlenir.
         medya_ve_belge = tokens(
             "map maps location locator cartography chart diagram banknote banknotes "
-            "currency money coin coins stamp stamps ticket document agreement treaty "
+            "currency money coin coins medal medals medallion medallions stamp stamps ticket document agreement treaty "
             "conference meeting delegation signing summit diplomatic logo flag seal "
             "poster roadmap wallpaper wallpapers television tv episode season series "
             "show programme program magazine newspaper book cover illustration "
             "infographic blueprint schematic svg icon article news scientific "
             "research study report journal blog"
         )
+        if tur == "science":
+            medya_ve_belge -= tokens(
+                "chart diagram illustration infographic "
+                "schematic svg scientific"
+            )
         if baslik_tokens & medya_ve_belge:
             return -100
         if any(normla(x) in baslik_norm for x in (
@@ -12542,6 +12789,9 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             "free images", "best places", "top 10", "10 favourite",
             "10 favorite", "unique photos", "background brosur",
             "concept penting", "at blog",
+            "stable diffusion", "midjourney", "artstation",
+            "ai generated", "ai art", "image generator",
+            "prompt style", "youtube", "botticelli",
             # Stok fotograf siteleri konuya ozgu belge degildir.
             "pixabay", "ucretsiz fotograf", "stok fotograf", "stock photo",
             "royalty free", "shutterstock", "istock", "depositphotos",
@@ -12549,7 +12799,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         )):
             return -100
         # Tarihî gravür, çizim ve resimler fotoğraf galerisi değildir.
-        if baslik_tokens & tokens(
+        if tur != "science" and baslik_tokens & tokens(
             "engraving engraved etching lithograph woodcut illustration "
             "drawing painting sketch diagram schematic antique print"
         ):
@@ -12576,7 +12826,38 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         # bir kelime yanlış fotoğrafı doğruymuş gibi gösteremez.
         anchor_title = konu_ankorlari & baslik_tokens
         scene_title = olumlu & baslik_tokens
-        if not anchor_title or not scene_title:
+        if tur == "science":
+            if re.search(
+                r"\b(?:elife\d*|pone|phenotypic|phylogenetic)\b",
+                baslik_norm
+            ):
+                return -100
+            bilimsel_sahne = tokens(
+                "diagram schematic illustration infographic "
+                "microscope microscopy micrograph "
+                "sema semasi sematik cizim mikroskop "
+                "deney experiment model photograph photo molecule molecular structure cycle pathway synthesis synthase anion 3d balls spacefill cell cells cytoskeleton"
+            )
+            if not anchor_title:
+                return -100
+            if not guvenilir_sorgu and not (ts & bilimsel_sahne):
+                return -100
+            turkce_ipucu = tokens(
+                "turkish turkce semasi sema cizim"
+            )
+            return (
+                25 + min(len(anchor_title), 5) * 8
+                + min(len(ts & bilimsel_sahne), 5) * 5
+                + (35 if baslik_tokens & turkce_ipucu else 0)
+            )
+        elif tur == "astronomy":
+            if not anchor_title or (not guvenilir_sorgu and not (ts & tokens("planet gezegen dwarf nasa spacecraft telescope astronomy astronomical asteroid comet galaxy surface orbit horizons hubble voyager cassini space"))):
+                return -100
+        elif tur in {"person", "animal", "plant",
+                     "technology", "object", "unknown"}:
+            if not anchor_title:
+                return -100
+        elif not anchor_title or (not scene_title and not (tur == "place" and guvenilir_sorgu)):
             return -100
 
         # Birleşik/özgül konularda tek bir ortak kelime yeterli değildir.
@@ -12636,7 +12917,13 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         return 10 + min(len(anchor), 5) * 8 + min(len(scene), 5) * 3 + (25 if tur == "country" and baslik_tokens & tokens("city skyline palace castle cathedral architecture historic monument") else 0)
 
     bulunan, gorulen = [], set()
-    def ekle(url, title, source="", provider="", description="", guvenilir_sorgu=False):
+
+    def secilebilir_adet():
+        if tur == "science":
+            return len(bilim_cesitlendir(bulunan))
+        return len(bulunan)
+
+    def ekle(url, title, source="", provider="", description="", guvenilir_sorgu=False, metadata=None):
         url, title = str(url or "").strip(), str(title or "").strip()
         if not url.startswith("https://") or url in gorulen:
             return
@@ -12646,11 +12933,20 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
         title_path = title.casefold()
         if re.search(r"\b(?:premium photo|stock photo|watermark|logo|screenshot|ai generated)\b", normla(title)):
             return
-        stock_domains = {"alamy.com", "shutterstock.com", "gettyimages.com", "istockphoto.com", "freepik.com", "dreamstime.com", "depositphotos.com", "adobestock.com", "stock.adobe.com", "123rf.com", "fineartamerica.com", "pixels.com"}
+        stock_domains = {"alamy.com", "shutterstock.com", "gettyimages.com", "istockphoto.com", "freepik.com", "dreamstime.com", "depositphotos.com", "adobestock.com", "stock.adobe.com", "123rf.com", "fineartamerica.com", "pixels.com", "pngtree.com", "vecteezy.com", "stockphoto.com", "pixabay.com"}
         host = (urlparse(str(source or "")).hostname or "").casefold()
-        if any(host == d or host.endswith("." + d) for d in stock_domains):
+        image_host = (urlparse(url).hostname or "").casefold()
+        if any(
+            h == d or h.endswith("." + d)
+            for h in (host, image_host)
+            for d in stock_domains
+        ):
             return
-        if url_path.endswith((".svg", ".pdf", ".gif")) or title_path.endswith((".svg", ".pdf", ".gif")):
+        if url_path.endswith((".svg", ".pdf", ".gif")):
+            return
+        if title_path.endswith((".pdf", ".gif")):
+            return
+        if tur != "science" and title_path.endswith(".svg"):
             return
 
         # Görsel CDN'si ile görselin asıl kaynak sayfasını birbirinden ayır.
@@ -12702,23 +12998,135 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             if any(part in yayin_yolu for part in source_path):
                 return
 
-        score = puanla(title, description, guvenilir_sorgu=guvenilir_sorgu)
+        if not uygun_mu(title, source, tur):
+            return
+        if provider == "Openverse":
+            from eagle_gorsel_kabul import openverse_puanla
+
+            if not isinstance(metadata, dict):
+                return
+
+            aday = dict(metadata)
+            aday.update({
+                "name": title,
+                "url": url,
+                "source": source,
+                "provider": provider
+            })
+
+            score = openverse_puanla(
+                aday, ek_kavramlar, tur
+            )
+
+            print(
+                f"OPENVERSE KABUL: {title[:120]} "
+                f"puan={score}",
+                flush=True
+            )
+        else:
+            score = puanla(
+                title, description,
+                guvenilir_sorgu=guvenilir_sorgu
+            )
+
         if score < 10:
             return
         # Wikidata/Commons sonuclari arama motoru gorsellerinden once gelir.
         if str(provider or "").startswith(("Wikidata", "Wikimedia")):
             score += 40
+        if provider == "Openverse":
+            score += 20
         gorulen.add(url)
         bulunan.append({"url": url, "type": "place", "name": title or konu,
             "category": ("sehir" if tur == "city" else "tarih" if tur == "landmark" else "doga" if tur in {"water", "nature"} else "diger"),
             "source": source or url,
             "wikidata": f"https://www.wikidata.org/wiki/{qid}" if qid else "",
             "provider": provider or "EagleAI görsel araması", "_score": score})
+        if isinstance(metadata, dict):
+            for alan in (
+                "creator", "license", "license_url",
+                "original_provider", "width", "height"
+            ):
+                if alan in metadata:
+                    bulunan[-1][alan] = metadata[alan]
+
+        if partial is not None:
+            adaylar_partial = sorted(
+                bulunan,
+                key=lambda x: -x.get("_score", 0)
+            )
+            if tur == "science":
+                adaylar_partial = bilim_cesitlendir(adaylar_partial)
+            elif tur == "country":
+                adaylar_partial = _eagle_ulke_gorsel_cesitlendir(
+                    adaylar_partial, normla
+                )
+            partial[:] = [
+                {k: v for k, v in x.items() if k != "_score"}
+                for x in adaylar_partial[:limit]
+            ]
+
+    # Openverse ve Wikimedia paralel arastirma.
+    openverse_gelecek = None
+
+    try:
+        openverse_gelecek = _openverse_baslat(
+            konu, tur, ingilizce_ad, tuple(etiketler)
+        )
+    except Exception as hata:
+        print(f"OPENVERSE BASLATMA HATA: {hata}", flush=True)
+
+    merkezi_arastirma_basladi = (
+        openverse_gelecek is not None
+    )
+    merkezi_son_sure = time.monotonic() + 6.2
+
+    def openverse_topla(bekleme=0):
+        nonlocal openverse_gelecek
+
+        if openverse_gelecek is None:
+            return
+
+        from concurrent.futures import TimeoutError
+
+        try:
+            adaylar = openverse_gelecek.result(
+                timeout=bekleme
+            )
+        except TimeoutError:
+            return
+        except Exception as hata:
+            openverse_gelecek = None
+            print(f"OPENVERSE HATA: {hata}", flush=True)
+            return
+
+        openverse_gelecek = None
+        onceki = len(bulunan)
+
+        for aday in adaylar:
+            ekle(
+                aday.get("url", ""),
+                aday.get("name", ""),
+                aday.get("source", ""),
+                aday.get("provider", "Openverse"),
+                guvenilir_sorgu=(
+                    aday.get("provider") == "Wikimedia Commons"
+                ),
+                metadata=aday
+            )
+
+        print(
+            f"OPENVERSE: {konu}: "
+            f"{len(adaylar)} aday, "
+            f"{len(bulunan)-onceki} kabul",
+            flush=True
+        )
 
     commons_429, commons_kategori, p18 = False, "", []
+    openverse_topla()
     if qid and wikidata_ok:
         try:
-            r = requests.get("https://www.wikidata.org/w/api.php",
+            r = galeri_get("https://www.wikidata.org/w/api.php",
                 params={"action": "wbgetentities", "ids": qid, "props": "labels|claims", "languages": "tr|en", "format": "json"},
                 headers=headers, timeout=5)
             r.raise_for_status()
@@ -12748,59 +13156,65 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
 
     if p18:
         try:
-            r = requests.get("https://commons.wikimedia.org/w/api.php",
-                params={"action": "query", "titles": "|".join("File:" + x for x in p18), "prop": "imageinfo", "iiprop": "url|mime|extmetadata", "iiurlwidth": 1000, "format": "json"},
+            r = galeri_get("https://commons.wikimedia.org/w/api.php",
+                params={"action": "query", "titles": "|".join("File:" + x for x in p18), "prop": "imageinfo", "iiprop": "url|mime|size|extmetadata", "iiurlwidth": 1000, "format": "json"},
                 headers=headers, timeout=6)
             if r.status_code == 429:
                 commons_429 = True
             r.raise_for_status()
             for page in r.json().get("query", {}).get("pages", {}).values():
                 info = (page.get("imageinfo") or [{}])[0]
+                w, h = info.get("width"), info.get("height")
+                if w and h and (min(w, h) < 200 or max(w, h) / min(w, h) > 3):
+                    continue
                 if not str(info.get("mime", "")).startswith("image/"):
                     continue
                 title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
                 desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
-                if _commons_eser_mi(info):
+                if tur != "science" and _commons_eser_mi(info):
                     continue
-                ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikidata P18 / Wikimedia Commons", desc)
+                ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikidata P18 / Wikimedia Commons", desc, guvenilir_sorgu=True)
         except Exception as hata:
             if "429" in str(hata):
                 commons_429 = True
             print(f"ℹ️ Commons P18 doğrulaması atlandı: {hata}", flush=True)
 
     # SPARQL görsel URL'lerini Commons API'sinden bağımsız döndürür.
-    if qid and len(bulunan) < limit:
+    if qid and not p18 and not commons_429 and not bulunan:
         try:
             sparql = ("SELECT ?place ?placeLabel ?image WHERE { "
                       f"?place wdt:P18 ?image . FILTER(?place = wd:{qid}) "
                       'SERVICE wikibase:label { bd:serviceParam wikibase:language "tr,en". } '
                       "} LIMIT 8")
-            r = requests.get("https://query.wikidata.org/sparql",
+            r = galeri_get("https://query.wikidata.org/sparql",
                 params={"query": sparql, "format": "json"},
                 headers={**headers, "Accept": "application/sparql-results+json"}, timeout=7)
             r.raise_for_status()
             for row in r.json().get("results", {}).get("bindings", []):
                 img = row.get("image", {}).get("value", "").replace("http://", "https://", 1)
                 title = unquote(img.rsplit("/", 1)[-1]).replace("_", " ")
-                ekle(img, title, "https://www.wikidata.org/wiki/" + qid, "Wikidata SPARQL")
+                ekle(img, title, "https://www.wikidata.org/wiki/" + qid, "Wikidata SPARQL", guvenilir_sorgu=True)
         except Exception as hata:
             print(f"ℹ️ Wikidata görsel sorgusu atlandı: {hata}", flush=True)
 
-    if commons_kategori and not commons_429 and len(bulunan) < limit:
+    if commons_kategori and not commons_429 and secilebilir_adet() < limit:
         try:
-            r = requests.get("https://commons.wikimedia.org/w/api.php",
+            r = galeri_get("https://commons.wikimedia.org/w/api.php",
                 params={"action": "query", "generator": "categorymembers", "gcmtitle": "Category:" + commons_kategori,
-                        "gcmtype": "file", "gcmlimit": 18, "prop": "imageinfo", "iiprop": "url|mime|extmetadata", "iiurlwidth": 1000, "format": "json"},
+                        "gcmtype": "file", "gcmlimit": 18, "prop": "imageinfo", "iiprop": "url|mime|size|extmetadata", "iiurlwidth": 1000, "format": "json"},
                 headers=headers, timeout=6)
             if r.status_code == 429:
                 commons_429 = True
             r.raise_for_status()
             for page in r.json().get("query", {}).get("pages", {}).values():
                 info = (page.get("imageinfo") or [{}])[0]
+                w, h = info.get("width"), info.get("height")
+                if w and h and (min(w, h) < 200 or max(w, h) / min(w, h) > 3):
+                    continue
                 if str(info.get("mime", "")).startswith("image/"):
                     title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
                     desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
-                    if _commons_eser_mi(info):
+                    if tur != "science" and _commons_eser_mi(info):
                         continue
                     ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikimedia Commons category", desc)
         except Exception as hata:
@@ -12809,32 +13223,46 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             print(f"ℹ️ Commons kategori araması atlandı: {hata}", flush=True)
 
     # Commons tam metin araması (İngilizce ad): kategori/P18 yetersizse devreye girer.
-    if ingilizce_ad and not commons_429 and (tur == "country" or len(bulunan) < limit):
+    if (
+        not merkezi_arastirma_basladi
+        and (ingilizce_ad or tur == "science")
+        and not commons_429
+        and (tur == "country" or secilebilir_adet() < limit)
+    ):
         arama_terimleri = {
+            'person': ('portrait', 'photograph'),
+            'animal': ('wildlife', 'photograph'),
+            'plant': ('botanical', 'photograph'),
+            'technology': ('structure', 'photograph'),
+            'object': ('photograph', 'detail'),
             "country": ("UNESCO world heritage site", "historic monument", "national park", "capital city"),
             "city": ("skyline", "street"),
             "landmark": ("exterior", "view"),
             "nature": ("landscape", "view"),
             "water": ("sea", "coast"),
-        }.get(tur, ("landscape", "view"))
+            "science": ("diagram", "schematic", "microscopy"),
+        }.get(tur, ("photograph", "image"))
         for terim in arama_terimleri:
-            if commons_429 or (tur != "country" and len(bulunan) >= limit):
+            if commons_429 or (tur != "country" and secilebilir_adet() >= limit):
                 break
             try:
-                r = requests.get("https://commons.wikimedia.org/w/api.php",
-                    params={"action": "query", "generator": "search", "gsrsearch": f"{ingilizce_ad} {terim}",
+                r = galeri_get("https://commons.wikimedia.org/w/api.php",
+                    params={"action": "query", "generator": "search", "gsrsearch": f"{(konu if tur == 'science' else ingilizce_ad)} {terim}",
                             "gsrnamespace": 6, "gsrlimit": 20, "prop": "imageinfo",
-                            "iiprop": "url|mime|extmetadata", "iiurlwidth": 1000, "format": "json"},
+                            "iiprop": "url|mime|size|extmetadata", "iiurlwidth": 1000, "format": "json"},
                     headers=headers, timeout=6)
                 if r.status_code == 429:
                     commons_429 = True
                 r.raise_for_status()
                 for page in r.json().get("query", {}).get("pages", {}).values():
                     info = (page.get("imageinfo") or [{}])[0]
+                    w, h = info.get("width"), info.get("height")
+                    if w and h and (min(w, h) < 200 or max(w, h) / min(w, h) > 3):
+                        continue
                     if str(info.get("mime", "")).startswith("image/"):
                         title = str(page.get("title", "")).replace("File:", "").replace("_", " ")
                         desc = (info.get("extmetadata", {}) or {}).get("ImageDescription", {}).get("value", "")
-                        if _commons_eser_mi(info):
+                        if tur != "science" and _commons_eser_mi(info):
                             continue
                         ekle(info.get("thumburl") or info.get("url"), title, info.get("descriptionurl", ""), "Wikimedia Commons search", desc)
             except Exception as hata:
@@ -12845,9 +13273,17 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
     # Commons 429 verdiğinde de çalışan bağımsız görsel sağlayıcı.
     # Wikimedia yeterli (>=3) sonuç verdiyse alakasız olma riski taşıyan
     # arama motoru görsellerine hiç başvurulmaz.
-    if len(bulunan) < min(limit, 3) or (tur == "country" and len(_eagle_ulke_gorsel_cesitlendir(bulunan, normla)) < limit):
+    openverse_topla(bekleme=0.5)
+
+    if secilebilir_adet() < min(limit, 3) or (tur == "country" and len(_eagle_ulke_gorsel_cesitlendir(bulunan, normla)) < limit):
         sorgu_adi = ingilizce_ad or ({"danimarka": "Denmark", "kanada": "Canada", "japonya": "Japan"}.get(konu_norm, konu))
-        if tur == "event":
+        if tur == "science":
+            sorgular = [
+                f"{konu} Türkçe şeması",
+                f"{konu} bilimsel açıklamalı görsel",
+                f"{sorgu_adi} scientific diagram"
+            ]
+        elif tur == "event":
             sorgular = [f"{sorgu_adi} historical archive photograph", f"{sorgu_adi} fotoğraf arşiv"]
         elif tur == "water":
             sorgular = [f"{sorgu_adi} ocean sea waves coast photography",
@@ -12869,15 +13305,33 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             sorgular = [f"{sorgu_adi} nature landscape photography",
                         f"{sorgu_adi} aerial view scenery photo",
                         f"{sorgu_adi} natural scenery mountains water"]
+        elif tur == "astronomy":
+            sorgular = [f"{sorgu_adi} astronomy NASA spacecraft image", f"{sorgu_adi} astronomical object telescope photograph"]
         else:
-            sorgular = [f"{sorgu_adi} landscape photography",
-                        f"{sorgu_adi} landmark nature photo",
-                        f"{sorgu_adi} scenic travel photography"]
+            kategori_terimleri = {
+                "person": ("portrait", "photograph"),
+                "animal": ("wildlife photograph", "species"),
+                "plant": ("botanical photograph", "plant"),
+                "technology": ("machine photograph", "structure"),
+                "object": ("photograph", "detail"),
+                "place": ("landscape photography", "landmark photo")
+            }
+
+            sorgular = [
+                f"{sorgu_adi} {terim}"
+                for terim in kategori_terimleri.get(
+                    tur, ("photograph", "image")
+                )
+            ]
         for sorgu_gorsel in sorgular:
+            openverse_topla()
+            if secilebilir_adet() >= limit:
+                break
             try:
-                r = requests.get("https://www.bing.com/images/search",
+                r = galeri_get("https://www.bing.com/images/search",
                     params={"q": sorgu_gorsel, "form": "HDRSC3", "first": 1, "count": 30},
-                    headers={**headers, "Accept": "text/html,application/xhtml+xml"}, timeout=8)
+                    headers={**headers, "Accept": "text/html,application/xhtml+xml"}, timeout=2.0)
+                openverse_topla()
                 r.raise_for_status()
                 for raw in re.findall(r'\bm="([^"]+)"', r.text or "", flags=re.IGNORECASE):
                     try:
@@ -12890,17 +13344,33 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
                     source = str(meta.get("purl", "")).strip()
                     # Android yalnızca Bing'in güvenilir küçük resim alan adını kabul eder.
                     if thumb.startswith("https://") and (urlparse(thumb).hostname or "").endswith(".mm.bing.net"):
-                        ekle(thumb, title, source, "Bing Görseller", desc, guvenilir_sorgu=True)
-                    if tur != "country" and len(bulunan) >= limit * 2:
+                        ekle(thumb, title, source, "Bing Görseller", desc)
+                    if tur != "country" and secilebilir_adet() >= limit * 2:
                         break
-                if tur != "country" and len(bulunan) >= limit:
+                if tur != "country" and secilebilir_adet() >= limit:
                     break
             except Exception as hata:
                 print(f"ℹ️ Bing görsel yedeği başarısız: {hata}", flush=True)
 
+    openverse_topla(
+        bekleme=max(
+            0.0,
+            merkezi_son_sure - time.monotonic()
+        )
+    )
+
     bulunan.sort(key=lambda x: x.get("_score", 0), reverse=True)
     if tur == "country":
         bulunan = _eagle_ulke_gorsel_cesitlendir(bulunan, normla)
+    elif tur == "science":
+        bulunan = bilim_cesitlendir(bulunan)
+    else:
+        from eagle_gorsel_kalite import genel_gorsel_cesitlendir
+
+        bulunan = genel_gorsel_cesitlendir(
+            bulunan, tur
+        )
+
     sonuc = []
     gorulen_basliklar = set()
     gorulen_kumeler = []
@@ -12925,7 +13395,7 @@ def _eagle_yer_gorsellerini_getir(soru, cevap="", limit=8):
             break
     # Wikidata/Commons hız sınırına takıldıysa (429) eksik sonucu önbelleğe alma;
     # aksi halde bozuk (yalnızca Bing) sonuç 15 dakika boyunca geri döner.
-    if wikidata_ok and not commons_429:
+    if (wikidata_ok and not commons_429 and openverse_gelecek is None and sonuc):
         cache[cache_key] = (now, [dict(x) for x in sonuc])
         _eagle_yer_gorsellerini_getir._cache = cache
     print(f"🖼️ Yer galerisi: {konu!r} için {len(sonuc)} görsel adayı bulundu.", flush=True)
@@ -12936,10 +13406,84 @@ import threading
 _GALERI_HAVUZU = None
 _GALERI_HAVUZU_KILIT = threading.Lock()
 _GALERI_SEMAFORU = threading.BoundedSemaphore(2)
-_GALERI_SURE_SN = 18
+_GALERI_SURE_SN = 10
+
+_OPENVERSE_HAVUZU = None
+_MERKEZI_GORSEL_MOTORU = None
+_OPENVERSE_KILIT = threading.Lock()
+_OPENVERSE_SEMAFORU = threading.BoundedSemaphore(2)
 
 
-def _eagle_yer_gorsellerini_guvenli_getir(soru, cevap=""):
+def _openverse_baslat(konu, tur, ingilizce_ad, etiketler):
+    global _OPENVERSE_HAVUZU, _MERKEZI_GORSEL_MOTORU
+
+    from concurrent.futures import ThreadPoolExecutor
+    from eagle_gorsel_motoru import GorselMotoru
+    from eagle_gorsel_saglayicilar import (
+        openverse_saglayici,
+        wikimedia_saglayici
+    )
+
+    if not _OPENVERSE_SEMAFORU.acquire(blocking=False):
+        return None
+
+    def secici(items, limit):
+        return sorted(
+            items,
+            key=lambda x: -x.get("_score", 0)
+        )[:limit]
+
+    def calistir():
+        try:
+            sonuc = _MERKEZI_GORSEL_MOTORU.arastir(
+                {
+                    "Openverse": openverse_saglayici(
+                        konu, tur, ingilizce_ad, etiketler
+                    ),
+                    "Wikimedia": wikimedia_saglayici(
+                        konu, tur, ingilizce_ad, etiketler
+                    )
+                },
+                secici=secici,
+                sure=6.0,
+                limit=24
+            )
+
+            print(
+                "MERKEZI GORSEL MOTORU:",
+                konu,
+                sonuc["providers"],
+                sonuc["elapsed"],
+                "sn",
+                flush=True
+            )
+
+            return sonuc["images"]
+
+        finally:
+            _OPENVERSE_SEMAFORU.release()
+
+    try:
+        with _OPENVERSE_KILIT:
+            if _MERKEZI_GORSEL_MOTORU is None:
+                _MERKEZI_GORSEL_MOTORU = GorselMotoru(
+                    kapasite=6
+                )
+
+            if _OPENVERSE_HAVUZU is None:
+                _OPENVERSE_HAVUZU = ThreadPoolExecutor(
+                    max_workers=2,
+                    thread_name_prefix="eagle-gallery"
+                )
+
+        return _OPENVERSE_HAVUZU.submit(calistir)
+
+    except Exception:
+        _OPENVERSE_SEMAFORU.release()
+        raise
+
+
+def _eagle_yer_gorsellerini_guvenli_getir(soru, cevap="", kaynaklar=None):
     # Galeri hatasini sohbetten ayirir; kapasiteyi sinirli tutar.
     import concurrent.futures
     import traceback
@@ -12948,6 +13492,7 @@ def _eagle_yer_gorsellerini_guvenli_getir(soru, cevap=""):
         print("Yer galerisi yogun; sohbet gorselsiz devam ediyor.", flush=True)
         return []
 
+    partial = []
     try:
         global _GALERI_HAVUZU
         with _GALERI_HAVUZU_KILIT:
@@ -12958,7 +13503,7 @@ def _eagle_yer_gorsellerini_guvenli_getir(soru, cevap=""):
 
         def _galeri_isini_yap():
             try:
-                return _eagle_yer_gorsellerini_getir(soru, cevap)
+                return _eagle_yer_gorsellerini_getir(soru, cevap, partial=partial, kaynaklar=kaynaklar)
             finally:
                 # Timeout olsa da is gercekten bitince kapasite serbest kalir.
                 _GALERI_SEMAFORU.release()
@@ -12976,14 +13521,57 @@ def _eagle_yer_gorsellerini_guvenli_getir(soru, cevap=""):
         # tutuldugu icin timeout sonrasi isler sinirsiz kuyruga girmez.
         # Arka plan görevi tamamlanınca semaforu kendisi serbest bırakır.
         print(
-            f"Yer galerisi {_GALERI_SURE_SN} sn icinde bitmedi; sohbet gorselsiz suruyor.",
+            f"Yer galerisi {_GALERI_SURE_SN} sn icinde bitmedi; bulunan adaylar donuyor.",
             flush=True,
         )
-        return []
+        return [{k: v for k, v in x.items() if k != "_score"} for x in partial[:]]
     except Exception:
         print("Yer galerisi hatasi:\n" + traceback.format_exc(), flush=True)
         return []
 
+
+
+@app.post("/api/gorseller")
+def eagle_bagimsiz_gorseller():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "images": []}), 400
+
+    soru = payload.get("message", "")
+    cevap = payload.get("answer", "")
+
+    if not isinstance(soru, str) or not isinstance(cevap, str):
+        return jsonify({"ok": False, "images": []}), 400
+
+    soru = soru.strip()
+
+    if not soru or len(soru) > 500 or len(cevap) > 20000:
+        return jsonify({"ok": False, "images": []}), 400
+
+    if not _eagle_gorsel_galerisi_uygun_mu(soru):
+        return jsonify({"ok": True, "images": []})
+
+    from eagle_kavram_onbellek import kaynaklari_al
+
+    kaynaklar = kaynaklari_al(soru)
+
+    if kaynaklar:
+        print(
+            "APK ORTAK KAVRAM CACHE: HIT",
+            flush=True
+        )
+
+        images = _eagle_yer_gorsellerini_guvenli_getir(
+            soru, cevap, kaynaklar=kaynaklar
+        )
+    else:
+        images = _eagle_yer_gorsellerini_guvenli_getir(
+            soru, cevap
+        )
+    return jsonify({
+        "ok": True,
+        "images": images or []
+    })
 
 
 @app.post("/api/sohbet")
@@ -15548,7 +16136,8 @@ def sohbet():
         web_verisi = _eagle_web_arastir_bir_kere(arama_sorgusu)
         print(f"🌐 WEB SONUÇ: {len(web_verisi)}", flush=True)
 
-        if web_verisi and eagle_webden_ogren(mesaj, web_verisi, karar):
+        from eagle_arastirma_v2 import konu_ayir
+        if web_verisi and not konu_ayir(mesaj) and eagle_webden_ogren(mesaj, web_verisi, karar):
             print("🧠 WEB BİLGİSİ ÖĞRENME HAFIZASINA KAYDEDİLDİ", flush=True)
 
         if bitcoin_fiyat_sorgusu_mu(mesaj):
@@ -16430,6 +17019,66 @@ def sohbet():
                 "memory_count": len(hafiza_yukle())
             })
 
+    # EAGLE: ortak genel arastirma girisi.
+    from eagle_arastirma_motoru_v5 import topic
+    from eagle_arastirma_motoru_v6 import research_answer
+
+    arastirma_konusu = topic(mesaj)
+
+    if (
+        karar.get("intent") in {"guncel_bilgi", "sohbet", "web_arastirma"}
+        and arastirma_konusu
+        and not karar.get("komut")
+        and not anlati_istegi
+        and not _eagle_guncel_olay_sorgusu(mesaj)
+        and not any(k in mesaj.casefold() for k in (
+            "enflasyon", "alım gücü", "satın alma gücü",
+            "para politikası", "politika faizi", "reel ücret", "reel gelir"
+        ))
+        and not merkez_motor.genel_web_ulke_token_eslesiyor(
+            arastirma_konusu, arastirma_konusu
+        )
+    ):
+        if not web_verisi:
+            web_verisi = _eagle_web_arastir_bir_kere(mesaj)
+
+        sonuc, web_verisi = research_answer(
+            mesaj,
+            web_verisi,
+            _eagle_web_arastir_bir_kere
+        )
+
+        sonuc.update(
+            web_search=True,
+            gemini_fallback=False,
+            eagle_direct=True,
+            research_engine="v6"
+        )
+
+        if sonuc.get("ok"):
+            from eagle_kavram_onbellek import kaynaklari_sakla
+
+            kaynaklari_sakla(mesaj, web_verisi)
+
+            if _eagle_gorsel_galerisi_uygun_mu(mesaj):
+                sonuc["place_gallery"] = True
+
+                if data.get("defer_images") is True:
+                    sonuc["images_pending"] = True
+                    sonuc["media_images"] = {"images": []}
+                else:
+                    sonuc["media_images"] = {
+                        "images": (
+                            _eagle_yer_gorsellerini_guvenli_getir(
+                                mesaj,
+                                sonuc.get("answer", ""),
+                                kaynaklar=web_verisi
+                            ) or []
+                        )
+                    }
+
+        return jsonify(sonuc)
+
     # 🧠 EAGLE MERKEZ AKILLI MOTORU
     # Web sonuçları kullanıcıya ham liste olarak verilmez.
     # Merkezi motor gerçek cevabı çıkarmayı dener.
@@ -16485,9 +17134,18 @@ def sohbet():
                     )
 
                     finans_verisi = finans_verisini_ayristir(merkez_cevap)
+                    galeri_uygun = _eagle_gorsel_galerisi_uygun_mu(mesaj, finans_verisi)
+                    gorsel_ertelendi = galeri_uygun and data.get("defer_images") is True
+
+                    if gorsel_ertelendi:
+                        from eagle_kavram_onbellek import kaynaklari_sakla
+
+                        kaynaklari_sakla(
+                            mesaj, web_verisi
+                        )
                     yer_gorselleri = (
-                        _eagle_yer_gorsellerini_guvenli_getir(mesaj, merkez_cevap)
-                        if _eagle_gorsel_galerisi_uygun_mu(mesaj, finans_verisi) else None
+                        _eagle_yer_gorsellerini_guvenli_getir(mesaj, merkez_cevap, kaynaklar=web_verisi)
+                        if galeri_uygun and not gorsel_ertelendi else None
                     )
                     yanit_verisi = {
                         "ok": True,
@@ -16498,10 +17156,26 @@ def sohbet():
                         **({"finance_data": finans_verisi} if finans_verisi else {}),
                         "memory_count": len(hafiza_yukle())
                     }
+                    if gorsel_ertelendi:
+                        yanit_verisi["images_pending"] = True
+                        yanit_verisi["place_gallery"] = True
+                        yanit_verisi["media_images"] = {"images": []}
                     if yer_gorselleri is not None:
                         yanit_verisi["place_gallery"] = True
                         yanit_verisi["media_images"] = {"images": yer_gorselleri}
                     return jsonify(yanit_verisi)
+
+                from eagle_arastirma_v2 import konu_ayir, kaynakli_tanim
+                if karar.get("intent") in {"guncel_bilgi", "sohbet"} and konu_ayir(mesaj) and not anlati_istegi and not _eagle_guncel_olay_sorgusu(mesaj):
+                    tanim, kaynaklar = kaynakli_tanim(mesaj, web_verisi)
+                    return jsonify({
+                        "ok": bool(tanim),
+                        "answer": (tanim + "\n\nKaynak: " + kaynaklar[0]["url"] + "\n(Bağımsız doğrulama yapılmadı.)") if tanim else "Bu konu için yeterli kaynak temelli açıklama çıkaramadım.",
+                        "research_sources": kaynaklar,
+                        "research_status": "single_source_extract" if tanim else "insufficient",
+                        "web_search": True, "gemini_fallback": False,
+                        "eagle_direct": True, "merkez_motor": bool(tanim)
+                    })
 
                 # 🧠 Eagle cevap çıkaramadıysa Gemini yalnızca son çare.
                 # Normal sohbet Gemini'ye devredilmez; Eagle kendi cevabını üretir.

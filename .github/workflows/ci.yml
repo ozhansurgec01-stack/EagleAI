@@ -7,6 +7,7 @@ on:
   push:
     branches:
       - main
+      - fix/general-research-quality-v5
 
 permissions:
   contents: read
@@ -33,6 +34,7 @@ jobs:
         run: |
           python -m py_compile \
             eagle_api.py \
+            eagle_merkez_motoru.py \
             eagle_regresyon_test.py
 
       - name: Run regression tests
@@ -43,6 +45,45 @@ jobs:
           python eagle_niyet_test.py
           python eagle_hafiza_test.py
           python eagle_arastirma_test.py
+
+  live-research:
+    name: Live research diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -r requirements.txt
+      - name: Probe actual research and image providers without Gemini
+        run: |
+          python -u - <<'PY'
+          import eagle_api
+          from eagle_merkez_motoru import EagleMerkezMotoru
+          failures = []
+          for question in ("Venüs hakkında bilgi verirmisin", "Plüton ile ilgili bilgi verirmisin", "Kanada hakkında bilgi", "Mısır piramitlerini anlat", "Fotosentez nedir"):
+              try:
+                  sources = eagle_api.web_arastir(question, limit=6)
+                  for source in sources:
+                      print("SOURCE", source.get("title"), source.get("url"), str(source.get("snippet") or source.get("text") or "")[:240], flush=True)
+                  answer, confidence = EagleMerkezMotoru.genel_web_cevabi(
+                      question, sources, sayfa_okuyucu=eagle_api.web_sayfa_oku,
+                      genel_sayfa_okuyucu=lambda url: eagle_api.web_sayfa_oku(url, metaveri_dahil=False, timeout=(3, 5)),
+                  )
+                  images = eagle_api._eagle_yer_gorsellerini_getir(question, answer) or []
+                  print(question, "sources=", len(sources), "confidence=", confidence, "images=", len(images), flush=True)
+                  print(answer, flush=True)
+                  if not answer or confidence < 0.75:
+                      failures.append(question)
+                  if "nedir" not in question and not images:
+                      failures.append(question + " [images]")
+              except Exception as exc:
+                  print(type(exc).__name__, str(exc), flush=True)
+                  failures.append(question)
+          assert not failures, failures
+          PY
 
   android-compile:
     name: Android Java compilation
